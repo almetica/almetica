@@ -1,13 +1,12 @@
 /// Module that implements the SHA1 variant used in Tera.
 ///
-/// Direct port the the JS implementation of tera-proxy to rust.
-/// https://github.com/tera-proxy/tera-proxy/blob/master/node_modules/tera-proxy-game/connection/encryption/sha0.js
-///
 /// TERA's SHA-1 implementation is close to the original SHA-1 algorithm, but with two differences: expanded values
 /// aren't rotated and the output U32s are little-endian.
 use byteorder::{BigEndian, ByteOrder};
 
 /// Structure representing the state of a Sha1 computation
+/// Direct port the the JS implementation of tera-proxy to rust (MIT).
+/// https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/sha0.js
 #[derive(Clone, Copy)]
 pub struct Sha1 {
     digest: [u32; 5],
@@ -48,17 +47,13 @@ impl Sha1 {
     }
 
     /// Calculate the final hash
-    pub fn hash(&mut self) -> Result<[u8; 20], std::io::Error> {
+    pub fn hash(&mut self) -> Result<[u32; 5], std::io::Error> {
         if !self.computed {
             self.pad_message();
             self.computed = true;
         }
 
-        let mut buf = [0; 20];
-        for i in 0..5 {
-            BigEndian::write_u32(&mut buf[i*4..], self.digest[i])
-        }
-        Ok(buf)
+        Ok(self.digest)
     }
 
     fn process_message_block(&mut self) {
@@ -164,17 +159,24 @@ mod consts {
 mod tests {
     use super::Sha1;
     use hex::encode;
+    use byteorder::{LittleEndian, ByteOrder};
 
+    // Helper function
     fn digest_to_hex(msg: &str) -> String {
         let mut h = Sha1::new();
         h.update(&msg.as_bytes());
-        encode(h.hash().unwrap())
+        let hash = h.hash().unwrap();
+        let mut buf = [0; 20];
+        for i in 0..5 {
+            LittleEndian::write_u32(&mut buf[i*4..], hash[i])
+        }
+        encode(buf)
     }
 
     #[test]
     fn test_sha1_empty() {
         assert_eq!(
-            "f96cea198ad1dd5617ac084a3d92c6107708c0ef",
+            "19ea6cf956ddd18a4a08ac1710c6923defc00877",
             digest_to_hex("")
         );
     }
@@ -182,15 +184,15 @@ mod tests {
     #[test]
     fn test_sha1_hello_world() {
         assert_eq!(
-            "9fce82c34887c1953b40b3a2883e18850c4fa8a6",
+            "c382ce9f95c18748a2b3403b85183e88a6a84f0c",
             digest_to_hex("hello world")
         );
         assert_eq!(
-            "dbf14dcd7677062c3f2320df8b1c5e30941d10b9",
+            "cd4df1db2c067776df20233f305e1c8bb9101d94",
             digest_to_hex("hello, world")
         );
         assert_eq!(
-            "b23a3e8a639d03bab171a18a7b471a7a539bd106",
+            "8a3e3ab2ba039d638aa171b17a1a477b06d19b53",
             digest_to_hex("Hello, World")
         );
     }
