@@ -1,11 +1,11 @@
 use byteorder::{ByteOrder, LittleEndian};
 use super::sha1::Sha1;
 
-// Provides a struct for the stream cipher used by Tera.
+// Provides a struct for the stream cipher used by Tera. Customized Pike streamcipher.
 // Direct port the the JS implementation of tera-toolbox to rust (MIT).
 // https://github.com/tera-toolbox/tera-network-crypto/blob/master/fallback.js
 pub struct StreamCipher {
-    keys: [StreamCipherKey; 3],
+    generators: [KeyGenerator; 3],
     change_data: u32,
     change_len: usize,
 }
@@ -14,16 +14,16 @@ impl StreamCipher {
     /// Construct a `StreamCipher` object. Key must be 128 byte in size.
     pub fn new(key: &[u8]) -> StreamCipher {
         let mut sc = StreamCipher {
-            keys: [
-                StreamCipherKey::new(55, 31),
-                StreamCipherKey::new(57, 50),
-                StreamCipherKey::new(58, 39),
+            generators: [
+                KeyGenerator::new(55, 31),
+                KeyGenerator::new(57, 50),
+                KeyGenerator::new(58, 39),
             ],
             change_data: 0,
             change_len: 0,
         };
 
-        // Expand the given key
+        // Expand the given key using the botched SHA1 implementation.
         let mut expanded_key = [0; 680];
         expanded_key[0] = 128;
         for i in 1..680 {
@@ -38,15 +38,15 @@ impl StreamCipher {
             }
         }
 
-        // Create the StreamCipher keys out of the expanded key
+        // Set the initial state of the KeyGenerators.
         for i in 0..55 {
-            sc.keys[0].buffer[i] = LittleEndian::read_u32(&expanded_key[i * 4..]);
+            sc.generators[0].buffer[i] = LittleEndian::read_u32(&expanded_key[i * 4..]);
         }
         for i in 0..57 {
-            sc.keys[1].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 220)..]);
+            sc.generators[1].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 220)..]);
         }
         for i in 0..58 {
-            sc.keys[2].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 448)..]);
+            sc.generators[2].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 448)..]);
         }
         sc
     }
@@ -70,8 +70,8 @@ impl StreamCipher {
         }
 
         for i in (pre..size - 3).step_by(4) {
-            self.do_round();
-            for k in self.keys.iter() {
+            self.clock_keys();
+            for k in self.generators.iter() {
                 data[i] ^= k.sum as u8;
                 data[i + 1] ^= (k.sum >> 8) as u8;
                 data[i + 2] ^= (k.sum >> 16) as u8;
@@ -81,9 +81,9 @@ impl StreamCipher {
 
         let remain = (size - pre) & 3;
         if remain != 0 {
-            self.do_round();
+            self.clock_keys();
             self.change_data = 0;
-            for k in self.keys.iter() {
+            for k in self.generators.iter() {
                 self.change_data ^= k.sum;
             }
 
@@ -96,43 +96,47 @@ impl StreamCipher {
     }
 
     #[inline]
-    fn do_round(&mut self) {
-        let result = self.keys[0].key & self.keys[1].key
-            | self.keys[2].key & (self.keys[0].key | self.keys[1].key);
-        for k in self.keys.iter_mut() {
-            if result == k.key {
-                let t1 = k.buffer[k.pos1 as usize];
-                let t2 = k.buffer[k.pos2 as usize];
-                let t3 = if t1 <= t2 { t1 } else { t2 };
-                k.sum = t1.wrapping_add(t2);
-                k.key = if t3 > k.sum { 1 } else { 0 };
+    fn clock_keys(&mut self) {
+        let key_selector = self.generators[0].carry & self.generators[1].carry
+            | self.generators[2].carry & (self.generators[0].carry | self.generators[1].carry);
+        for k in self.generators.iter_mut() {
+            if key_selector == k.carry {
+                let pos1 = k.buffer[k.pos1 as usize];
+                let pos2 = k.buffer[k.pos2 as usize];
+
+                // Calculate next key
+                k.sum = pos1.wrapping_add(pos2);
+
+                // Advance both positions
                 k.pos1 = (k.pos1 + 1) % k.size as u32;
                 k.pos2 = (k.pos2 + 1) % k.size as u32;
+
+                // Carry test used for clocking
+                let tst = if pos1 <= pos2 { pos1 } else { pos2 };
+                k.carry = if tst > k.sum { 1 } else { 0 };
             }
         }
     }
 }
 
-/// The key structure of the stream cipher used by Tera.
-struct StreamCipherKey {
+/// Fibonacci key generator.
+struct KeyGenerator {
     pub size: usize,
     pub pos1: u32,
     pub pos2: u32,
-    pub max_pos: u32,
-    pub key: u32,
+    pub carry: u32, // Carry bit
     pub buffer: Vec<u32>,
     pub sum: u32,
 }
 
-impl StreamCipherKey {
-    /// Construct a `StreamCipherKey` object
-    pub fn new(size: usize, max_pos: u32) -> StreamCipherKey {
-        let ck = StreamCipherKey {
+impl KeyGenerator {
+    /// Construct a `KeyGenerator` object
+    pub fn new(size: usize, coefficient: u32) -> KeyGenerator {
+        let ck = KeyGenerator {
             size: size,
             pos1: 0,
-            pos2: max_pos,
-            max_pos: max_pos,
-            key: 0,
+            pos2: coefficient,
+            carry: 0,
             buffer: vec![0; size],
             sum: 0,
         };
