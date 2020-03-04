@@ -1,10 +1,10 @@
 /// Module that implements the SHA1 variant used in Tera.
 ///
-/// TERA's SHA-1 implementation is close to the original SHA-1 algorithm, but with two differences: expanded values
-/// aren't rotated and the output U32s are little-endian.
+/// TERA's SHA1 implementation is close to the original SHA1 algorithm, but with two differences: expanded values
+/// aren't rotated and the output u32 words are little-endian.
 use byteorder::{BigEndian, ByteOrder};
 
-/// Structure representing the state of a Sha1 computation
+/// Structure representing the state of a SHA1 computation
 /// Direct port the the JS implementation of tera-proxy to rust (MIT).
 /// https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/sha0.js
 #[derive(Clone, Copy)]
@@ -12,8 +12,7 @@ pub struct Sha1 {
     digest: [u32; 5],
     block: [u8; 64],
     block_index: usize,
-    length_high: u32,
-    length_low: u32,
+    length: u64,
     computed: bool,
 }
 
@@ -24,8 +23,7 @@ impl Sha1 {
             digest: consts::H,
             block: [0; 64],
             block_index: 0,
-            length_high: 0,
-            length_low: 0,
+            length: 0,
             computed: false,
         };
         st
@@ -36,10 +34,7 @@ impl Sha1 {
         for b in data {
             self.block[self.block_index] = *b;
             self.block_index += 1;
-            self.length_low += 8;
-            if self.length_low == 0 {
-                self.length_high += 1;
-            }
+            self.length += 8;
             if self.block_index == 64 {
                 self.process_message_block();
             }
@@ -132,14 +127,7 @@ impl Sha1 {
             }
         }
 
-        self.block[56] = (self.length_high >> 24) as u8;
-        self.block[57] = (self.length_high >> 16) as u8;
-        self.block[58] = (self.length_high >> 8) as u8;
-        self.block[59] = self.length_high as u8;
-        self.block[60] = (self.length_low >> 24) as u8;
-        self.block[61] = (self.length_low >> 16) as u8;
-        self.block[62] = (self.length_low >> 8) as u8;
-        self.block[63] = self.length_low as u8;
+        BigEndian::write_u64(&mut self.block[56..], self.length);
 
         self.process_message_block();
     }
