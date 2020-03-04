@@ -1,7 +1,7 @@
 /// Module that implements the cryptography used in Tera.
 pub mod sha1;
 
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, LittleEndian};
 use sha1::Sha1;
 
 // Provides a struct for the custom encryption used by Tera.
@@ -54,8 +54,9 @@ impl Cryptor {
         c
     }
 
-    // Applies the cryptor on the data. Asymetric operation. Needs different keypairs for encryption and decryption.
-    // TODO speed optimization
+    /// Applies the cryptor on the data. Asymetric operation. Needs different keypairs for encryption and decryption.
+    /// The data needs to be at least 4 bytes in size.
+    #[inline]
     pub fn apply(&mut self, data: &mut [u8]) {
         let size = data.len();
         let pre = if size < self.change_len {
@@ -98,11 +99,11 @@ impl Cryptor {
         }
     }
 
+    #[inline]
     fn do_round(&mut self) {
         let result = self.keys[0].key & self.keys[1].key
             | self.keys[2].key & (self.keys[0].key | self.keys[1].key);
-        for i in 0..3 {
-            let k = &mut self.keys[i];
+        for k in self.keys.iter_mut() {
             if result == k.key {
                 let t1 = k.buffer[k.pos1 as usize];
                 let t2 = k.buffer[k.pos2 as usize];
@@ -144,9 +145,9 @@ impl CryptorKey {
 }
 
 // Represents the crypto session between a client and a server.
-// Direct port of the tera-proxy-game JS implementation to rust (GPL3)
+// Direct port of the tera-proxy-game JS implementation to rust (GPL3).
 // https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/index.js
-struct CryptorSession {
+pub struct CryptorSession {
     decryptor: Cryptor,
     encryptor: Cryptor,
 }
@@ -177,11 +178,13 @@ impl CryptorSession {
     }
 
     /// Encrypt the given data.
+    #[inline]
     pub fn encrypt(&mut self, data: &mut [u8]) {
         self.encryptor.apply(data);
     }
 
     /// Decrypt the given data.
+    #[inline]
     pub fn decrypt(&mut self, data: &mut [u8]) {
         self.decryptor.apply(data);
     }
