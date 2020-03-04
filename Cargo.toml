@@ -6,9 +6,11 @@ edition = "2018"
 
 [dependencies]
 byteorder = "1.3.4"
+failure = "0.1.6" # TODO replace bail! usage with custom standard rust errors
 
 [dev-dependencies]
 criterion = "0.3"
+criterion-cycles-per-byte = "0.1.1"
 hex = "0.4.2"
 
 [[bench]]

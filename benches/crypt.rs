@@ -1,5 +1,7 @@
 use almetica::crypt::CryptSession;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion_cycles_per_byte::CyclesPerByte;
+
 
 fn setup() -> CryptSession {
     let c1: [u8; 128] = [0x11; 128];
@@ -11,7 +13,7 @@ fn setup() -> CryptSession {
 }
 
 // Tests the crypto performance. Data in the tera network procotoll is at least 4 bytes in size (u16 length, u16 opcode).
-fn crypt_benchmark(c: &mut Criterion) {
+fn crypt_benchmark(c: &mut Criterion<CyclesPerByte>) {
     let mut session = setup();
 
     let mut group = c.benchmark_group("crypt_benchmark");
@@ -29,5 +31,9 @@ fn crypt_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, crypt_benchmark);
-criterion_main!(benches);
+criterion_group!(
+    name = crypto_bench;
+    config = Criterion::default().with_measurement(CyclesPerByte);
+    targets = crypt_benchmark
+);
+criterion_main!(crypto_bench);
