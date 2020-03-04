@@ -4,7 +4,7 @@ pub mod sha1;
 use byteorder::{ByteOrder, LittleEndian};
 use sha1::Sha1;
 
-// Provides a struct for the custom encryption used by Tera.
+// Provides a struct for the custom encryption used by Tera. The Tera encryption is a stream cypher!
 // Direct port the the C++ implementation of tera-toolbox to rust (MIT).
 // https://github.com/tera-toolbox/tera-network-crypto/blob/master/main.cpp
 struct Cryptor {
@@ -148,12 +148,12 @@ impl CryptorKey {
 // Direct port of the tera-proxy-game JS implementation to rust (GPL3).
 // https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/index.js
 pub struct CryptorSession {
-    decryptor: Cryptor,
-    encryptor: Cryptor,
+    server_packet_cryptor: Cryptor,
+    client_packet_cryptor: Cryptor,
 }
 
 impl CryptorSession {
-    /// Construct a `CryptorSession` object. Needs server and client keys.
+    /// Construct a `CryptorSession` object. Needs client and server keys.
     pub fn new(client_keys: [[u8; 128]; 2], server_keys: [[u8; 128]; 2]) -> CryptorSession {
         let mut tmp1: [u8; 128] = [0; 128];
         let mut tmp2: [u8; 128] = [0; 128];
@@ -164,29 +164,31 @@ impl CryptorSession {
 
         shift_key(&mut tmp1, &client_keys[1], 29);
         xor_key(&mut tmp3, &tmp1, &tmp2);
-        let mut decryptor = Cryptor::new(&tmp3);
+        let mut server_packet_cryptor = Cryptor::new(&tmp3);
 
         shift_key(&mut tmp1, &server_keys[1], -41);
-        decryptor.apply(&mut tmp1);
-        let encryptor = Cryptor::new(&tmp1);
+        server_packet_cryptor.apply(&mut tmp1);
+        let client_packet_cryptor = Cryptor::new(&tmp1);
 
         let cs = CryptorSession {
-            decryptor: decryptor,
-            encryptor: encryptor,
+            server_packet_cryptor: server_packet_cryptor,
+            client_packet_cryptor: client_packet_cryptor,
         };
         cs
     }
 
-    /// Encrypt the given data.
+    /// Applies the cryptor for client packets on the given data and advances the state of the cryptor.
+    /// To decrypt, you need to use a cryptor in the same state (look at the tests for an explanation).
     #[inline]
-    pub fn encrypt(&mut self, data: &mut [u8]) {
-        self.encryptor.apply(data);
+    pub fn crypt_client_data(&mut self, data: &mut [u8]) {
+        self.client_packet_cryptor.apply(data);
     }
 
-    /// Decrypt the given data.
+    /// Applies the cryptor for server packets on the given data and advances the state of the cryptor.
+    /// To decrypt, you need to use a cryptor in the same state (look at the tests for an explanation).
     #[inline]
-    pub fn decrypt(&mut self, data: &mut [u8]) {
-        self.decryptor.apply(data);
+    pub fn crypt_server_data(&mut self, data: &mut [u8]) {
+        self.server_packet_cryptor.apply(data);
     }
 }
 
@@ -211,46 +213,78 @@ mod tests {
     use hex::encode;
 
     #[test]
-    fn test_empty_keys() {
-        let c1: [u8; 128] = [0; 128];
-        let c2: [u8; 128] = [0; 128];
-        let s1: [u8; 128] = [0; 128];
-        let s2: [u8; 128] = [0; 128];
+    fn test_client_packet_cypher() {
+        let c1: [u8; 128] = [0x12; 128];
+        let c2: [u8; 128] = [0x34; 128];
+        let s1: [u8; 128] = [0x56; 128];
+        let s2: [u8; 128] = [0x78; 128];
 
-        let mut session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
 
-        let org: [u8; 32] = [0; 32];
+        let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
-
-        session.encrypt(&mut data);
-        //assert_eq!("bf8f6ffee1c8a998560adb213307de236de34a5477589ca0440ea49147cb82dc", encode(&data));
-
-        session.decrypt(&mut data);
-        //assert_eq!("827ec6087a1def309670c52a7cfa6140f98a46e476daa003148b725ed624470d", encode(&data));
-
-        // TODO Gives same values as the GO version. Maybe the encryption / decryption needs different key sets (server <-> client keys?)
+        
+        // Symetric operation. Since the keys are rotating, the cryptors are stateful, since
+        // the Tera cypher is a stream cypher!
+        server_session.crypt_client_data(&mut data);
+        client_session.crypt_client_data(&mut data);
+        
         assert_eq!(encode(&org), encode(&data));
     }
 
     #[test]
-    fn test_full_keys() {
-        let c1: [u8; 128] = [0xff; 128];
-        let c2: [u8; 128] = [0xff; 128];
-        let s1: [u8; 128] = [0xff; 128];
-        let s2: [u8; 128] = [0xff; 128];
+    fn test_server_packet_cypher() {
+        let c1: [u8; 128] = [0x12; 128];
+        let c2: [u8; 128] = [0x34; 128];
+        let s1: [u8; 128] = [0x56; 128];
+        let s2: [u8; 128] = [0x78; 128];
 
-        let mut session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
 
-        let org: [u8; 32] = [0; 32];
+        let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
 
-        session.encrypt(&mut data);
-        //assert_eq!("e264594c4e792ba95da3d81572f9ecea729b007bec661226465139096b07a624", encode(&data));
+        // Symetric operation. Since the keys are rotating, the cryptors are stateful, since
+        // the Tera cypher is a stream cypher!
+        server_session.crypt_server_data(&mut data);
+        client_session.crypt_server_data(&mut data);
 
-        session.decrypt(&mut data);
-        //assert_eq!("98da7773e4531b4cf2aba5a03e5cab3369fc81fbc25e0d2b35ae4fcaff47e3f4", encode(&data));
-
-        // TODO Gives same values as the GO version. Maybe the encryption / decryption needs different key sets (server <-> client keys?)
         assert_eq!(encode(&org), encode(&data));
+    }
+
+    #[test]
+    fn test_client_packet_algorithm() {
+        let c1: [u8; 128] = [0x12; 128];
+        let c2: [u8; 128] = [0x34; 128];
+        let s1: [u8; 128] = [0x56; 128];
+        let s2: [u8; 128] = [0x78; 128];
+
+        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
+
+        let org: [u8; 32] = [0xFE; 32];
+        let mut data: [u8; 32] = org;
+        
+        client_session.crypt_client_data(&mut data);
+        
+        assert_eq!("4e089f08f20dbae0c5b3af03871f464f0af7477149de07d1e3b466ecba521e62", encode(&data));
+    }
+
+    #[test]
+    fn test_server_packet_algorithm() {
+        let c1: [u8; 128] = [0x12; 128];
+        let c2: [u8; 128] = [0x34; 128];
+        let s1: [u8; 128] = [0x56; 128];
+        let s2: [u8; 128] = [0x78; 128];
+
+        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
+
+        let org: [u8; 32] = [0xFE; 32];
+        let mut data: [u8; 32] = org;
+   
+        server_session.crypt_server_data(&mut data);
+
+        assert_eq!("659f3e8745d2fcb73923bef592f99537acf4f96ac853fcbaa51bbbd4c62b9ded", encode(&data));
     }
 }
