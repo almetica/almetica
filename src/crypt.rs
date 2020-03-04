@@ -1,159 +1,20 @@
 /// Module that implements the cryptography used in Tera.
 pub mod sha1;
+pub mod streamcipher;
 
-use byteorder::{ByteOrder, LittleEndian};
-use sha1::Sha1;
+use streamcipher::StreamCipher;
 
-// Provides a struct for the stream cipher used by Tera.
-// Direct port the the JS implementation of tera-toolbox to rust (MIT).
-// https://github.com/tera-toolbox/tera-network-crypto/blob/master/fallback.js
-struct StreamCipher {
-    keys: [StreamCipherKey; 3],
-    change_data: u32,
-    change_len: usize,
-}
-
-impl StreamCipher {
-    /// Construct a `StreamCipher` object. Key must be 128 byte in size.
-    pub fn new(key: &[u8]) -> StreamCipher {
-        let mut sc = StreamCipher {
-            keys: [
-                StreamCipherKey::new(55, 31),
-                StreamCipherKey::new(57, 50),
-                StreamCipherKey::new(58, 39),
-            ],
-            change_data: 0,
-            change_len: 0,
-        };
-
-        // Expand the given key
-        let mut expanded_key = [0; 680];
-        expanded_key[0] = 128;
-        for i in 1..680 {
-            expanded_key[i] = key[i % 128];
-        }
-        for i in (0..680).step_by(20) {
-            let mut sha = Sha1::new();
-            sha.update(&expanded_key);
-            let hash = sha.hash().unwrap();
-            for j in (0..20).step_by(4) {
-                LittleEndian::write_u32(&mut expanded_key[i + j..], hash[j / 4]);
-            }
-        }
-
-        // Create the StreamCipher keys out of the expanded key
-        for i in 0..55 {
-            sc.keys[0].buffer[i] = LittleEndian::read_u32(&expanded_key[i * 4..]);
-        }
-        for i in 0..57 {
-            sc.keys[1].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 220)..]);
-        }
-        for i in 0..58 {
-            sc.keys[2].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 448)..]);
-        }
-        sc
-    }
-
-    /// Applies the StreamCipher on the data. The data needs to be at least 4 bytes in size.
-    #[inline]
-    pub fn apply(&mut self, data: &mut [u8]) {
-        let size = data.len();
-        let pre = if size < self.change_len {
-            size
-        } else {
-            self.change_len
-        };
-
-        if pre != 0 {
-            for i in 0..pre {
-                let shift = 8 * (4 - self.change_len + i);
-                data[i] ^= (self.change_data >> shift) as u8;
-            }
-            self.change_len -= pre;
-        }
-
-        for i in (pre..size - 3).step_by(4) {
-            self.do_round();
-            for k in self.keys.iter() {
-                data[i] ^= k.sum as u8;
-                data[i + 1] ^= (k.sum >> 8) as u8;
-                data[i + 2] ^= (k.sum >> 16) as u8;
-                data[i + 3] ^= (k.sum >> 24) as u8;
-            }
-        }
-
-        let remain = (size - pre) & 3;
-        if remain != 0 {
-            self.do_round();
-            self.change_data = 0;
-            for k in self.keys.iter() {
-                self.change_data ^= k.sum;
-            }
-
-            for i in 0..remain {
-                data[size - remain + i] ^= (self.change_data >> (i * 8)) as u8;
-            }
-
-            self.change_len = 4 - remain;
-        }
-    }
-
-    #[inline]
-    fn do_round(&mut self) {
-        let result = self.keys[0].key & self.keys[1].key
-            | self.keys[2].key & (self.keys[0].key | self.keys[1].key);
-        for k in self.keys.iter_mut() {
-            if result == k.key {
-                let t1 = k.buffer[k.pos1 as usize];
-                let t2 = k.buffer[k.pos2 as usize];
-                let t3 = if t1 <= t2 { t1 } else { t2 };
-                k.sum = t1.wrapping_add(t2);
-                k.key = if t3 > k.sum { 1 } else { 0 };
-                k.pos1 = (k.pos1 + 1) % k.size as u32;
-                k.pos2 = (k.pos2 + 1) % k.size as u32;
-            }
-        }
-    }
-}
-
-/// The key structure of the stream cipher used by Tera.
-struct StreamCipherKey {
-    pub size: usize,
-    pub pos1: u32,
-    pub pos2: u32,
-    pub max_pos: u32,
-    pub key: u32,
-    pub buffer: Vec<u32>,
-    pub sum: u32,
-}
-
-impl StreamCipherKey {
-    /// Construct a `StreamCipherKey` object
-    pub fn new(size: usize, max_pos: u32) -> StreamCipherKey {
-        let ck = StreamCipherKey {
-            size: size,
-            pos1: 0,
-            pos2: max_pos,
-            max_pos: max_pos,
-            key: 0,
-            buffer: vec![0; size],
-            sum: 0,
-        };
-        ck
-    }
-}
-
-// Represents the crypto session between a client and a server.
+// Represents the cryptography session between a client and a server.
 // Direct port of the tera-network-proxy JS implementation to rust (GPL3).
 // https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/index.js
-pub struct StreamCipherSession {
+pub struct CryptSession {
     server_packet_cipher: StreamCipher,
     client_packet_cipher: StreamCipher,
 }
 
-impl StreamCipherSession {
+impl CryptSession {
     /// Construct a `StreamCipherSession` object. Needs client and server keys.
-    pub fn new(client_keys: [[u8; 128]; 2], server_keys: [[u8; 128]; 2]) -> StreamCipherSession {
+    pub fn new(client_keys: [[u8; 128]; 2], server_keys: [[u8; 128]; 2]) -> CryptSession {
         let mut tmp1: [u8; 128] = [0; 128];
         let mut tmp2: [u8; 128] = [0; 128];
         let mut tmp3: [u8; 128] = [0; 128];
@@ -169,7 +30,7 @@ impl StreamCipherSession {
         server_packet_cipher.apply(&mut tmp1);
         let client_packet_cipher = StreamCipher::new(&tmp1);
 
-        let cs = StreamCipherSession {
+        let cs = CryptSession {
             server_packet_cipher: server_packet_cipher,
             client_packet_cipher: client_packet_cipher,
         };
@@ -208,16 +69,16 @@ fn xor_key(dst: &mut [u8], key1: &[u8], key2: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use super::StreamCipherSession;
+    use super::CryptSession;
     use hex::encode;
 
-    fn setup_session() -> StreamCipherSession {
+    fn setup_session() -> CryptSession {
         let c1: [u8; 128] = [0x12; 128];
         let c2: [u8; 128] = [0x34; 128];
         let s1: [u8; 128] = [0x56; 128];
         let s2: [u8; 128] = [0x78; 128];
 
-        return StreamCipherSession::new([c1, c2], [s1, s2]);
+        return CryptSession::new([c1, c2], [s1, s2]);
     }
 
     #[test]
