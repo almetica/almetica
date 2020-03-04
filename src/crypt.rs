@@ -4,23 +4,23 @@ pub mod sha1;
 use byteorder::{ByteOrder, LittleEndian};
 use sha1::Sha1;
 
-// Provides a struct for the custom encryption used by Tera. The Tera encryption is a stream cypher!
-// Direct port the the C++ implementation of tera-toolbox to rust (MIT).
-// https://github.com/tera-toolbox/tera-network-crypto/blob/master/main.cpp
-struct Cryptor {
-    keys: [CryptorKey; 3],
+// Provides a struct for the stream cipher used by Tera.
+// Direct port the the JS implementation of tera-toolbox to rust (MIT).
+// https://github.com/tera-toolbox/tera-network-crypto/blob/master/fallback.js
+struct StreamCipher {
+    keys: [StreamCipherKey; 3],
     change_data: u32,
     change_len: usize,
 }
 
-impl Cryptor {
-    /// Construct a `Cryptor` object. Key must be 128 byte in size.
-    pub fn new(key: &[u8]) -> Cryptor {
-        let mut c = Cryptor {
+impl StreamCipher {
+    /// Construct a `StreamCipher` object. Key must be 128 byte in size.
+    pub fn new(key: &[u8]) -> StreamCipher {
+        let mut sc = StreamCipher {
             keys: [
-                CryptorKey::new(55, 31),
-                CryptorKey::new(57, 50),
-                CryptorKey::new(58, 39),
+                StreamCipherKey::new(55, 31),
+                StreamCipherKey::new(57, 50),
+                StreamCipherKey::new(58, 39),
             ],
             change_data: 0,
             change_len: 0,
@@ -41,21 +41,20 @@ impl Cryptor {
             }
         }
 
-        // Create the cryptor keys out of the expanded key
+        // Create the StreamCipher keys out of the expanded key
         for i in 0..55 {
-            c.keys[0].buffer[i] = LittleEndian::read_u32(&expanded_key[i * 4..]);
+            sc.keys[0].buffer[i] = LittleEndian::read_u32(&expanded_key[i * 4..]);
         }
         for i in 0..57 {
-            c.keys[1].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 220)..]);
+            sc.keys[1].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 220)..]);
         }
         for i in 0..58 {
-            c.keys[2].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 448)..]);
+            sc.keys[2].buffer[i] = LittleEndian::read_u32(&expanded_key[(i * 4 + 448)..]);
         }
-        c
+        sc
     }
 
-    /// Applies the cryptor on the data. Asymetric operation. Needs different keypairs for encryption and decryption.
-    /// The data needs to be at least 4 bytes in size.
+    /// Applies the StreamCipher on the data. The data needs to be at least 4 bytes in size.
     #[inline]
     pub fn apply(&mut self, data: &mut [u8]) {
         let size = data.len();
@@ -117,8 +116,8 @@ impl Cryptor {
     }
 }
 
-/// The key structure of the encryption key used by Tera
-struct CryptorKey {
+/// The key structure of the stream cipher used by Tera.
+struct StreamCipherKey {
     pub size: usize,
     pub pos1: u32,
     pub pos2: u32,
@@ -128,10 +127,10 @@ struct CryptorKey {
     pub sum: u32,
 }
 
-impl CryptorKey {
-    /// Construct a `CryptorKey` object
-    pub fn new(size: usize, max_pos: u32) -> CryptorKey {
-        let ck = CryptorKey {
+impl StreamCipherKey {
+    /// Construct a `StreamCipherKey` object
+    pub fn new(size: usize, max_pos: u32) -> StreamCipherKey {
+        let ck = StreamCipherKey {
             size: size,
             pos1: 0,
             pos2: max_pos,
@@ -145,16 +144,16 @@ impl CryptorKey {
 }
 
 // Represents the crypto session between a client and a server.
-// Direct port of the tera-proxy-game JS implementation to rust (GPL3).
+// Direct port of the tera-network-proxy JS implementation to rust (GPL3).
 // https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/index.js
-pub struct CryptorSession {
-    server_packet_cryptor: Cryptor,
-    client_packet_cryptor: Cryptor,
+pub struct StreamCipherSession {
+    server_packet_cipher: StreamCipher,
+    client_packet_cipher: StreamCipher,
 }
 
-impl CryptorSession {
-    /// Construct a `CryptorSession` object. Needs client and server keys.
-    pub fn new(client_keys: [[u8; 128]; 2], server_keys: [[u8; 128]; 2]) -> CryptorSession {
+impl StreamCipherSession {
+    /// Construct a `StreamCipherSession` object. Needs client and server keys.
+    pub fn new(client_keys: [[u8; 128]; 2], server_keys: [[u8; 128]; 2]) -> StreamCipherSession {
         let mut tmp1: [u8; 128] = [0; 128];
         let mut tmp2: [u8; 128] = [0; 128];
         let mut tmp3: [u8; 128] = [0; 128];
@@ -164,31 +163,31 @@ impl CryptorSession {
 
         shift_key(&mut tmp1, &client_keys[1], 29);
         xor_key(&mut tmp3, &tmp1, &tmp2);
-        let mut server_packet_cryptor = Cryptor::new(&tmp3);
+        let mut server_packet_cipher = StreamCipher::new(&tmp3);
 
         shift_key(&mut tmp1, &server_keys[1], -41);
-        server_packet_cryptor.apply(&mut tmp1);
-        let client_packet_cryptor = Cryptor::new(&tmp1);
+        server_packet_cipher.apply(&mut tmp1);
+        let client_packet_cipher = StreamCipher::new(&tmp1);
 
-        let cs = CryptorSession {
-            server_packet_cryptor: server_packet_cryptor,
-            client_packet_cryptor: client_packet_cryptor,
+        let cs = StreamCipherSession {
+            server_packet_cipher: server_packet_cipher,
+            client_packet_cipher: client_packet_cipher,
         };
         cs
     }
 
-    /// Applies the cryptor for client packets on the given data and advances the state of the cryptor.
-    /// To decrypt, you need to use a cryptor in the same state (look at the tests for an explanation).
+    /// Applies the StreamCipher for client packets on the given data and advances the state of the StreamCipher.
+    /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_client_data(&mut self, data: &mut [u8]) {
-        self.client_packet_cryptor.apply(data);
+        self.client_packet_cipher.apply(data);
     }
 
-    /// Applies the cryptor for server packets on the given data and advances the state of the cryptor.
-    /// To decrypt, you need to use a cryptor in the same state (look at the tests for an explanation).
+    /// Applies the StreamCipher for server packets on the given data and advances the state of the StreamCipher.
+    /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_server_data(&mut self, data: &mut [u8]) {
-        self.server_packet_cryptor.apply(data);
+        self.server_packet_cipher.apply(data);
     }
 }
 
@@ -209,24 +208,26 @@ fn xor_key(dst: &mut [u8], key1: &[u8], key2: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use super::CryptorSession;
+    use super::StreamCipherSession;
     use hex::encode;
 
-    #[test]
-    fn test_client_packet_cypher() {
+    fn setup_session() -> StreamCipherSession {
         let c1: [u8; 128] = [0x12; 128];
         let c2: [u8; 128] = [0x34; 128];
         let s1: [u8; 128] = [0x56; 128];
         let s2: [u8; 128] = [0x78; 128];
 
-        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
-        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
+        return StreamCipherSession::new([c1, c2], [s1, s2]);
+    }
+
+    #[test]
+    fn test_client_packet_cipher() {
+        let mut server_session = setup_session();
+        let mut client_session = setup_session();
 
         let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
         
-        // Symetric operation. Since the keys are rotating, the cryptors are stateful, since
-        // the Tera cypher is a stream cypher!
         server_session.crypt_client_data(&mut data);
         client_session.crypt_client_data(&mut data);
         
@@ -234,20 +235,13 @@ mod tests {
     }
 
     #[test]
-    fn test_server_packet_cypher() {
-        let c1: [u8; 128] = [0x12; 128];
-        let c2: [u8; 128] = [0x34; 128];
-        let s1: [u8; 128] = [0x56; 128];
-        let s2: [u8; 128] = [0x78; 128];
-
-        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
-        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
+    fn test_server_packet_cipher() {
+        let mut server_session = setup_session();
+        let mut client_session = setup_session();
 
         let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
 
-        // Symetric operation. Since the keys are rotating, the cryptors are stateful, since
-        // the Tera cypher is a stream cypher!
         server_session.crypt_server_data(&mut data);
         client_session.crypt_server_data(&mut data);
 
@@ -256,12 +250,7 @@ mod tests {
 
     #[test]
     fn test_client_packet_algorithm() {
-        let c1: [u8; 128] = [0x12; 128];
-        let c2: [u8; 128] = [0x34; 128];
-        let s1: [u8; 128] = [0x56; 128];
-        let s2: [u8; 128] = [0x78; 128];
-
-        let mut client_session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut client_session = setup_session();
 
         let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
@@ -273,12 +262,7 @@ mod tests {
 
     #[test]
     fn test_server_packet_algorithm() {
-        let c1: [u8; 128] = [0x12; 128];
-        let c2: [u8; 128] = [0x34; 128];
-        let s1: [u8; 128] = [0x56; 128];
-        let s2: [u8; 128] = [0x78; 128];
-
-        let mut server_session = CryptorSession::new([c1, c2], [s1, s2]);
+        let mut server_session = setup_session();
 
         let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;

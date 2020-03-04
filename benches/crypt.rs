@@ -1,13 +1,13 @@
-use almetica::crypt::CryptorSession;
+use almetica::crypt::StreamCipherSession;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-fn setup() -> CryptorSession {
+fn setup() -> StreamCipherSession {
     let c1: [u8; 128] = [0x11; 128];
     let c2: [u8; 128] = [0x22; 128];
     let s1: [u8; 128] = [0xFE; 128];
     let s2: [u8; 128] = [0xFF; 128];
 
-    return CryptorSession::new([c1, c2], [s1, s2]);
+    return StreamCipherSession::new([c1, c2], [s1, s2]);
 }
 
 // Tests the crypto performance. Data in the tera network procotoll is at least 4 bytes in size (u16 length, u16 opcode).
