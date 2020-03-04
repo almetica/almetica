@@ -97,23 +97,21 @@ impl StreamCipher {
 
     #[inline]
     fn clock_keys(&mut self) {
-        let key_selector = self.generators[0].carry & self.generators[1].carry
+        let key_clock = self.generators[0].carry & self.generators[1].carry
             | self.generators[2].carry & (self.generators[0].carry | self.generators[1].carry);
         for k in self.generators.iter_mut() {
-            if key_selector == k.carry {
+            if key_clock == k.carry {
                 let pos1 = k.buffer[k.pos1 as usize];
                 let pos2 = k.buffer[k.pos2 as usize];
 
-                // Calculate next key
-                k.sum = pos1.wrapping_add(pos2);
+                // Calculate next sum + test carry used for clocking
+                let (sum, carry) = pos1.overflowing_add(pos2);
+                k.carry = carry;
+                k.sum = sum;
 
                 // Advance both positions
                 k.pos1 = (k.pos1 + 1) % k.size as u32;
                 k.pos2 = (k.pos2 + 1) % k.size as u32;
-
-                // Carry test used for clocking
-                let tst = if pos1 <= pos2 { pos1 } else { pos2 };
-                k.carry = if tst > k.sum { 1 } else { 0 };
             }
         }
     }
@@ -124,7 +122,7 @@ struct KeyGenerator {
     pub size: usize,
     pub pos1: u32,
     pub pos2: u32,
-    pub carry: u32, // Carry bit
+    pub carry: bool,
     pub buffer: Vec<u32>,
     pub sum: u32,
 }
@@ -136,7 +134,7 @@ impl KeyGenerator {
             size: size,
             pos1: 0,
             pos2: coefficient,
-            carry: 0,
+            carry: false,
             buffer: vec![0; size],
             sum: 0,
         };
