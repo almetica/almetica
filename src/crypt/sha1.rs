@@ -7,7 +7,6 @@ use byteorder::{BigEndian, ByteOrder};
 /// Structure representing the state of a SHA1 computation
 /// Direct port the the JS implementation of tera-proxy to rust (MIT).
 /// https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/sha0.js
-#[derive(Clone, Copy)]
 pub struct Sha1 {
     digest: [u32; 5],
     block: [u8; 64],

@@ -1,7 +1,8 @@
+// Module that implements the Pike streamcipher used in Tera.
 use byteorder::{ByteOrder, LittleEndian};
 use super::sha1::Sha1;
 
-// Provides a struct for the stream cipher used by Tera. Customized Pike streamcipher.
+// Provides a struct for the stream cipher used by Tera.
 // Direct port the the JS implementation of tera-toolbox to rust (MIT).
 // https://github.com/tera-toolbox/tera-network-crypto/blob/master/fallback.js
 pub struct StreamCipher {

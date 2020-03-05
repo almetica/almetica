@@ -1,3 +1,10 @@
+/data
 /doc
 /target
 Cargo.lock
+*.gz
+*.pcap
+*.pcapng
+*.bin
+*.raw
+config.yaml
