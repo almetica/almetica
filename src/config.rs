@@ -2,7 +2,7 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use super::*;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -19,7 +19,6 @@ pub struct DataConfiguration {
 
 pub fn load_configuration(path: &PathBuf) -> Result<Configuration>{
     let f = File::open(path)?;
-    let configuration = serde_yaml::from_reader(f)
-        .with_context(|| format!("can't parse configuration with path: {}", path.display()))?;
+    let configuration = serde_yaml::from_reader(f)?;
     Ok(configuration)
 }

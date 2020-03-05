@@ -4,14 +4,16 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::process;
 
-use anyhow::{anyhow, Context, Result};
 use almetica::crypt::CryptSession;
 use almetica::config::load_configuration;
 use almetica::dataloader;
+use almetica::Error;
 use almetica::protocol::opcode::Opcode;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use log::{info, error};
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 const BUFFER_SIZE: usize = 2048;
 
@@ -33,12 +35,24 @@ struct Opts {
 ///
 fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
-    let config = load_configuration(&opts.config)
-        .with_context(|| format!("Can't load configuration file with path: {}", opts.config.display()))?;
-    let opcode_mapping = load_opcode_mapping(&config.data.path)
-        .with_context(|| format!("Can't load opcode mapping file with path: {}", config.data.path.display()))?;
-
-    info!("Loaded opcode mapping table with {} entries.", opcode_mapping.len());
+    let config = match load_configuration(&opts.config) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Can't read configuration file {}: {}", &opts.config.display(), e);
+            return Err(e);
+        }
+    };
+    
+    let opcode_mapping = match load_opcode_mapping(&config.data.path) {
+        Ok(o) => {
+            info!("Loaded opcode mapping table with {} entries.", o.len());
+            o
+        }
+        Err(e) => {
+            error!("Can't read opcode mapping file {}: {}", &opts.config.display(), e);
+            return Err(e);
+        }
+    };
 
     let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
     let mut client_key_1: [u8; 128] = [0; 128];
@@ -55,7 +69,7 @@ fn run() -> Result<()> {
         let magic_word = LittleEndian::read_u16(&buffer);
         if magic_word != 1 {
             error!("Missing magic byte in stream of file: {}", path.display());
-            return Err(anyhow!("missing magic byte"));
+            return Err(Error::NoMagicWord);
         }
     
         f.read_exact(&mut client_key_1)?;
@@ -80,10 +94,18 @@ fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
     Ok(opcodes)
 }
 
+fn read_packet() {
+
+}
+
+fn parse_packet() {
+    
+}
+
 fn main() {
     pretty_env_logger::init();
     if let Err(e) = run() {
         error!("Error while executing program: {}", e);
         process::exit(1);
-    }   
+    }
 }
