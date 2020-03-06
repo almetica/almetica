@@ -17,3 +17,26 @@ where
     }
     Ok(opcode_table)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::read_opcode_table;
+    use super::super::protocol::opcode::Opcode;
+    use std::io::Write;
+
+    #[test]
+    fn test_read_opcode_table() {
+        let mut file = Vec::new();
+        file.write_all("
+        C_UNEQUIP_ITEM: 1
+        S_ANNOUNCE_MESSAGE: 5
+        C_ADD_FRIEND: 2
+        ".as_bytes()).unwrap();
+
+        let table = read_opcode_table(&mut file.as_slice()).unwrap();
+
+        assert_eq!(table[1], Opcode::C_UNEQUIP_ITEM);
+        assert_eq!(table[5], Opcode::S_ANNOUNCE_MESSAGE);
+        assert_eq!(table[2], Opcode::C_ADD_FRIEND);
+    }
+}

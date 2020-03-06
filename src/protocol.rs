@@ -20,7 +20,10 @@ struct GameSession {
 
 impl GameSession {
     /// Initializes and returns a `GameSession` object.
-    pub fn new(stream: &mut TcpStream, addr: SocketAddr) -> Result<GameSession> {
+    pub fn new<T: ?Sized>(stream: &mut T, addr: SocketAddr) -> Result<GameSession>
+    where
+        T: Read + Write,
+    {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1: [u8; 128] = [0; 128];
         let mut client_key_2: [u8; 128] = [0; 128];
@@ -91,4 +94,90 @@ impl GameSession {
     }  
 }
 
-// TODO Write tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::default::Default;
+    use std::io::{Error, ErrorKind, Read, Write};
+    use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_read_gamesession_creation() {
+        // Mocked TCP stream. Implementaion below.
+        let mut stream = StreamMock::default();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        GameSession::new(&mut stream, addr).unwrap();
+
+        assert_eq!(4, stream.state);
+    }
+
+    // We need to create mock to abstract the TCP stream.
+    struct StreamMock {
+        pub state: i64,
+    }
+
+    impl Default for StreamMock {
+        fn default() -> Self {
+            StreamMock {
+                state: -1,
+            }
+        }
+    }
+
+    impl Read for StreamMock {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+            match self.state {
+                0 => {
+                    self.state = 1;
+                    let client_key1: [u8; 128] = [0xAA; 128];
+                    buf.copy_from_slice(&client_key1);
+                    Ok(client_key1.len())
+                },
+                2 => {
+                    self.state = 3;
+                    let client_key2: [u8; 128] = [0xCC; 128];
+                    buf.copy_from_slice(&client_key2);
+                    Ok(client_key2.len())
+                },
+                _ => {
+                    Err(Error::new(ErrorKind::Other, format!("unexpected read at state {}", self.state)))
+                }
+            }
+        }
+    }
+
+    impl Write for StreamMock {
+        fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+            match self.state {
+                -1 => {
+                    self.state = 0;
+                    let mut magic_word: [u8; 4] = [0xFF; 4];
+                    magic_word.copy_from_slice(buf);
+                    if magic_word[0] != 1 {
+                        return Err(Error::new(ErrorKind::Other, format!("wrong magic word")));
+                    }
+                    Ok(magic_word.len())
+                },
+                1 => {
+                    self.state = 2;
+                    let mut server_key_1: [u8; 128] = [0xFF; 128];
+                    server_key_1.copy_from_slice(buf);
+                    Ok(server_key_1.len())
+                },
+                3 => {
+                    self.state = 4;
+                    let mut server_key_2: [u8; 128] = [0xFF; 128];
+                    server_key_2.copy_from_slice(buf);
+                    Ok(server_key_2.len())
+                },
+                _ => {
+                    Err(Error::new(ErrorKind::Other, format!("unexpected write at state {}", self.state)))
+                }
+            }
+        }
+
+        fn flush(&mut self) -> Result<(), Error> {
+            Err(Error::new(ErrorKind::Other, format!("unexpected flush at state {}", self.state)))
+        }
+    }
+}

@@ -4,7 +4,7 @@ use strum_macros::EnumString;
 
 /// Opcode enum
 #[allow(non_camel_case_types)]
-#[derive(Clone, Deserialize, Eq, EnumString, Hash, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, EnumString, Hash, Serialize, PartialEq)]
 pub enum Opcode {
     UNKNOWN,
     C_ACCEPT_CONTRACT,
