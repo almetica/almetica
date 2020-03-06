@@ -47,7 +47,7 @@ impl CryptSession {
         let mut server_packet_cipher = StreamCipher::new(&tmp3);
 
         shift_key(&mut tmp1, &server_keys[1], -41);
-        server_packet_cipher.apply(&mut tmp1);
+        server_packet_cipher.apply_keystream(&mut tmp1);
         let client_packet_cipher = StreamCipher::new(&tmp1);
 
         let cs = CryptSession {
@@ -61,14 +61,14 @@ impl CryptSession {
     /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_client_data(&mut self, data: &mut [u8]) {
-        self.client_packet_cipher.apply(data);
+        self.client_packet_cipher.apply_keystream(data);
     }
 
     /// Applies the StreamCipher for server packets on the given data and advances the state of the StreamCipher.
     /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_server_data(&mut self, data: &mut [u8]) {
-        self.server_packet_cipher.apply(data);
+        self.server_packet_cipher.apply_keystream(data);
     }
 }
 

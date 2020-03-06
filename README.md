@@ -35,4 +35,4 @@ credit people without their specific constributions. Most of them did discover
 specific issues while reverse engineering the Tera network protocol or did some
 other kind of groundwork that this sever is based on (ordered alphabetically):
 
-alexrp, caali-hackerman, mirrawrs, meishu, P5yl0, Pinkie Pie
+alexrp, caali-hackerman, mirrawrs, meishu, P5yl0, pinkiepie

@@ -10,6 +10,8 @@ clap = { version = "3.0.0-beta.1", features = ["yaml"], git = "https://github.co
 hex = "0.4.2"
 log = "0.4"
 pretty_env_logger = "0.4.0"
+rand = "0.7.3"
+rand_core = "0.5.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 strum = "0.18.0"
