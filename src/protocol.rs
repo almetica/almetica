@@ -21,7 +21,7 @@ struct GameSession {
 impl GameSession {
     /// Initializes and returns a `GameSession` object.
     pub fn new(stream: &mut TcpStream, addr: SocketAddr) -> Result<GameSession> {
-        let mut magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
+        let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1: [u8; 128] = [0; 128];
         let mut client_key_2: [u8; 128] = [0; 128];
         let mut server_key_1: [u8; 128] = [0; 128];
