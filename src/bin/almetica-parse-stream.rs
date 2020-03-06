@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::process;
@@ -12,6 +10,8 @@ use almetica::protocol::opcode::Opcode;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use log::{info, error};
+use tokio::fs::File;
+use tokio::prelude::*;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -27,13 +27,23 @@ struct Opts {
     files: Vec<PathBuf>,
 }
 
+#[tokio::main]
+async fn main() {
+    pretty_env_logger::init();
+    if let Err(e) = run().await {
+        error!("Error while executing program: {}", e);
+        process::exit(1);
+    }
+}
+
+
 /// Parses the given tcp stream dump.
 /// File should be binary and contain the data as an array of items specified as:
 ///    u64 timestamp in ns
 ///    u64 length of packet data
 ///    PACKET DATA BYTES
 ///
-fn run() -> Result<()> {
+async fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
     let config = match load_configuration(&opts.config) {
         Ok(c) => c,
@@ -62,8 +72,8 @@ fn run() -> Result<()> {
     
     info!("Start parsing stream.");
     for path in opts.files {
-        let mut f = File::open(path.clone())?;
-        f.read_exact(&mut buffer[..2])?;
+        let mut f = File::open(path.clone()).await?;
+        f.read_exact(&mut buffer[..2]).await?;
     
         // TODO this can't work since we need to first read the packet
         let magic_word = LittleEndian::read_u16(&buffer);
@@ -72,10 +82,10 @@ fn run() -> Result<()> {
             return Err(Error::NoMagicWord);
         }
     
-        f.read_exact(&mut client_key_1)?;
-        f.read_exact(&mut server_key_1)?;
-        f.read_exact(&mut client_key_2)?;
-        f.read_exact(&mut server_key_2)?;
+        f.read_exact(&mut client_key_1).await?;
+        f.read_exact(&mut server_key_1).await?;
+        f.read_exact(&mut client_key_2).await?;
+        f.read_exact(&mut server_key_2).await?;
     
         let session = CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]);
 
@@ -88,7 +98,7 @@ fn run() -> Result<()> {
 fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
     let mut path = data_path.clone();
     path.push("opcode.yaml");
-    let file = File::open(path)?;
+    let file = std::fs::File::open(path)?;
     let mut buffered = BufReader::new(file);
     let opcodes = dataloader::read_opcode_table(&mut buffered)?;
     Ok(opcodes)
@@ -100,12 +110,4 @@ fn read_packet() {
 
 fn parse_packet() {
     
-}
-
-fn main() {
-    pretty_env_logger::init();
-    if let Err(e) = run() {
-        error!("Error while executing program: {}", e);
-        process::exit(1);
-    }
 }
