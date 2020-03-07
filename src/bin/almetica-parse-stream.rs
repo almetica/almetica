@@ -76,10 +76,10 @@ async fn run() -> Result<()> {
             state: -1,
             crypt_session: None,
             opcode: opcode_mapping.clone(),
-            client_key_1: [0; 128],
-            client_key_2: [0; 128],
-            server_key_1: [0; 128],
-            server_key_2: [0; 128],
+            client_key_1: vec![0; 128],
+            client_key_2: vec![0; 128],
+            server_key_1: vec![0; 128],
+            server_key_2: vec![0; 128],
             num_unknown: 0,
             num_packets: 0,
         };
@@ -120,10 +120,10 @@ struct StreamParser {
     state: i8,
     crypt_session: Option<CryptSession>,
     opcode: Vec<Opcode>,
-    client_key_1: [u8; 128],
-    client_key_2: [u8; 128],
-    server_key_1: [u8; 128],
-    server_key_2: [u8; 128],
+    client_key_1: Vec<u8>,
+    client_key_2: Vec<u8>,
+    server_key_1: Vec<u8>,
+    server_key_2: Vec<u8>,
     num_unknown: usize,
     num_packets: usize,
 }
@@ -132,7 +132,7 @@ impl StreamParser {
     /// Parses a packet in the payload. Handles the crypt session initialization.
     pub async fn parse_packet(&mut self, is_server: u8, payload: &mut [u8]) -> Result<()> {
         if self.state != 4 {
-            self.init_crypt_session(payload)?;
+            self.init_crypt_session(is_server, payload)?;
             return Ok(());
         }
 
@@ -154,6 +154,7 @@ impl StreamParser {
             }
         }
 
+        // TODO there could be multiple game packets in one tcp message!
         let length = LittleEndian::read_u16(&payload[0..2]);
         let opcode = LittleEndian::read_u16(&payload[2..4]);
 
@@ -167,39 +168,60 @@ impl StreamParser {
         } else {
             info!("Found packet {} from client. Length: {} Payload size: {}", packet_type, length, payload.len());
         }
+
         self.num_packets += 1;
         Ok(())
     }
 
-    fn init_crypt_session(&mut self, mut payload: &[u8]) -> Result<()> {
+    fn init_crypt_session(&mut self, is_server: u8, mut payload: &[u8]) -> Result<()> {
         match self.state {
             -1 => {
+                if is_server != 1 {
+                    error!("Unexpected message from client!");
+                    return Err(Error::Unknown);
+                }
                 let magic_word = LittleEndian::read_u32(&payload[..4]);
                 if magic_word != 1 {
-                    error!("Missing magic byte in stream of file");
+                    error!("Missing magic byte in stream of file!");
                     return Err(Error::NoMagicWord);
                 }
                 self.state = 0;
             }
             0 => {
+                if is_server != 0 {
+                    error!("Unexpected packet from server!");
+                    return Err(Error::Unknown);
+                }
                 payload.read_exact(&mut self.client_key_1)?;
                 self.state = 1;
             }
             1 => {
+                if is_server != 1 {
+                    error!("Unexpected packet from client!");
+                    return Err(Error::Unknown);
+                }
                 payload.read_exact(&mut self.server_key_1)?;
                 self.state = 2;
             }
             2 => {
+                if is_server != 0 {
+                    error!("Unexpected packet from server!");
+                    return Err(Error::Unknown);
+                }
                 payload.read_exact(&mut self.client_key_2)?;
                 self.state = 3;
             }
             3 => {
+                if is_server != 1 {
+                    error!("Unexpected packet from client!");
+                    return Err(Error::Unknown);
+                }
                 payload.read_exact(&mut self.server_key_2)?;
 
-                debug!("Part. ClientKey1 {}", encode(&self.client_key_1[..32]));
-                debug!("Part. ClientKey2 {}", encode(&self.client_key_2[..32]));
-                debug!("Part. ServerKey1 {}", encode(&self.server_key_1[..32]));
-                debug!("Part. ServerKey2 {}", encode(&self.server_key_2[..32]));
+                debug!("ClientKey1 {}", encode(&self.client_key_1));
+                debug!("ClientKey2 {}", encode(&self.client_key_2));
+                debug!("ServerKey1 {}", encode(&self.server_key_1));
+                debug!("ServerKey2 {}", encode(&self.server_key_2));
 
                 self.crypt_session = Some(CryptSession::new(
                     [self.client_key_1.clone(), self.client_key_2.clone()],

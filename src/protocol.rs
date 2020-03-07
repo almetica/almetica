@@ -27,10 +27,10 @@ impl GameSession {
         T: AsyncRead + AsyncWrite,
     {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
-        let mut client_key_1: [u8; 128] = [0; 128];
-        let mut client_key_2: [u8; 128] = [0; 128];
-        let mut server_key_1: [u8; 128] = [0; 128];
-        let mut server_key_2: [u8; 128] = [0; 128];
+        let mut client_key_1 = vec![0; 128];
+        let mut client_key_2 = vec![0; 128];
+        let mut server_key_1 = vec![0; 128];
+        let mut server_key_2 = vec![0; 128];
         debug!("Sending magic word on socket: {}", addr);
         match stream.write_all(&magic_word_buffer).await {
             Ok(()) => (),
