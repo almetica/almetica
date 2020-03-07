@@ -74,14 +74,14 @@ async fn run() -> Result<()> {
         let mut buffer: [u8; 9] = [0; 9];
         let mut sp = StreamParser {
             state: -1,
+            num_unknown: 0,
+            num_packets: 0,
             crypt_session: None,
             opcode: opcode_mapping.clone(),
             client_key_1: vec![0; 128],
             client_key_2: vec![0; 128],
             server_key_1: vec![0; 128],
             server_key_2: vec![0; 128],
-            num_unknown: 0,
-            num_packets: 0,
             tmp_buffer: [Vec::with_capacity(4096), Vec::with_capacity(4096)],
         };
 
@@ -122,14 +122,14 @@ pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
 /// Struct to parse the provided stream. Only usefull for this parser.
 struct StreamParser {
     state: i8,
+    num_unknown: usize,
+    num_packets: usize,
     crypt_session: Option<CryptSession>,
     opcode: Vec<Opcode>,
     client_key_1: Vec<u8>,
     client_key_2: Vec<u8>,
     server_key_1: Vec<u8>,
     server_key_2: Vec<u8>,
-    num_unknown: usize,
-    num_packets: usize,
     tmp_buffer: [Vec<u8>; 2],
 }
 
