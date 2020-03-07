@@ -1,5 +1,6 @@
-/// Module that implments the network protocol used by tera.
+/// Module that implments the network protocol used by Tera.
 pub mod opcode;
+pub mod packet;
 
 use std::net::{SocketAddr, TcpStream};
 
