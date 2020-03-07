@@ -108,8 +108,10 @@ mod tests {
 
         let org: [u8; 32] = [0xFE; 32];
         let mut data: [u8; 32] = org;
-        server_session.crypt_client_data(&mut data);
+
         client_session.crypt_client_data(&mut data);
+        server_session.crypt_client_data(&mut data);
+
         assert_eq!(encode(&org), encode(&data));
     }
 

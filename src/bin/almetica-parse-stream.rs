@@ -154,8 +154,8 @@ impl StreamParser {
             }
         }
 
-        let opcode = LittleEndian::read_u16(&payload[0..2]);
-        let length = LittleEndian::read_u16(&payload[2..4]);
+        let length = LittleEndian::read_u16(&payload[0..2]);
+        let opcode = LittleEndian::read_u16(&payload[2..4]);
 
         let packet_type = &self.opcode[opcode as usize];
         if *packet_type == Opcode::UNKNOWN {
