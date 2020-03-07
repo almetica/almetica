@@ -82,6 +82,7 @@ async fn run() -> Result<()> {
             server_key_2: vec![0; 128],
             num_unknown: 0,
             num_packets: 0,
+            tmp_buffer: [Vec::with_capacity(4096), Vec::with_capacity(4096)],
         };
 
         loop {
@@ -90,16 +91,19 @@ async fn run() -> Result<()> {
                 info!("Reached end of stream.");
                 break;
             }
-            let is_server = buffer[0];
+            let is_server = buffer[0] as usize;
             let length = LittleEndian::read_i64(&buffer[1..]) as usize;
 
             let mut payload_buffer = vec![0; length];
-            tokio::io::AsyncReadExt::read_exact(&mut file, &mut payload_buffer[..length as usize]).await?;
+            tokio::io::AsyncReadExt::read_exact(&mut file, &mut payload_buffer[..length as usize])
+                .await?;
             sp.parse_packet(is_server, &mut payload_buffer).await?;
         }
-        
         if sp.num_unknown > 0 {
-            warn!("Found {} of {} packets with unknown type!", sp.num_unknown, sp.num_packets);
+            warn!(
+                "Found {} of {} packets with unknown type!",
+                sp.num_unknown, sp.num_packets
+            );
         }
     }
     info!("Finished parsing files.");
@@ -126,54 +130,73 @@ struct StreamParser {
     server_key_2: Vec<u8>,
     num_unknown: usize,
     num_packets: usize,
+    tmp_buffer: [Vec<u8>; 2],
 }
 
 impl StreamParser {
+
     /// Parses a packet in the payload. Handles the crypt session initialization.
-    pub async fn parse_packet(&mut self, is_server: u8, payload: &mut [u8]) -> Result<()> {
+    pub async fn parse_packet(&mut self, is_server: usize, payload: &mut Vec<u8>) -> Result<()> {
         if self.state != 4 {
             self.init_crypt_session(is_server, payload)?;
             return Ok(());
         }
 
-        if is_server == 1 {
-            match &mut self.crypt_session {
-                Some(c) => c.crypt_server_data(payload),
-                None => {
-                    error!("Crypt session not initialized.");
-                    return Err(Error::Unknown);
-                },
+        match &mut self.crypt_session {
+            Some(c) => {
+                if is_server == 1 {
+                    c.crypt_server_data(payload);
+                } else {
+                    c.crypt_client_data(payload);
+                }
             }
-        } else {
-            match &mut self.crypt_session {
-                Some(c) => c.crypt_client_data(payload),
-                None => {
-                    error!("Crypt session not initialized.");
-                    return Err(Error::Unknown);
-                },
+            None => {
+                error!("Crypt session not initialized.");
+                return Err(Error::Unknown);
             }
         }
 
-        // TODO there could be multiple game packets in one tcp message!
-        let length = LittleEndian::read_u16(&payload[0..2]);
-        let opcode = LittleEndian::read_u16(&payload[2..4]);
+        self.tmp_buffer[is_server].append(payload);
+        loop {
+            if self.tmp_buffer[is_server].len() < 4 {
+                return Ok(());
+            }
+            let length = LittleEndian::read_u16(&self.tmp_buffer[is_server][0..2]) as usize;
+            let opcode = LittleEndian::read_u16(&self.tmp_buffer[is_server][2..4]);
+            if length <= self.tmp_buffer[is_server].len() {
+                let packet_type = &self.opcode[opcode as usize];
+                if *packet_type == Opcode::UNKNOWN {
+                    self.num_unknown += 1;
+                }
 
-        let packet_type = &self.opcode[opcode as usize];
-        if *packet_type == Opcode::UNKNOWN {
-            self.num_unknown += 1;
+                let mut packet_data = vec![0; length - 4];
+                &packet_data.copy_from_slice(&self.tmp_buffer[is_server][4..length]);
+                &self.tmp_buffer[is_server].copy_within(length.., 0);
+                &self.tmp_buffer[is_server].resize(self.tmp_buffer[is_server].len() - length, 0);
+
+                if is_server == 1 {
+                    info!(
+                        "Found packet {} from server. Length: {} Rest: {}",
+                        packet_type,
+                        packet_data.len(),
+                        self.tmp_buffer[1].len()
+                    );
+                } else {
+                    info!(
+                        "Found packet {} from server. Length: {} Rest: {}",
+                        packet_type,
+                        packet_data.len(),
+                        self.tmp_buffer[0].len()
+                    );
+                }
+                self.num_packets += 1;
+            } else {
+                return Ok(());
+            }
         }
-
-        if is_server == 1 {
-            info!("Found packet {} from server. Length: {} Payload size: {}", packet_type, length, payload.len());
-        } else {
-            info!("Found packet {} from client. Length: {} Payload size: {}", packet_type, length, payload.len());
-        }
-
-        self.num_packets += 1;
-        Ok(())
     }
 
-    fn init_crypt_session(&mut self, is_server: u8, mut payload: &[u8]) -> Result<()> {
+    fn init_crypt_session(&mut self, is_server: usize, mut payload: &[u8]) -> Result<()> {
         match self.state {
             -1 => {
                 if is_server != 1 {
