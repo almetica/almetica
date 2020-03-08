@@ -187,6 +187,7 @@ impl StreamParser {
                         self.tmp_buffer[0].len()
                     );
                 }
+                debug!("{:#x?}", packet_data);
                 self.num_packets += 1;
             } else {
                 return Ok(());

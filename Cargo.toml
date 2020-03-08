@@ -18,6 +18,7 @@ serde_yaml = "0.8"
 strum = "0.18.0"
 strum_macros = "0.18.0"
 thiserror = "1.0"
+ucs2 = "0.3.1"
 
 [dev-dependencies]
 criterion = "0.3"

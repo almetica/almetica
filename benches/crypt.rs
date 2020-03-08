@@ -4,10 +4,10 @@ use criterion_cycles_per_byte::CyclesPerByte;
 
 
 fn setup() -> CryptSession {
-    let c1: [u8; 128] = [0x11; 128];
-    let c2: [u8; 128] = [0x22; 128];
-    let s1: [u8; 128] = [0xFE; 128];
-    let s2: [u8; 128] = [0xFF; 128];
+    let c1 = vec![0x11; 128];
+    let c2 = vec![0x22; 128];
+    let s1 = vec![0xFE; 128];
+    let s2 = vec![0xFF; 128];
 
     return CryptSession::new([c1, c2], [s1, s2]);
 }
