@@ -26,7 +26,13 @@ None of he evaluated existing server projects did fullfill these requirements.
 
 ## License
 
-Licensed under GPLv3 or later.
+Licensed under AGPL version 3.
+
+The GNU Affero General Public License is based on the GNU GPL, but has an
+additional term to allow users who interact with the licensed software over a
+network to receive the source for that program. We recommend that people
+consider using the GNU AGPL for any software which will commonly be run over a
+network.
 
 ## Credits
 
