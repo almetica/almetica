@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::process;
@@ -11,7 +12,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use hex::encode;
 use log::{debug, error, info, warn};
-use tokio::fs::File;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -25,10 +25,9 @@ struct Opts {
     files: Vec<PathBuf>,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     pretty_env_logger::init();
-    if let Err(e) = run().await {
+    if let Err(e) = run() {
         error!("Error while executing program: {}", e);
         process::exit(1);
     }
@@ -40,7 +39,7 @@ async fn main() {
 ///    i64 length of packet data
 ///    PACKET DATA BYTES
 ///
-async fn run() -> Result<()> {
+fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
     let config = match load_configuration(&opts.config) {
         Ok(c) => c,
@@ -69,7 +68,7 @@ async fn run() -> Result<()> {
     };
     info!("Start parsing stream.");
     for path in opts.files {
-        let mut file = File::open(path.clone()).await?;
+        let mut file = File::open(path.clone())?;
 
         let mut buffer: [u8; 9] = [0; 9];
         let mut sp = StreamParser {
@@ -86,7 +85,7 @@ async fn run() -> Result<()> {
         };
 
         loop {
-            let read = tokio::io::AsyncReadExt::read(&mut file, &mut buffer).await?;
+            let read = file.read(&mut buffer)?;
             if read == 0 {
                 info!("Reached end of stream.");
                 break;
@@ -95,9 +94,8 @@ async fn run() -> Result<()> {
             let length = LittleEndian::read_i64(&buffer[1..]) as usize;
 
             let mut payload_buffer = vec![0; length];
-            tokio::io::AsyncReadExt::read_exact(&mut file, &mut payload_buffer[..length as usize])
-                .await?;
-            sp.parse_packet(is_server, &mut payload_buffer).await?;
+            file.read_exact(&mut payload_buffer[..length as usize])?;
+            sp.parse_packet(is_server, &mut payload_buffer)?;
         }
         if sp.num_unknown > 0 {
             warn!(
@@ -136,7 +134,7 @@ struct StreamParser {
 impl StreamParser {
 
     /// Parses a packet in the payload. Handles the crypt session initialization.
-    pub async fn parse_packet(&mut self, is_server: usize, payload: &mut Vec<u8>) -> Result<()> {
+    pub fn parse_packet(&mut self, is_server: usize, payload: &mut Vec<u8>) -> Result<()> {
         if self.state != 4 {
             self.init_crypt_session(is_server, payload)?;
             return Ok(());
