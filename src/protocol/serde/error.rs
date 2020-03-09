@@ -20,8 +20,17 @@ pub enum Error {
     #[error("InvalidCharEncoding. Pos: {0}")]
     InvalidCharEncoding(usize),
 
+    #[error("DeserializeCharNotSupported. Pos: {0}")]
+    DeserializeCharNotSupported(usize),
+
+    #[error("DeserializeOptionNotSupported. Pos: {0}")]
+    DeserializeOptionNotSupported(usize),
+
     #[error("StringNotNullTerminated. Pos: {0}")]
     StringNotNullTerminated(usize),
+
+    #[error("InvalidSeqEntry. Pos: {0}")]
+    InvalidSeqEntry(usize),
 
     #[error("InvalidTagEncoding. Tag: {0} Pos: {1}")]
     InvalidTagEncoding(u8, usize),

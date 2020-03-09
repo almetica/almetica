@@ -30,6 +30,19 @@ impl<'de> Deserializer {
     }
 }
 
+macro_rules! impl_nums {
+    ($ty:ty, $dser_method:ident, $visitor_method:ident, $reader_method:ident, $size:literal) => {
+        #[inline]
+        fn $dser_method<V>(self, visitor: V) -> Result<V::Value>
+            where V: serde::de::Visitor<'de>,
+        {
+            let d = LittleEndian::$reader_method(&self.data[self.pos..self.pos + $size]);
+            self.pos += $size;
+            visitor.$visitor_method(d)
+        }
+    }
+}
+
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
@@ -65,104 +78,22 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     }
 
     #[inline]
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]);
-
-        self.pos += 2;
-        visitor.visit_u16(d)
-    }
-
-    #[inline]
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_u32(&self.data[self.pos..self.pos + 4]);
-
-        self.pos += 4;
-        visitor.visit_u32(d)
-    }
-
-    #[inline]
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_u32(&self.data[self.pos..self.pos + 8]);
-
-        self.pos += 8;
-        visitor.visit_u32(d)
-    }
-
-    // TOOD test me
-    #[inline]
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        let i = self.data[self.pos] as i8;
-
         self.pos += 1;
-        visitor.visit_i8(i)
+        visitor.visit_i8(self.data[self.pos - 1] as i8)
     }
 
-    #[inline]
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_i16(&self.data[self.pos..self.pos + 2]);
-
-        self.pos += 2;
-        visitor.visit_i16(d)
-    }
-
-    #[inline]
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_i32(&self.data[self.pos..self.pos + 4]);
-
-        self.pos += 4;
-        visitor.visit_i32(d)
-    }
-
-    #[inline]
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_i32(&self.data[self.pos..self.pos + 8]);
-
-        self.pos += 8;
-        visitor.visit_i32(d)
-    }
-
-    #[inline]
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_f32(&self.data[self.pos..self.pos + 4]);
-
-        self.pos += 4;
-        visitor.visit_f32(d)
-    }
-
-    #[inline]
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let d = LittleEndian::read_f64(&self.data[self.pos..self.pos + 8]);
-
-        self.pos += 8;
-        visitor.visit_f64(d)
-    }
+    impl_nums!(u16, deserialize_u16, visit_u16, read_u16, 2);
+    impl_nums!(u32, deserialize_u32, visit_u32, read_u32, 4);
+    impl_nums!(u64, deserialize_u64, visit_u64, read_u64, 8);
+    impl_nums!(i16, deserialize_i16, visit_i16, read_i16, 2);
+    impl_nums!(i32, deserialize_i32, visit_i32, read_i32, 4);
+    impl_nums!(i64, deserialize_i64, visit_i64, read_i64, 8);
+    impl_nums!(f32, deserialize_f32, visit_f32, read_f32, 4);
+    impl_nums!(f64, deserialize_f64, visit_f64, read_f64, 8);
 
     #[inline]
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
@@ -172,18 +103,13 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_unit()
     }
 
+    // TODO: Maybe we shouldn't support this at all!
     #[inline]
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        // We copy a 2 byte UCS2 char into a variable sized UTF-8 char
-        let mut utf8 = [0u8; 3];
-        let aligned = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]);
-        let size = ucs2::decode(&[aligned], &mut utf8).unwrap();
-        let res = str::from_utf8(&utf8[..size]).ok().unwrap();
-        self.pos += 2;
-        visitor.visit_char(res.chars().next().unwrap())
+        Err(Error::DeserializeCharNotSupported(self.pos))
     }
 
     // TODO refactor me
@@ -191,22 +117,21 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-
-        for i in offset as usize..(offset as usize + self.data.len() - self.pos) {
-            if self.data[i] == 0 {
-                // If not, we don't have a UCS2 string.
-                assert!(i % 2 == 0);
-
+        let rel_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
+        let abs_offset = self.pos - 2 + rel_offset as usize;
+        for i in (abs_offset..self.data.len()).step_by(2) {
+            // Look for null terminator
+            if self.data[i] == 0 && self.data[i + 1] == 0 {
                 let mut aligned = vec![0u16; i / 2];
                 for j in 0..aligned.len() {
                     aligned[i] = LittleEndian::read_u16(
-                        &self.data[offset as usize + j..offset as usize + j + 2],
+                        &self.data[abs_offset + j..abs_offset as usize + j + 2],
                     );
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
                 let s: &str;
+
                 unsafe {
                     s = str::from_utf8_unchecked(&utf8[..size]);
                 }
@@ -222,22 +147,23 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-
-        for i in offset as usize..(offset as usize + self.data.len() - self.pos) {
-            if self.data[i] == 0 {
-                // If not, we don't have a UCS2 string.
-                assert!(i % 2 == 0);
-
+        // TODO Is this actually the absolute value?
+        let rel_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
+        let abs_offset = self.pos - 2 + rel_offset as usize;
+        println!("abs_offset = {}", abs_offset);
+        for i in (abs_offset..self.data.len()).step_by(2) {
+            // Look for null terminator
+            if self.data[i] == 0 && self.data[i + 1] == 0 {
                 let mut aligned = vec![0u16; i / 2];
                 for j in 0..aligned.len() {
                     aligned[i] = LittleEndian::read_u16(
-                        &self.data[offset as usize + j..offset as usize + j + 2],
+                        &self.data[abs_offset + j..abs_offset as usize + j + 2],
                     );
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
                 let s: &str;
+
                 unsafe {
                     s = str::from_utf8_unchecked(&utf8[..size]);
                 }
@@ -255,10 +181,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     {
         let len: u16 = serde::Deserialize::deserialize(&mut *self)?;
         let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        if len + offset > std::u16::MAX {
+        if (self.pos as u16 - 4 + len + offset) as usize > self.data.len() {
             return Err(Error::BytesTooBig(self.pos));
         };
-        visitor.visit_bytes(&self.data[offset as usize..(offset + len) as usize])
+        visitor.visit_bytes(&self.data[(offset - 4) as usize..(offset - 4 + len) as usize])
     }
 
     // TODO refactor me
@@ -268,12 +194,11 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     {
         let len: u16 = serde::Deserialize::deserialize(&mut *self)?;
         let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        if len + offset > std::u16::MAX {
+        if (self.pos as u16 - 4 + len + offset) as usize > self.data.len() {
             return Err(Error::BytesTooBig(self.pos));
         };
-        let s = &self.data[offset as usize..(offset + len) as usize];
-        let v = s.to_vec();
-        visitor.visit_byte_buf(v)
+        let s = &self.data[(offset - 4) as usize..((offset - 4) + len) as usize];
+        visitor.visit_byte_buf(s.to_vec())
     }
 
     fn deserialize_enum<V>(
@@ -293,7 +218,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             where
                 V: serde::de::DeserializeSeed<'de>,
             {
-                // TODO enums might need different sizes. So we might need to use attributes here.
+                // TODO enums might need different sizes. So we might need to use attributes here?
                 let idx: u32 = serde::de::Deserialize::deserialize(&mut *self)?;
                 let val: Result<_> = seed.deserialize(idx.into_deserializer());
                 Ok((val?, self))
@@ -303,14 +228,14 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_enum(self)
     }
 
-    // TODO Test me! This is also used for structs!
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
+    // TODO Test me! This is also used for structs and vecs!
+    fn deserialize_tuple<V>(self, count: usize, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
         struct Access<'a> {
             deserializer: &'a mut Deserializer,
-            len: usize,
+            count: usize,
         }
 
         impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
@@ -320,8 +245,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             where
                 T: serde::de::DeserializeSeed<'de>,
             {
-                if self.len > 0 {
-                    self.len -= 1;
+                if self.count > 0 {
+                    self.count -= 1;
                     let value =
                         serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
@@ -331,13 +256,13 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             }
 
             fn size_hint(&self) -> Option<usize> {
-                Some(self.len)
+                Some(self.count)
             }
         }
 
         visitor.visit_seq(Access {
             deserializer: self,
-            len: len,
+            count: count,
         })
     }
 
@@ -345,20 +270,64 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let value: u8 = serde::de::Deserialize::deserialize(&mut *self)?;
-        match value {
-            0 => visitor.visit_none(),
-            1 => visitor.visit_some(&mut *self),
-            v => Err(Error::InvalidTagEncoding(v, self.pos)),
-        }
+        Err(Error::DeserializeOptionNotSupported(self.pos))
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = serde::Deserialize::deserialize(&mut *self)?;
-        self.deserialize_tuple(len, visitor)
+        struct Access<'a> {
+            deserializer: &'a mut Deserializer,
+            count: usize,
+            next_offset: u16,
+            old_pos: usize,
+        }
+
+        impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
+            type Error = Error;
+
+            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+            where
+                T: serde::de::DeserializeSeed<'de>,
+            {
+                if self.count > 0 {
+                    self.count -= 1;
+
+                    // The array is a linked list
+                    self.deserializer.pos = (self.next_offset - 4u16) as usize;
+
+                    let this_offset: u16 =
+                        serde::Deserialize::deserialize(&mut *self.deserializer)?;
+                    if this_offset != self.next_offset {
+                        return Err(Error::InvalidSeqEntry((this_offset - 4u16) as usize));
+                    }
+                    self.next_offset = serde::Deserialize::deserialize(&mut *self.deserializer)?;
+                    let value =
+                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    Ok(Some(value))
+                } else {
+                    // Return to the end of the array header
+                    self.deserializer.pos = self.old_pos;
+                    Ok(None)
+                }
+            }
+
+            fn size_hint(&self) -> Option<usize> {
+                Some(self.count)
+            }
+        }
+
+        let count: u16 = serde::Deserialize::deserialize(&mut *self)?;
+        let next_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
+        let old_pos = self.pos.clone();
+
+        visitor.visit_seq(Access {
+            deserializer: self,
+            count: count as usize,
+            next_offset: next_offset,
+            old_pos: old_pos,
+        })
     }
 
     fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
@@ -460,7 +429,6 @@ fn test_primitive_struct() {
         d: f64,
     }
 
-    // This protocol is LE!
     let data = vec![
         0x12, 0xf3, 0xCD, 0xCC, 0x0C, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
     ];
@@ -473,8 +441,6 @@ fn test_primitive_struct() {
 
     assert_eq!(expected, from_vec(data).unwrap());
 }
-
-// TODO: Test more actual messages
 
 #[test]
 fn test_c_get_user_guild_logo() {
@@ -490,5 +456,70 @@ fn test_c_get_user_guild_logo() {
         guildid: 3701,
     };
 
+    assert_eq!(expected, from_vec(data).unwrap());
+}
+
+#[test]
+fn test_s_account_package_list() {
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct AccountBenefits {
+        package_id: u32,
+        expiration_date: i64,
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct AcountPackageList {
+        account_benefits: Vec<AccountBenefits>,
+    }
+
+    let data = vec![
+        0x1, 0x0, 0x8, 0x0, 0x8, 0x0, 0x0, 0x0, 0xb2, 0x1, 0x0, 0x0, 0xff, 0xff, 0xff, 0x7f, 0x0,
+        0x0, 0x0, 0x0,
+    ];
+    let expected = AcountPackageList {
+        account_benefits: vec![AccountBenefits {
+            package_id: 434,
+            expiration_date: 2147483647,
+        }],
+    };
+
+    assert_eq!(expected, from_vec(data).unwrap());
+}
+
+#[test]
+fn test_s_item_custom_string() {
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct ItemCustomString {
+        custom_strings: Vec<CustomStrings>,
+        game_id: u64,
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct CustomStrings {
+        string: String,
+        db_id: u64,
+    }
+
+    let mut data = vec![
+        0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
+    ];
+    let mut expected = ItemCustomString {
+        custom_strings: Vec::with_capacity(0),
+        game_id: 144255925566078737,
+    };
+    assert_eq!(expected, from_vec(data).unwrap());
+
+    data = vec![
+        0x1, 0x0, 0x10, 0x0, 0x4f, 0x3, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0, 0x1a,
+        0x0, 0x61, 0xb6, 0x2, 0x0, 0x50, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0, 0x75,
+        0x0, 0x0, 0x0,
+    ];
+    expected = ItemCustomString {
+        custom_strings: vec![CustomStrings {
+            string: "Pantsu".to_string(),
+            db_id: 763477683208192,
+        }],
+        game_id: 144255925566078737,
+    };
     assert_eq!(expected, from_vec(data).unwrap());
 }
