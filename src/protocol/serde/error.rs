@@ -14,6 +14,9 @@ pub enum Error {
     #[error("DeserializeAnyNotSupported. Pos: {0}")]
     DeserializeAnyNotSupported(usize),
 
+    #[error("DeserializeBytesNotSupported. Pos: {0}")]
+    DeserializeBytesNotSupported(usize),
+
     #[error("InvalidBoolEncoding. Val: {0} Pos: {1}")]
     InvalidBoolEncoding(u8, usize),
 
@@ -43,6 +46,9 @@ pub enum Error {
 
     #[error("DeserializeIgnoredAnyNotSupported. Pos: {0}")]
     DeserializeIgnoredAnyNotSupported(usize),
+
+    #[error("offset outside of data. Pos: {0} Offset: {1}")]
+    OffsetOutsideData(usize, usize),
 
     #[error("BytesTooBig. Pos: {0}")]
     BytesTooBig(usize),

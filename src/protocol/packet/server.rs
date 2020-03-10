@@ -1,18 +1,18 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct SAccountPackageList {
+pub struct SAccountPackageList {
     account_benefits: Vec<SAccountPackageListEntry>,
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct SAccountPackageListEntry {
+pub struct SAccountPackageListEntry {
     package_id: u32,
     expiration_date: i64,
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct SGuildName {
+pub struct SGuildName {
     guild_name: String,
     guild_rank: String,
     guild_title: String,
@@ -21,13 +21,21 @@ struct SGuildName {
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct SItemCustomString {
+pub struct SImageData {
+    name: String,
+
+    #[serde(with = "serde_bytes")]
+    data: Vec<u8>,
+}
+
+#[derive(Deserialize, PartialEq, Debug)]
+pub struct SItemCustomString {
     custom_strings: Vec<SItemCustomStringEntry>,
     game_id: u64,
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct SItemCustomStringEntry {
+pub struct SItemCustomStringEntry {
     id: u32,
     string: String,
 }
@@ -97,6 +105,24 @@ mod tests {
             guild_title: "Gantsu~".to_string(),
             guild_logo: "guildlogo_99_1111_91".to_string(),
             game_id: 216313519606268719,
+        };
+
+        assert_eq!(expected, from_vec(data).unwrap());
+    }
+
+    #[test]
+    fn test_s_image_data() {
+        let data = vec![
+            0xa, 0x0, 0x36, 0x0, 0xe, 0x00, 0x67, 0x0, 0x75, 0x0, 0x69, 0x0, 0x6c, 0x0, 0x64, 0x0,
+            0x6c, 0x0, 0x6f, 0x0, 0x67, 0x0, 0x6f, 0x0, 0x5f, 0x0, 0x32, 0x0, 0x38, 0x0, 0x5f, 0x0,
+            0x35, 0x0, 0x35, 0x0, 0x35, 0x0, 0x31, 0x0, 0x39, 0x0, 0x5f, 0x0, 0x36, 0x0, 0x30, 0x0,
+            0x0, 0x0, 0x54, 0x45, 0x52, 0x41, 0x1, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
+        ];
+        let expected = SImageData {
+            name: "guildlogo_28_55519_60".to_string(),
+            data: vec![
+                0x54, 0x45, 0x52, 0x41, 0x1, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
+            ],
         };
 
         assert_eq!(expected, from_vec(data).unwrap());

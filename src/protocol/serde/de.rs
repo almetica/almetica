@@ -131,7 +131,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         Err(Error::DeserializeCharNotSupported(self.pos))
     }
 
-    // TODO refactor me
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
@@ -141,44 +140,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         self.pos += 2;
 
         if abs_pos >= self.data.len() {
-            // TODO custom error
-            return Err(Error::BytesTooBig(self.pos));
-        }
-
-        for i in (abs_pos..self.data.len()).step_by(2) {
-            // Look for null terminator
-            if self.data[i] == 0 && self.data[i + 1] == 0 {
-                let mut aligned = vec![0u16; (i - abs_pos) / 2];
-                for j in 0..aligned.len() {
-                    aligned[j] =
-                        LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
-                }
-                let mut utf8 = vec![0u8; aligned.len() * 3];
-                let size = ucs2::decode(&aligned, &mut utf8).unwrap();
-                let s: &str;
-
-                unsafe {
-                    s = str::from_utf8_unchecked(&utf8[..size]);
-                }
-
-                return visitor.visit_str(s);
-            }
-        }
-        Err(Error::StringNotNullTerminated(self.pos))
-    }
-
-    // TODO refactor me
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let abs_pos = self.abs_offset(tmp_offset as usize, self.depth);
-        self.pos += 2;
-
-        if abs_pos >= self.data.len() {
-            // TODO custom error
-            return Err(Error::BytesTooBig(self.pos));
+            return Err(Error::OffsetOutsideData(self.pos, abs_pos));
         }
 
         for i in (abs_pos..self.data.len()).step_by(2) {
@@ -203,36 +165,30 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         Err(Error::StringNotNullTerminated(self.pos))
     }
 
-    // TODO refactor me
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        self.pos += 2;
-
-        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let abs_offset = self.abs_offset(tmp_offset as usize, self.depth);
-        self.pos += 2;
-
-        if (abs_offset + len as usize) > self.data.len() {
-            return Err(Error::BytesTooBig(self.pos));
-        };
-
-        let b = &self.data[abs_offset..abs_offset + len as usize];
-        visitor.visit_bytes(b)
+        return self.deserialize_str(visitor);
     }
 
-    // TODO refactor me
+    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        // Use byte_buf. Could be usefull for arrays though.
+        Err(Error::DeserializeBytesNotSupported(self.pos))
+    }
+
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        self.pos += 2;
-
         let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
         let abs_offset = self.abs_offset(tmp_offset as usize, self.depth);
+        self.pos += 2;
+
+        let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
         self.pos += 2;
 
         if (abs_offset + len as usize) > self.data.len() {
@@ -339,8 +295,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
 
                     // The array is a linked list
                     if self.next_offset >= self.data_len {
-                        // TODO make own error type
-                        return Err(Error::InvalidSeqEntry(self.next_offset));
+                        return Err(Error::OffsetOutsideData(self.deserializer.pos, self.next_offset));
                     }
                     self.deserializer.pos = self.next_offset;
 
@@ -488,12 +443,11 @@ impl<'de, 'a> serde::de::VariantAccess<'de> for &'a mut Deserializer {
     }
 }
 
+// The serializer and deserializer are tested in the packet definition with real world data.
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde::Deserialize;
-
-    // The serializer and deserializer are tested in the packet definition with real world data.
 
     #[test]
     fn test_primitive_struct() {
@@ -516,5 +470,5 @@ mod tests {
         };
 
         assert_eq!(expected, from_vec(data).unwrap());
-    }
+    } 
 }

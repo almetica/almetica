@@ -9,3 +9,4 @@ Cargo.lock
 *.raw
 config.yaml
 *.log
+.idea

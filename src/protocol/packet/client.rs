@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, PartialEq, Debug)]
-struct CGetUserGuildLogo {
+pub struct CGetUserGuildLogo {
     player_id: i32,
     guild_id: i32,
 }

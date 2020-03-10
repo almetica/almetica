@@ -1,0 +1,120 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'almetica'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "almetica",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'almetica-parse-stream'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=almetica-parse-stream",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "almetica-parse-stream",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'almetica-parse-stream'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=almetica-parse-stream",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "almetica-parse-stream",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'almetica-server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=almetica-server",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "almetica-server",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'almetica-server'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=almetica-server",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "almetica-server",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug benchmark 'crypt'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bench=crypt",
+                    "--package=almetica"
+                ],
+                "filter": {
+                    "name": "crypt",
+                    "kind": "bench"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
