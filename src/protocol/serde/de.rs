@@ -10,6 +10,7 @@ use serde::{self, Deserialize};
 pub struct Deserializer {
     data: Vec<u8>,
     pos: usize,
+    depth: usize,
 }
 
 /// Parses the given `Vec<u8>`
@@ -26,7 +27,26 @@ where
 impl<'de> Deserializer {
     /// Creates a new Deserializer with a given `Vec<u8>`.
     pub fn from_vec(r: Vec<u8>) -> Self {
-        Deserializer { data: r, pos: 0 }
+        Deserializer {
+            data: r,
+            pos: 0,
+            depth: 0,
+        }
+    }
+
+    fn abs_offset(&self, offset: usize, depth: usize) -> usize {
+        // Depth 0, the header is absolute.
+        if depth == 0 {
+            // The array we have doesn't include the leading opcode / length u16, so -4 bytes
+            if offset == 0 {
+                offset
+            } else {
+                offset - 4
+            }
+        } else {
+            // Everything deeper (inside an array) is relative
+            self.pos + offset
+        }
     }
 }
 
@@ -103,9 +123,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_unit()
     }
 
-    // TODO: Maybe we shouldn't support this at all!
     #[inline]
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -117,16 +136,22 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let rel_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        let abs_offset = self.pos - 2 + rel_offset as usize;
-        for i in (abs_offset..self.data.len()).step_by(2) {
+        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        let abs_pos = self.abs_offset(tmp_offset as usize, self.depth);
+        self.pos += 2;
+
+        if abs_pos >= self.data.len() {
+            // TODO custom error
+            return Err(Error::BytesTooBig(self.pos));
+        }
+
+        for i in (abs_pos..self.data.len()).step_by(2) {
             // Look for null terminator
             if self.data[i] == 0 && self.data[i + 1] == 0 {
-                let mut aligned = vec![0u16; i / 2];
+                let mut aligned = vec![0u16; (i - abs_pos) / 2];
                 for j in 0..aligned.len() {
-                    aligned[i] = LittleEndian::read_u16(
-                        &self.data[abs_offset + j..abs_offset as usize + j + 2],
-                    );
+                    aligned[j] =
+                        LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
@@ -147,18 +172,22 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        // TODO Is this actually the absolute value?
-        let rel_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        let abs_offset = self.pos - 2 + rel_offset as usize;
-        println!("abs_offset = {}", abs_offset);
-        for i in (abs_offset..self.data.len()).step_by(2) {
+        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        let abs_pos = self.abs_offset(tmp_offset as usize, self.depth);
+        self.pos += 2;
+
+        if abs_pos >= self.data.len() {
+            // TODO custom error
+            return Err(Error::BytesTooBig(self.pos));
+        }
+
+        for i in (abs_pos..self.data.len()).step_by(2) {
             // Look for null terminator
             if self.data[i] == 0 && self.data[i + 1] == 0 {
-                let mut aligned = vec![0u16; i / 2];
+                let mut aligned = vec![0u16; (i - abs_pos) / 2];
                 for j in 0..aligned.len() {
-                    aligned[i] = LittleEndian::read_u16(
-                        &self.data[abs_offset + j..abs_offset as usize + j + 2],
-                    );
+                    aligned[j] =
+                        LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
@@ -179,12 +208,19 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let len: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        if (self.pos as u16 - 4 + len + offset) as usize > self.data.len() {
+        let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        self.pos += 2;
+
+        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        let abs_offset = self.abs_offset(tmp_offset as usize, self.depth);
+        self.pos += 2;
+
+        if (abs_offset + len as usize) > self.data.len() {
             return Err(Error::BytesTooBig(self.pos));
         };
-        visitor.visit_bytes(&self.data[(offset - 4) as usize..(offset - 4 + len) as usize])
+
+        let b = &self.data[abs_offset..abs_offset + len as usize];
+        visitor.visit_bytes(b)
     }
 
     // TODO refactor me
@@ -192,13 +228,19 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        let len: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        let offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        if (self.pos as u16 - 4 + len + offset) as usize > self.data.len() {
+        let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        self.pos += 2;
+
+        let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        let abs_offset = self.abs_offset(tmp_offset as usize, self.depth);
+        self.pos += 2;
+
+        if (abs_offset + len as usize) > self.data.len() {
             return Err(Error::BytesTooBig(self.pos));
         };
-        let s = &self.data[(offset - 4) as usize..((offset - 4) + len) as usize];
-        visitor.visit_byte_buf(s.to_vec())
+
+        let b = &self.data[abs_offset..abs_offset + len as usize];
+        visitor.visit_byte_buf(b.to_vec())
     }
 
     fn deserialize_enum<V>(
@@ -228,7 +270,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_enum(self)
     }
 
-    // TODO Test me! This is also used for structs and vecs!
     fn deserialize_tuple<V>(self, count: usize, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
@@ -266,7 +307,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         })
     }
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -280,8 +321,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         struct Access<'a> {
             deserializer: &'a mut Deserializer,
             count: usize,
-            next_offset: u16,
+            data_len: usize,
+            next_offset: usize,
             old_pos: usize,
+            depth: usize,
         }
 
         impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
@@ -295,20 +338,36 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     self.count -= 1;
 
                     // The array is a linked list
-                    self.deserializer.pos = (self.next_offset - 4u16) as usize;
-
-                    let this_offset: u16 =
-                        serde::Deserialize::deserialize(&mut *self.deserializer)?;
-                    if this_offset != self.next_offset {
-                        return Err(Error::InvalidSeqEntry((this_offset - 4u16) as usize));
+                    if self.next_offset >= self.data_len {
+                        // TODO make own error type
+                        return Err(Error::InvalidSeqEntry(self.next_offset));
                     }
-                    self.next_offset = serde::Deserialize::deserialize(&mut *self.deserializer)?;
+                    self.deserializer.pos = self.next_offset;
+
+                    let tmp_offset: usize = LittleEndian::read_u16(
+                        &self.deserializer.data[self.deserializer.pos..self.deserializer.pos + 2],
+                    ) as usize;
+                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset, self.depth);
+                    self.deserializer.pos += 2;
+
+                    if abs_offset != self.next_offset {
+                        return Err(Error::InvalidSeqEntry(abs_offset));
+                    }
+
+                    let tmp_offset: usize = LittleEndian::read_u16(
+                        &self.deserializer.data[self.deserializer.pos..self.deserializer.pos + 2],
+                    ) as usize;
+                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset, self.depth);
+                    self.next_offset = abs_offset;
+                    self.deserializer.pos += 2;
+
                     let value =
                         serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
                 } else {
                     // Return to the end of the array header
                     self.deserializer.pos = self.old_pos;
+                    self.deserializer.depth -= 1;
                     Ok(None)
                 }
             }
@@ -318,15 +377,25 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             }
         }
 
-        let count: u16 = serde::Deserialize::deserialize(&mut *self)?;
-        let next_offset: u16 = serde::Deserialize::deserialize(&mut *self)?;
+        let count: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        self.pos += 2;
+        let tmp_offset: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
+        let abs_offset: usize = self.abs_offset(tmp_offset, self.depth);
+        self.pos += 2;
+
         let old_pos = self.pos.clone();
+        let current_depth = self.depth.clone();
+        let data_len = self.data.len();
+
+        self.depth += 1;
 
         visitor.visit_seq(Access {
             deserializer: self,
-            count: count as usize,
-            next_offset: next_offset,
+            count: count,
+            data_len: data_len,
+            next_offset: abs_offset,
             old_pos: old_pos,
+            depth: current_depth,
         })
     }
 
@@ -419,107 +488,33 @@ impl<'de, 'a> serde::de::VariantAccess<'de> for &'a mut Deserializer {
     }
 }
 
-#[test]
-fn test_primitive_struct() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct Test {
-        a: u8,
-        b: i8,
-        c: f32,
-        d: f64,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    // The serializer and deserializer are tested in the packet definition with real world data.
+
+    #[test]
+    fn test_primitive_struct() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct SimpleStruct {
+            a: u8,
+            b: i8,
+            c: f32,
+            d: f64,
+        }
+
+        let data = vec![
+            0x12, 0xf3, 0xCD, 0xCC, 0x0C, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+        ];
+        let expected = SimpleStruct {
+            a: 18,
+            b: -13,
+            c: 2.2,
+            d: 1.0,
+        };
+
+        assert_eq!(expected, from_vec(data).unwrap());
     }
-
-    let data = vec![
-        0x12, 0xf3, 0xCD, 0xCC, 0x0C, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
-    ];
-    let expected = Test {
-        a: 18,
-        b: -13,
-        c: 2.2,
-        d: 1.0,
-    };
-
-    assert_eq!(expected, from_vec(data).unwrap());
-}
-
-#[test]
-fn test_c_get_user_guild_logo() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct Test {
-        playerid: i32,
-        guildid: i32,
-    }
-
-    let data = vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0];
-    let expected = Test {
-        playerid: 20000513,
-        guildid: 3701,
-    };
-
-    assert_eq!(expected, from_vec(data).unwrap());
-}
-
-#[test]
-fn test_s_account_package_list() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct AccountBenefits {
-        package_id: u32,
-        expiration_date: i64,
-    }
-
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct AcountPackageList {
-        account_benefits: Vec<AccountBenefits>,
-    }
-
-    let data = vec![
-        0x1, 0x0, 0x8, 0x0, 0x8, 0x0, 0x0, 0x0, 0xb2, 0x1, 0x0, 0x0, 0xff, 0xff, 0xff, 0x7f, 0x0,
-        0x0, 0x0, 0x0,
-    ];
-    let expected = AcountPackageList {
-        account_benefits: vec![AccountBenefits {
-            package_id: 434,
-            expiration_date: 2147483647,
-        }],
-    };
-
-    assert_eq!(expected, from_vec(data).unwrap());
-}
-
-#[test]
-fn test_s_item_custom_string() {
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct ItemCustomString {
-        custom_strings: Vec<CustomStrings>,
-        game_id: u64,
-    }
-
-    #[derive(Deserialize, PartialEq, Debug)]
-    struct CustomStrings {
-        string: String,
-        db_id: u64,
-    }
-
-    let mut data = vec![
-        0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
-    ];
-    let mut expected = ItemCustomString {
-        custom_strings: Vec::with_capacity(0),
-        game_id: 144255925566078737,
-    };
-    assert_eq!(expected, from_vec(data).unwrap());
-
-    data = vec![
-        0x1, 0x0, 0x10, 0x0, 0x4f, 0x3, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0, 0x1a,
-        0x0, 0x61, 0xb6, 0x2, 0x0, 0x50, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0, 0x75,
-        0x0, 0x0, 0x0,
-    ];
-    expected = ItemCustomString {
-        custom_strings: vec![CustomStrings {
-            string: "Pantsu".to_string(),
-            db_id: 763477683208192,
-        }],
-        game_id: 144255925566078737,
-    };
-    assert_eq!(expected, from_vec(data).unwrap());
 }
