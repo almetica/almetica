@@ -1,17 +1,17 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageList {
     account_benefits: Vec<SAccountPackageListEntry>,
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageListEntry {
     package_id: u32,
     expiration_date: i64,
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SGuildName {
     guild_name: String,
     guild_rank: String,
@@ -20,7 +20,7 @@ pub struct SGuildName {
     game_id: u64,
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SImageData {
     name: String,
 
@@ -28,13 +28,13 @@ pub struct SImageData {
     data: Vec<u8>,
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SItemCustomString {
     custom_strings: Vec<SItemCustomStringEntry>,
     game_id: u64,
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SItemCustomStringEntry {
     id: u32,
     string: String,
@@ -42,15 +42,16 @@ pub struct SItemCustomStringEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::serde::from_vec;
+    use super::super::super::serde::{from_vec, to_vec};
     use super::*;
 
     #[test]
     fn test_s_account_package_list() {
-        let data = vec![
+        let org = vec![
             0x1, 0x0, 0x8, 0x0, 0x8, 0x0, 0x0, 0x0, 0xb2, 0x1, 0x0, 0x0, 0xff, 0xff, 0xff, 0x7f,
             0x0, 0x0, 0x0, 0x0,
         ];
+        let data = org.clone();
         let expected = SAccountPackageList {
             account_benefits: vec![SAccountPackageListEntry {
                 package_id: 434,
@@ -59,24 +60,29 @@ mod tests {
         };
 
         assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(org, to_vec(expected).unwrap());
     }
 
     #[test]
     fn test_s_item_custom_string() {
-        let mut data = vec![
+        let mut org = vec![
             0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
         ];
+        let mut data = org.clone();
         let mut expected = SItemCustomString {
             custom_strings: Vec::with_capacity(0),
             game_id: 144255925566078737,
         };
-        assert_eq!(expected, from_vec(data).unwrap());
 
-        data = vec![
+        assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(org, to_vec(expected).unwrap());
+
+        org = vec![
             0x1, 0x0, 0x10, 0x0, 0x3f, 0x3, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0,
             0x1c, 0x0, 0xff, 0xb6, 0x2, 0x0, 0x47, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0,
             0x75, 0x0, 0x0, 0x0,
         ];
+        let mut data = org.clone();
         expected = SItemCustomString {
             custom_strings: vec![SItemCustomStringEntry {
                 id: 3070165020,
@@ -84,12 +90,14 @@ mod tests {
             }],
             game_id: 216313519603974975,
         };
+
         assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(org, to_vec(expected).unwrap());
     }
 
     #[test]
     fn test_s_guild_name() {
-        let data = vec![
+        let org = vec![
             0x14, 0x0, 0x2e, 0x0, 0x48, 0x0, 0x58, 0x0, 0x2f, 0x3, 0x3f, 0x0, 0x0, 0x80, 0x0, 0x3,
             0x4d, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x68, 0x0, 0x75, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x65, 0x0,
             0x72, 0x0, 0x20, 0x0, 0x4f, 0x0, 0x47, 0x0, 0x0, 0x0, 0x46, 0x0, 0x6f, 0x0, 0x72, 0x0,
@@ -99,6 +107,7 @@ mod tests {
             0x6f, 0x0, 0x67, 0x0, 0x6f, 0x0, 0x5f, 0x0, 0x39, 0x0, 0x39, 0x0, 0x5f, 0x0, 0x31, 0x0,
             0x31, 0x0, 0x31, 0x0, 0x31, 0x0, 0x5f, 0x0, 0x39, 0x0, 0x31, 0x0, 0x0, 0x0,
         ];
+        let data = org.clone();
         let expected = SGuildName {
             guild_name: "Manhunter OG".to_string(),
             guild_rank: "For the win!".to_string(),
@@ -108,16 +117,18 @@ mod tests {
         };
 
         assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(org, to_vec(expected).unwrap());
     }
 
     #[test]
     fn test_s_image_data() {
-        let data = vec![
+        let org = vec![
             0xa, 0x0, 0x36, 0x0, 0xe, 0x00, 0x67, 0x0, 0x75, 0x0, 0x69, 0x0, 0x6c, 0x0, 0x64, 0x0,
             0x6c, 0x0, 0x6f, 0x0, 0x67, 0x0, 0x6f, 0x0, 0x5f, 0x0, 0x32, 0x0, 0x38, 0x0, 0x5f, 0x0,
             0x35, 0x0, 0x35, 0x0, 0x35, 0x0, 0x31, 0x0, 0x39, 0x0, 0x5f, 0x0, 0x36, 0x0, 0x30, 0x0,
             0x0, 0x0, 0x54, 0x45, 0x52, 0x41, 0x1, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
+        let data = org.clone();
         let expected = SImageData {
             name: "guildlogo_28_55519_60".to_string(),
             data: vec![
@@ -126,5 +137,6 @@ mod tests {
         };
 
         assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(org, to_vec(expected).unwrap());
     }
 }

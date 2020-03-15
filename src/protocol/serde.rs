@@ -5,4 +5,4 @@ mod ser;
 
 pub use de::{from_vec, Deserializer};
 pub use error::{Error, Result};
-//pub use ser::Serializer;
+pub use ser::{to_vec, Serializer};

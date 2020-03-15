@@ -50,6 +50,9 @@ pub enum Error {
     #[error("offset outside of data. Pos: {0} Offset: {1}")]
     OffsetOutsideData(usize, usize),
 
+    #[error("NotImplemented.")]
+    NotImplemented(),
+
     #[error("BytesTooBig. Pos: {0}")]
     BytesTooBig(usize),
 

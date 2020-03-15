@@ -90,7 +90,7 @@ impl GameSession {
     }
 
     /// Handles the writing / sending on the TCP stream.
-    pub fn handle_connection(stream: &mut TcpStream) {
+    pub fn handle_connection(_stream: &mut TcpStream) {
         // TODO
     }
 }
@@ -98,8 +98,6 @@ impl GameSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::task::{Context, Poll};
-    use core::pin::Pin;
     use std::default::Default;
     use std::io::{Error, ErrorKind, Read, Write};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -109,7 +107,7 @@ mod tests {
         // Mocked TCP stream. Implementaion below.
         let mut stream = StreamMock::default();
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        GameSession::new(&mut stream, addr);
+        GameSession::new(&mut stream, addr).unwrap();
 
         assert_eq!(4, stream.state);
     }
