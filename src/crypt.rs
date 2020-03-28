@@ -1,6 +1,6 @@
-/// Module that implements the cryptography used in Tera.
+/// Module that implements the cryptography used in TERA.
 ///
-/// The stream cipher used by Tera is an implementation of the Pike streamcipher
+/// The stream cipher used by TERA is an implementation of the Pike streamcipher
 /// as proposed by Ross Anderson in this paper:
 ///     https://www.cl.cam.ac.uk/~rja14/Papers/fibonacci.pdf
 ///

@@ -1,4 +1,4 @@
-/// Custom serde de/serializer for the Tera network protocol.
+/// Custom serde de/serializer for the TERA network protocol.
 mod de;
 mod error;
 mod ser;

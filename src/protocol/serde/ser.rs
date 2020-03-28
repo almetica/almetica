@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use super::{Error, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use serde::{ser, Serialize};
-use super::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct Serializer {
@@ -12,41 +12,126 @@ pub struct Serializer {
 
 #[derive(Debug, Clone)]
 struct DataNode {
+    node_type: DataNodeType,
     parent: usize,
     childs: Vec<usize>,
+    element_offsets: Vec<usize>,
     data: Vec<u8>,
     parent_offset: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum DataNodeType {
+    Root,
+    Array,
+    Bytes,
+    String,
+}
+
 impl Serializer {
+    /// Calculates the length to use for offset calculations (only offsets of depth 0 are absolute)
+    fn calculate_length(&self, depth: usize, node_length: usize, parent_length: usize) -> usize {
+        if depth == 0 {
+            node_length + parent_length
+        } else {
+            node_length
+        }
+    }
 
-    // Recursively assemble to data nodes into one packet
-    fn assemble_node(&mut self, num_node: usize) -> Vec<u8> {
+    /// Recursively assemble to data nodes into one packet
+    fn assemble_node(&mut self, num_node: usize, depth: usize, parent_length: usize) -> Vec<u8> {
         let mut node = self.nodes.remove(&num_node).unwrap();
+
+        // Write all child offsets inside the current node
         for child_num in node.childs.iter() {
-            
-            // Write data offset in proper parent data location
-            let child = self.nodes.get(child_num).unwrap();
-            let num = node.data.len();
-            LittleEndian::write_u16(&mut node.data[child.parent_offset..child.parent_offset+2], (num + 4) as u16);
+            let current_length = self.calculate_length(depth, node.data.len(), parent_length);
+            let child = self.nodes.get(child_num).unwrap().clone();
 
-            // TODO do we write the second offset in an array?
+            match child.node_type {
+                DataNodeType::Array => {
+                    let mut child_data = self.assemble_node(*child_num, depth + 1, current_length);
+                    // Count
+                    let count = child.element_offsets.len();
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset..child.parent_offset + 2],
+                        count as u16,
+                    );
+                    // First element offset
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                        current_length as u16,
+                    );
+                    node.data.append(&mut child_data);
+                }
+                DataNodeType::Bytes => {
+                    let mut child_data = self.assemble_node(*child_num, depth, current_length);
+                    // Offset
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset..child.parent_offset + 2],
+                        current_length as u16,
+                    );
+                    // Data length
+                    let data_length = child_data.len();
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                        data_length as u16,
+                    );
+                    node.data.append(&mut child_data);
+                }
+                DataNodeType::String => {
+                    let mut child_data = self.assemble_node(*child_num, depth, current_length);
+                    // Offset
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset..child.parent_offset + 2],
+                        current_length as u16,
+                    );
+                    node.data.append(&mut child_data);
+                }
+                DataNodeType::Root => {
+                    panic!("Found root data node in child, this should not happen!");
+                }
+            }
 
-            let mut child_data = self.assemble_node(*child_num);
-            node.data.append(&mut child_data);
+            // Write all elements offsets of a child (linked list elements)
+            let count = child.element_offsets.len();
+            for i in 0..count {
+                // Current element offset
+                let current_element_offset = child.element_offsets.get(i).unwrap();
+                let offset = current_element_offset + current_length;
+                LittleEndian::write_u16(
+                    &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                    offset as u16,
+                );
+                // Next element offset
+                if i + 1 < count {
+                    let next_element_offset = child.element_offsets.get(i).unwrap();
+                    let offset = next_element_offset + current_length;
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                        offset as u16,
+                    );
+                } else {
+                    LittleEndian::write_u16(
+                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                        0x0 as u16,
+                    );
+                }
+            }
         }
         node.data
     }
 }
 
-/// Serializes the given structure into a `Vec<u8>` byte stream for the Tera network protocol.
+/// Serializes the given structure into a `Vec<u8>` byte stream for the TERA network protocol.
 pub fn to_vec<T>(value: T) -> Result<Vec<u8>>
 where
     T: Serialize,
 {
     let root_node = DataNode {
+        node_type: DataNodeType::Root,
         parent: 0,
         childs: Vec::with_capacity(0),
+        element_offsets: Vec::with_capacity(0),
         // TODO benchmark me
         data: Vec::with_capacity(4096),
         parent_offset: 0,
@@ -57,11 +142,10 @@ where
         nodes: HashMap::new(),
     };
     serializer.nodes.insert(0, root_node);
-    
     value.serialize(&mut serializer)?;
 
     // Recursively assemble the data
-    Ok(serializer.assemble_node(0))
+    Ok(serializer.assemble_node(0, 0, 4)) // 4 bytes packet header
 }
 
 macro_rules! impl_nums {
@@ -92,20 +176,32 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_bool(self, v: bool) -> Result<()> {
-        let val: u8 = if v { 0x1 } else { 0x0 };
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(val);
+    fn serialize_bool(self, value: bool) -> Result<()> {
+        let val: u8 = if value { 0x1 } else { 0x0 };
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(val);
         Ok(())
     }
 
-    fn serialize_u8(self, v: u8) -> Result<()> {
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(v);
+    fn serialize_u8(self, value: u8) -> Result<()> {
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(value);
         Ok(())
     }
 
-    fn serialize_i8(self, v: i8) -> Result<()> {
+    fn serialize_i8(self, value: i8) -> Result<()> {
         // TODO test me
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(v as u8);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(value as u8);
         Ok(())
     }
 
@@ -118,23 +214,22 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     impl_nums!(f32, serialize_f32, write_f32, 4);
     impl_nums!(f64, serialize_f64, write_f64, 8);
 
-    fn serialize_char(self, _v: char) -> Result<()> {
+    fn serialize_char(self, _value: char) -> Result<()> {
         Err(Error::NotImplemented())
     }
 
-    fn serialize_str(self, v: &str) -> Result<()> {
-        // The beauty of Rust... HashMap are missing the IndexMut trait...
+    fn serialize_str(self, value: &str) -> Result<()> {
         let num_node = self.nodes.len();
         let nodes = &mut self.nodes;
 
-        let parent_node = nodes.get_mut(&self.current_node).unwrap(); 
+        let parent_node = nodes.get_mut(&self.current_node).unwrap();
         parent_node.childs.push(num_node);
 
         let parent_data = parent_node.data.as_mut_slice();
 
         // Convert UTF-8 to UCS2
-        let mut aligned = vec![0; v.len() * 3];
-        let len = ucs2::encode(v, aligned.as_mut_slice()).unwrap();
+        let mut aligned = vec![0; value.len() * 3];
+        let len = ucs2::encode(value, aligned.as_mut_slice()).unwrap();
         let mut buffer = vec![0; len * 2];
         LittleEndian::write_u16_into(&aligned[..len], &mut buffer);
         // End with null termination
@@ -143,9 +238,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
         // Add new data node, link parent and register as child in parent.
         let mut new_node = DataNode {
+            node_type: DataNodeType::String,
             parent: self.current_node,
             childs: Vec::new(),
-            data: Vec::with_capacity(len+2), // +2 = null termination
+            element_offsets: Vec::with_capacity(0),
+            data: Vec::with_capacity(len + 2), // +2 = null termination
             parent_offset: parent_data.len(),
         };
 
@@ -159,7 +256,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_bytes(self, _value: &[u8]) -> Result<()> {
+    fn serialize_bytes(self, value: &[u8]) -> Result<()> {
         // Save current pos in stream as ABS_POS
         // Write offset as dummy and number of bytes
         // Add new data node and link parent and register as child in parent.
@@ -191,11 +288,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<()>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -250,11 +343,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Err(Error::NotImplemented())
     }
 
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct> {
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
         Ok(self)
     }
 

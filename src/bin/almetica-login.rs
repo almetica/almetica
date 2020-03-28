@@ -36,11 +36,11 @@ async fn main() {
         .and(warp::path("server"))
         .map(|| r###"<serverlist>
 <server>
-<id>1</id>
+<id>4001</id>
 <ip>127.0.0.1</ip>
 <port>10001</port>
 <category sort="1">Almetica</category>
-<name raw_name="Almetica"> Almetica </name>
+<name raw_name="Almetica">Almetica</name>
 <crowdness sort="1">None</crowdness>
 <open sort="1">Recommended</open>
 <permission_mask>0x00000000</permission_mask>
@@ -58,19 +58,19 @@ async fn main() {
         .map(|simple_map: HashMap<String, String>| {
             // TODO proper auth handling
             let resp = AuthResponse {
-                last_connected_server_id: 1,
+                last_connected_server_id: 4001,
                 chars_per_server: vec![ServerCharactersInfo {
-                    id: 1,
+                    id: 4001,
                     char_count: 1,
                 }],
-                account_bits: "0x00000000".to_string(),
+                account_bits: "0x041F000D".to_string(),
                 result_message: "OK".to_string(),
                 result_code: 200,
                 access_level: 1,
                 user_permission: 0,
                 game_account_name: "TERA".to_string(),
                 master_account_name: "Almetica".to_string(),
-                ticket: "XXXXXXXXXXXXXXXXXX".to_string(),
+                ticket: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string(),
             };
 
             warp::reply::json(&resp)

@@ -1,4 +1,4 @@
-/// Module that implements the network protocol used by Tera.
+/// Module that implements the network protocol used by TERA.
 pub mod opcode;
 pub mod packet;
 pub mod serde;

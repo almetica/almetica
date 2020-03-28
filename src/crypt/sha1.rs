@@ -1,4 +1,4 @@
-/// Module that implements the SHA1 variant used in Tera.
+/// Module that implements the SHA1 variant used in TERA.
 ///
 /// TERA's SHA1 implementation is close to the original SHA1 algorithm, but with two differences: expanded values
 /// aren't rotated and the output u32 words are little-endian.

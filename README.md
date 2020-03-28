@@ -1,17 +1,17 @@
 # Almetica
 
-This is a server for the MMORPG Tera written in rust.
+This is a server for the MMORPG TERA written in rust.
 
 ## FAQ
 
 ### What are your goals?
 
-Provide a server platform for Tera that gives better performance then the original
+Provide a server platform for TERA that gives better performance then the original
 server while providing the same feature set.
 
 A secondary goals are high customizability and maybe multi-instance deployments.
 
-This server should also act as a way to preserve Tera for the future.
+This server should also act as a way to preserve TERA for the future.
 
 ### Why didn't you extend already existing server projects:
 
@@ -38,7 +38,7 @@ network.
 
 It's pretty hard to trace the origin of some of the archivements. So I will just
 credit people without their specific constributions. Most of them did discover
-specific issues while reverse engineering the Tera network protocol or did some
+specific issues while reverse engineering the TERA network protocol or did some
 other kind of groundwork that this sever is based on (ordered alphabetically):
 
 alexrp, caali-hackerman, mirrawrs, meishu, P5yl0, pinkiepie
