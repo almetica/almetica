@@ -176,7 +176,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        // Use byte_buf. Could be usefull for arrays though.
+        // Use byte_buf. Could be useful for arrays though.
         Err(Error::DeserializeBytesNotSupported(self.pos))
     }
 

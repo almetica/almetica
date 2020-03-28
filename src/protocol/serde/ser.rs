@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{Error, Result};
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use serde::{ser, Serialize};
 
 #[derive(Debug, Clone)]
@@ -50,15 +50,9 @@ impl Serializer {
             match child.node_type {
                 DataNodeType::Array => {
                     let mut child_data = self.assemble_node(*child_num, depth + 1, current_length);
-                    // Count
-                    let count = child.element_offsets.len();
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset..child.parent_offset + 2],
-                        count as u16,
-                    );
                     // First element offset
                     LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                        &mut node.data[child.parent_offset..child.parent_offset + 2],
                         current_length as u16,
                     );
                     node.data.append(&mut child_data);
@@ -69,12 +63,6 @@ impl Serializer {
                     LittleEndian::write_u16(
                         &mut node.data[child.parent_offset..child.parent_offset + 2],
                         current_length as u16,
-                    );
-                    // Data length
-                    let data_length = child_data.len();
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                        data_length as u16,
                     );
                     node.data.append(&mut child_data);
                 }
@@ -224,46 +212,59 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_str(self, value: &str) -> Result<()> {
         let num_node = self.nodes.len();
         let nodes = &mut self.nodes;
-
         let parent_node = nodes.get_mut(&self.current_node).unwrap();
-        parent_node.childs.push(num_node);
-
-        let parent_data = parent_node.data.as_mut_slice();
 
         // Convert UTF-8 to UCS2
         let mut aligned = vec![0; value.len() * 3];
         let len = ucs2::encode(value, aligned.as_mut_slice()).unwrap();
         let mut buffer = vec![0; len * 2];
         LittleEndian::write_u16_into(&aligned[..len], &mut buffer);
+
         // End with null termination
-        buffer.push(0x00);
-        buffer.push(0x00);
+        buffer.write_u16::<LittleEndian>(0x0).unwrap();
 
         // Add new data node, link parent and register as child in parent.
-        let mut new_node = DataNode {
+        let new_node = DataNode {
             node_type: DataNodeType::String,
             parent: self.current_node,
             childs: Vec::new(),
             element_offsets: Vec::with_capacity(0),
-            data: Vec::with_capacity(len + 2), // +2 = null termination
-            parent_offset: parent_data.len(),
+            data: buffer,
+            parent_offset: parent_node.data.len(),
         };
+        parent_node.childs.push(num_node);
 
         // Write u16 offset as dummy in parent data buffer
-        parent_node.data.push(0xfe);
-        parent_node.data.push(0xfe);
+        parent_node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
 
-        new_node.data.append(&mut buffer.to_vec());
         self.nodes.insert(num_node, new_node);
-
         Ok(())
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<()> {
-        // Save current pos in stream as ABS_POS
-        // Write offset as dummy and number of bytes
-        // Add new data node and link parent and register as child in parent.
-        // Fill data node with the data
+        let num_node = self.nodes.len();
+        let nodes = &mut self.nodes;
+        let parent_node = nodes.get_mut(&self.current_node).unwrap();
+
+        // Add new data node, link parent and register as child in parent.
+        let new_node = DataNode {
+            node_type: DataNodeType::String,
+            parent: self.current_node,
+            childs: Vec::new(),
+            element_offsets: Vec::with_capacity(0),
+            data: value.to_owned(),
+            parent_offset: parent_node.data.len(),
+        };
+        parent_node.childs.push(num_node);
+
+        // Write u16 offset as dummy in parent data buffer
+        parent_node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
+
+        // Write u16 data length
+        let data_length = new_node.data.len() as u16;
+        parent_node.data.write_u16::<LittleEndian>(data_length).unwrap();
+
+        self.nodes.insert(num_node, new_node);
         Ok(())
     }
 
