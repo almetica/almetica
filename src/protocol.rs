@@ -98,7 +98,6 @@ impl GameSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::{Error, ErrorKind};
     use std::pin::Pin;
     use std::task::{Context, Poll};
