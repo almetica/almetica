@@ -106,7 +106,7 @@ mod tests {
     use tokio::test;
 
     // TODO get this test running again
-    #[test]
+    #[tokio::test]
     async fn test_read_gamesession_creation() -> Result<(), Error> {
         // Mocked TCP stream. Implementation below.
         let mut stream = StreamMock::default();
