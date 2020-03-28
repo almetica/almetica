@@ -59,6 +59,8 @@ impl Serializer {
                 &mut node.data[child.parent_offset..child.parent_offset + 2],
                 current_length as u16,
             );
+            let start_pos = node.data.len();
+
             let mut child_data = self.assemble_node(*child_num, next_depth, current_length);
             node.data.append(&mut child_data);
 
@@ -68,18 +70,19 @@ impl Serializer {
                 for i in 0..count {
                     // Current element offset
                     let current_element_offset = child.array_offsets.get(i).unwrap();
-                    let offset = current_element_offset + current_length;
+                    let offset_value = current_element_offset + current_length;
+                    let offset_position = current_element_offset + start_pos;
                     LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                        offset as u16,
+                        &mut node.data[offset_position..offset_position + 2],
+                        offset_value as u16,
                     );
                     // Next element offset
-                    if i + 1 < count {
-                        let next_element_offset = child.array_offsets.get(i).unwrap();
-                        let offset = next_element_offset + current_length;
+                    if i + 1 < count { 
+                        let next_element_offset = child.array_offsets.get(i + 1).unwrap();
+                        let offset_value = next_element_offset + current_length;
                         LittleEndian::write_u16(
-                            &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                            offset as u16,
+                            &mut node.data[offset_position + 2..offset_position + 4],
+                            offset_value as u16,
                         );
                     }
                 }
