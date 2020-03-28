@@ -8,7 +8,6 @@ use serde::{ser, Serialize};
 pub struct Serializer {
     current_node: usize,
     nodes: HashMap<usize, DataNode>,
-    array_has_elements: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -107,7 +106,6 @@ where
     let mut serializer = Serializer {
         current_node: 0,
         nodes: HashMap::new(),
-        array_has_elements: false,
     };
     serializer.nodes.insert(0, root_node);
     value.serialize(&mut serializer)?;
@@ -323,7 +321,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             // can write the elements to it.
             self.nodes.insert(num_node, new_node);
             self.current_node = self.nodes.len() - 1;
-            self.array_has_elements = true;
             Ok(self)
         } else {
             // Both count and offset are 0
@@ -395,10 +392,12 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     }
 
     fn end(self) -> Result<()> {
-        if self.array_has_elements {
+        let nodes = &mut self.nodes;
+        let node = nodes.get_mut(&self.current_node).unwrap();
+
+        if node.data.len() != 0 {
             let parent = self.nodes.get(&self.current_node).unwrap().parent;
             self.current_node = parent;
-            self.array_has_elements = false;
         }
         Ok(())
     }
