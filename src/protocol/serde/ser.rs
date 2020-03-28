@@ -133,7 +133,7 @@ where
         childs: Vec::with_capacity(0),
         element_offsets: Vec::with_capacity(0),
         // TODO benchmark me
-        data: Vec::with_capacity(4096),
+        data: Vec::with_capacity(1024),
         parent_offset: 0,
     };
 
@@ -154,7 +154,11 @@ macro_rules! impl_nums {
         fn $ser_method(self, value: $ty) -> Result<()> {
             let mut buf = vec![0; $value_size];
             LittleEndian::$writer_method(&mut buf, value);
-            self.nodes.get_mut(&self.current_node).unwrap().data.append(&mut buf);
+            self.nodes
+                .get_mut(&self.current_node)
+                .unwrap()
+                .data
+                .append(&mut buf);
             Ok(())
         }
     }
@@ -196,7 +200,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_i8(self, value: i8) -> Result<()> {
-        // TODO test me
         self.nodes
             .get_mut(&self.current_node)
             .unwrap()
@@ -476,5 +479,35 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
     fn end(self) -> Result<()> {
         Err(Error::NotImplemented())
+    }
+}
+
+// The serializer and deserializer are tested in the packet definition with real world data.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[test]
+    fn test_primitive_struct() {
+        #[derive(Serialize, PartialEq, Debug)]
+        struct SimpleStruct {
+            a: u8,
+            b: i8,
+            c: f32,
+            d: f64,
+        }
+
+        let data = SimpleStruct {
+            a: 18,
+            b: -13,
+            c: 2.2,
+            d: 1.0,
+        };
+        let expected = vec![
+            0x12, 0xf3, 0xCD, 0xCC, 0x0C, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+        ];
+
+        assert_eq!(expected, to_vec(data).unwrap());
     }
 }
