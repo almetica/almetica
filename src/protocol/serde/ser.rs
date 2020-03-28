@@ -29,12 +29,12 @@ enum DataNodeType {
 }
 
 impl Serializer {
-    /// Calculates the length to use for offset calculations (only offsets of depth 0 are absolute)
-    fn calculate_length(&self, depth: usize, node_length: usize, parent_length: usize) -> usize {
+    /// Calculates the offset value (it's either abs or relative based on the current node depth)
+    fn calculate_offset(&self, depth: usize, pos: usize, total_data_length: usize, node_data_length: usize) -> usize {
         if depth == 0 {
-            node_length + parent_length
+            total_data_length
         } else {
-            node_length
+            node_data_length - pos
         }
     }
 
@@ -44,7 +44,7 @@ impl Serializer {
 
         // Write all child offsets inside the current node
         for child_num in node.childs.iter() {
-            let current_length = self.calculate_length(depth, node.data.len(), parent_length);
+            let current_length = node.data.len() + parent_length;
             let child = self.nodes.get(child_num).unwrap().clone();
 
             // Arrays increase the depth by one
@@ -55,9 +55,10 @@ impl Serializer {
             };
 
             // Write the offset and append the child data
+            let offset = self.calculate_offset(depth, child.parent_offset, current_length, node.data.len());
             LittleEndian::write_u16(
                 &mut node.data[child.parent_offset..child.parent_offset + 2],
-                current_length as u16,
+                offset as u16,
             );
             let start_pos = node.data.len();
 
