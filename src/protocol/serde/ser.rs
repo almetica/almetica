@@ -8,6 +8,7 @@ use serde::{ser, Serialize};
 pub struct Serializer {
     current_node: usize,
     nodes: HashMap<usize, DataNode>,
+    array_has_elements: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -81,11 +82,6 @@ impl Serializer {
                             &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
                             offset as u16,
                         );
-                    } else {
-                        LittleEndian::write_u16(
-                            &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                            0x0 as u16,
-                        );
                     }
                 }
             }
@@ -104,14 +100,14 @@ where
         parent: 0,
         childs: Vec::with_capacity(0),
         array_offsets: Vec::with_capacity(0),
-        // TODO benchmark me
-        data: Vec::with_capacity(1024),
+        data: Vec::with_capacity(1024), // TODO benchmark me
         parent_offset: 0,
     };
 
     let mut serializer = Serializer {
         current_node: 0,
         nodes: HashMap::new(),
+        array_has_elements: false,
     };
     serializer.nodes.insert(0, root_node);
     value.serialize(&mut serializer)?;
@@ -296,13 +292,44 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        // TODO can we use the len here?
-        // Write down count.
-        // Safe the current ABS_POS, and safe a dummy offset.
-        // Add new data node and link parent and register as child in parent.
-        // Also safe the ABS_POS in it.
-        Ok(self)
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        // Here we only handle the header in the parent and init the new data node
+        let num_node = self.nodes.len();
+        let nodes = &mut self.nodes;
+        let parent_node = nodes.get_mut(&self.current_node).unwrap();
+
+        // Don't know why len is an optional...
+        if len != Some(0) && len != None {
+            let length = len.unwrap();
+
+            // Add new data node, link parent and register as child in parent.
+            let new_node = DataNode {
+                node_type: DataNodeType::Array,
+                parent: self.current_node,
+                childs: Vec::new(),
+                array_offsets: Vec::with_capacity(0),
+                data: Vec::with_capacity(1024), // TODO benchmark me
+                parent_offset: parent_node.data.len() + 2,
+            };
+            parent_node.childs.push(num_node);
+
+            // Write u16 count in parent data buffer
+            parent_node.data.write_u16::<LittleEndian>(length as u16).unwrap();
+            
+            // Write u16 offset as dummy in parent data buffer
+            parent_node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
+
+            // Change current node to new data node so that the SerializeSeq impl
+            // can write the elements to it.
+            self.nodes.insert(num_node, new_node);
+            self.current_node = self.nodes.len() - 1;
+            self.array_has_elements = true;
+            Ok(self)
+        } else {
+            // Both count and offset are 0
+            parent_node.data.write_u32::<LittleEndian>(0x0).unwrap();
+            Ok(self)
+        }
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -354,12 +381,25 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
+        let nodes = &mut self.nodes;
+        let node = nodes.get_mut(&self.current_node).unwrap();
+
+        node.array_offsets.push(node.data.len());
+
+        // Write u16 current element offset as dummy
+        node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
+        // Write u16 next element offset as dummy
+        node.data.write_u16::<LittleEndian>(0x0).unwrap();
+
         value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        let parent = self.nodes.get(&self.current_node).unwrap().parent;
-        self.current_node = parent;
+        if self.array_has_elements {
+            let parent = self.nodes.get(&self.current_node).unwrap().parent;
+            self.current_node = parent;
+            self.array_has_elements = false;
+        }
         Ok(())
     }
 }
