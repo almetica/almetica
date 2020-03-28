@@ -63,7 +63,7 @@ async fn main() {
                     id: 4001,
                     char_count: 1,
                 }],
-                account_bits: "0x041F000D".to_string(),
+                account_bits: "0x00000000".to_string(),
                 result_message: "OK".to_string(),
                 result_code: 200,
                 access_level: 1,
