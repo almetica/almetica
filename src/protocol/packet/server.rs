@@ -42,11 +42,11 @@ pub struct SItemCustomStringEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::serde::{from_vec, to_vec};
+    use super::super::super::serde::{Error, from_vec, to_vec};
     use super::*;
 
     #[test]
-    fn test_s_account_package_list() {
+    fn test_s_account_package_list() -> Result<(), Error> {
         let org = vec![
             0x1, 0x0, 0x8, 0x0, 0x8, 0x0, 0x0, 0x0, 0xb2, 0x1, 0x0, 0x0, 0xff, 0xff, 0xff, 0x7f,
             0x0, 0x0, 0x0, 0x0,
@@ -59,12 +59,13 @@ mod tests {
             }],
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 
     #[test]
-    fn test_s_item_custom_string() {
+    fn test_s_item_custom_string() -> Result<(), Error> {
         let mut org = vec![
             0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
         ];
@@ -74,8 +75,8 @@ mod tests {
             game_id: 144255925566078737,
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
 
         org = vec![
             0x1, 0x0, 0x10, 0x0, 0x3f, 0x3, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0,
@@ -91,12 +92,13 @@ mod tests {
             game_id: 216313519603974975,
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 
     #[test]
-    fn test_s_guild_name() {
+    fn test_s_guild_name() -> Result<(), Error> {
         let org = vec![
             0x14, 0x0, 0x2e, 0x0, 0x48, 0x0, 0x58, 0x0, 0x2f, 0x3, 0x3f, 0x0, 0x0, 0x80, 0x0, 0x3,
             0x4d, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x68, 0x0, 0x75, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x65, 0x0,
@@ -116,12 +118,13 @@ mod tests {
             game_id: 216313519606268719,
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 
     #[test]
-    fn test_s_image_data() {
+    fn test_s_image_data() -> Result<(), Error> {
         let org = vec![
             0xa, 0x0, 0x36, 0x0, 0xe, 0x00, 0x67, 0x0, 0x75, 0x0, 0x69, 0x0, 0x6c, 0x0, 0x64, 0x0,
             0x6c, 0x0, 0x6f, 0x0, 0x67, 0x0, 0x6f, 0x0, 0x5f, 0x0, 0x32, 0x0, 0x38, 0x0, 0x5f, 0x0,
@@ -136,7 +139,8 @@ mod tests {
             ],
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 }

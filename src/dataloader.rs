@@ -32,23 +32,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::*;
     use super::read_opcode_table;
     use super::super::protocol::opcode::Opcode;
     use std::io::Write;
 
     #[test]
-    fn test_read_opcode_table() {
+    fn test_read_opcode_table() -> Result<()> {
         let mut file = Vec::new();
         file.write_all("
         C_UNEQUIP_ITEM: 1
         S_ANNOUNCE_MESSAGE: 5
         C_ADD_FRIEND: 2
-        ".as_bytes()).unwrap();
+        ".as_bytes())?;
 
-        let table = read_opcode_table(&mut file.as_slice()).unwrap();
+        let table = read_opcode_table(&mut file.as_slice())?;
 
         assert_eq!(table[1], Opcode::C_UNEQUIP_ITEM);
         assert_eq!(table[5], Opcode::S_ANNOUNCE_MESSAGE);
         assert_eq!(table[2], Opcode::C_ADD_FRIEND);
+        Ok(())
     }
 }

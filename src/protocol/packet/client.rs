@@ -19,11 +19,11 @@ pub struct CGetUserGuildLogo {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::serde::{from_vec, to_vec};
+    use super::super::super::serde::{Error, from_vec, to_vec};
     use super::*;
 
     #[test]
-    fn test_c_get_user_guild_logo() {
+    fn test_c_get_user_guild_logo() -> Result<(), Error> {
         let org = vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0];
         let data = org.clone();
         let expected = CGetUserGuildLogo {
@@ -31,12 +31,13 @@ mod tests {
             guild_id: 3701,
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 
     #[test]
-    fn test_c_check_version() {
+    fn test_c_check_version() -> Result<(), Error> {
         let org = vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0,
             0x14, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
@@ -55,7 +56,8 @@ mod tests {
             ],
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
-        assert_eq!(org, to_vec(expected).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        assert_eq!(org, to_vec(expected)?);
+        Ok(())
     }
 }

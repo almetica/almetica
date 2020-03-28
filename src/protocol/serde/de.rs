@@ -450,7 +450,7 @@ mod tests {
     use serde::Deserialize;
 
     #[test]
-    fn test_primitive_struct() {
+    fn test_primitive_struct() -> Result<(), Error> {
         #[derive(Deserialize, PartialEq, Debug)]
         struct SimpleStruct {
             a: u8,
@@ -469,6 +469,7 @@ mod tests {
             d: 1.0,
         };
 
-        assert_eq!(expected, from_vec(data).unwrap());
+        assert_eq!(expected, from_vec(data)?);
+        Ok(())
     } 
 }

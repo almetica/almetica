@@ -98,9 +98,6 @@ impl GameSession {
 
 #[cfg(test)]
 mod tests {
-    // TODO Enabling this will resolve the error when compiling but doesn't execute the test.
-    //#![cfg(feature = "full")]
-
     use super::*;
     use std::io::{Error, ErrorKind};
     use std::pin::Pin;
@@ -108,14 +105,16 @@ mod tests {
     use tokio::io::{AsyncRead, AsyncWrite};
     use tokio::test;
 
-    #[tokio::test]
-    async fn test_read_gamesession_creation() {
+    // TODO get this test running again
+    #[test]
+    async fn test_read_gamesession_creation() -> Result<(), Error> {
         // Mocked TCP stream. Implementation below.
         let mut stream = StreamMock::default();
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         GameSession::new(&mut stream, addr).await?;
 
         assert_eq!(4, stream.state);
+        Ok(())
     }
 
     // We need to create a mock to abstract the TCP stream.
