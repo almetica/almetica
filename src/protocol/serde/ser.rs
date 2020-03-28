@@ -15,12 +15,12 @@ struct DataNode {
     node_type: DataNodeType,
     parent: usize,
     childs: Vec<usize>,
-    element_offsets: Vec<usize>,
+    array_offsets: Vec<usize>,
     data: Vec<u8>,
     parent_offset: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum DataNodeType {
     Root,
     Array,
@@ -47,62 +47,46 @@ impl Serializer {
             let current_length = self.calculate_length(depth, node.data.len(), parent_length);
             let child = self.nodes.get(child_num).unwrap().clone();
 
-            match child.node_type {
-                DataNodeType::Array => {
-                    let mut child_data = self.assemble_node(*child_num, depth + 1, current_length);
-                    // First element offset
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset..child.parent_offset + 2],
-                        current_length as u16,
-                    );
-                    node.data.append(&mut child_data);
-                }
-                DataNodeType::Bytes => {
-                    let mut child_data = self.assemble_node(*child_num, depth, current_length);
-                    // Offset
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset..child.parent_offset + 2],
-                        current_length as u16,
-                    );
-                    node.data.append(&mut child_data);
-                }
-                DataNodeType::String => {
-                    let mut child_data = self.assemble_node(*child_num, depth, current_length);
-                    // Offset
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset..child.parent_offset + 2],
-                        current_length as u16,
-                    );
-                    node.data.append(&mut child_data);
-                }
-                DataNodeType::Root => {
-                    panic!("Found root data node in child, this should not happen!");
-                }
-            }
+            // Arrays increase the depth by one
+            let next_depth = if child.node_type == DataNodeType::Array {
+                depth + 1
+            } else {
+                depth
+            };
 
-            // Write all elements offsets of a child (linked list elements)
-            let count = child.element_offsets.len();
-            for i in 0..count {
-                // Current element offset
-                let current_element_offset = child.element_offsets.get(i).unwrap();
-                let offset = current_element_offset + current_length;
-                LittleEndian::write_u16(
-                    &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                    offset as u16,
-                );
-                // Next element offset
-                if i + 1 < count {
-                    let next_element_offset = child.element_offsets.get(i).unwrap();
-                    let offset = next_element_offset + current_length;
+            // Write the offset and append the child data
+            LittleEndian::write_u16(
+                &mut node.data[child.parent_offset..child.parent_offset + 2],
+                current_length as u16,
+            );
+            let mut child_data = self.assemble_node(*child_num, next_depth, current_length);
+            node.data.append(&mut child_data);
+
+            // Write all elements offsets of an array
+            if child.node_type == DataNodeType::Array {
+                let count = child.array_offsets.len();
+                for i in 0..count {
+                    // Current element offset
+                    let current_element_offset = child.array_offsets.get(i).unwrap();
+                    let offset = current_element_offset + current_length;
                     LittleEndian::write_u16(
                         &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
                         offset as u16,
                     );
-                } else {
-                    LittleEndian::write_u16(
-                        &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
-                        0x0 as u16,
-                    );
+                    // Next element offset
+                    if i + 1 < count {
+                        let next_element_offset = child.array_offsets.get(i).unwrap();
+                        let offset = next_element_offset + current_length;
+                        LittleEndian::write_u16(
+                            &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                            offset as u16,
+                        );
+                    } else {
+                        LittleEndian::write_u16(
+                            &mut node.data[child.parent_offset + 2..child.parent_offset + 4],
+                            0x0 as u16,
+                        );
+                    }
                 }
             }
         }
@@ -119,7 +103,7 @@ where
         node_type: DataNodeType::Root,
         parent: 0,
         childs: Vec::with_capacity(0),
-        element_offsets: Vec::with_capacity(0),
+        array_offsets: Vec::with_capacity(0),
         // TODO benchmark me
         data: Vec::with_capacity(1024),
         parent_offset: 0,
@@ -228,7 +212,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             node_type: DataNodeType::String,
             parent: self.current_node,
             childs: Vec::new(),
-            element_offsets: Vec::with_capacity(0),
+            array_offsets: Vec::with_capacity(0),
             data: buffer,
             parent_offset: parent_node.data.len(),
         };
@@ -248,10 +232,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
         // Add new data node, link parent and register as child in parent.
         let new_node = DataNode {
-            node_type: DataNodeType::String,
+            node_type: DataNodeType::Bytes,
             parent: self.current_node,
             childs: Vec::new(),
-            element_offsets: Vec::with_capacity(0),
+            array_offsets: Vec::with_capacity(0),
             data: value.to_owned(),
             parent_offset: parent_node.data.len(),
         };
