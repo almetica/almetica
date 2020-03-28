@@ -24,7 +24,7 @@ struct AuthResponse {
     user_permission: i32, // Normal user = 0
     game_account_name: String, // always TERA
     master_account_name: String, // user account name?
-    ticket: String, // TODO maybe a JWT
+    ticket: String, // TODO Seems to be 50 printable ASCII chars converted as bytes array (u8 value)
 }
 
 #[tokio::main]
@@ -40,7 +40,7 @@ async fn main() {
 <ip>127.0.0.1</ip>
 <port>10001</port>
 <category sort="1">Almetica</category>
-<name raw_name="Almetica">Almetica</name>
+<name raw_name="Almetica"> Almetica </name>
 <crowdness sort="1">None</crowdness>
 <open sort="1">Recommended</open>
 <permission_mask>0x00000000</permission_mask>
@@ -70,7 +70,7 @@ async fn main() {
                 user_permission: 0,
                 game_account_name: "TERA".to_string(),
                 master_account_name: "Almetica".to_string(),
-                ticket: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string(),
+                ticket: "OScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7H".to_string(),
             };
 
             warp::reply::json(&resp)
