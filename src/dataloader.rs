@@ -1,12 +1,24 @@
 /// Module to read data files
-use std::io::Read;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::path::PathBuf;
 
 use super::*;
 use super::protocol::opcode::Opcode;
 
+/// Load opcode mapping from a file.
+pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
+    let mut path = data_path.clone();
+    path.push("opcode.yaml");
+    let file = File::open(path)?;
+    let mut buffered = BufReader::new(file);
+    let opcodes = read_opcode_table(&mut buffered)?;
+    Ok(opcodes)
+}
+
 /// Read the opcode mapping file and returns the opcode table.
-pub fn read_opcode_table<T: ?Sized>(reader: &mut T) -> Result<Vec<Opcode>>
+fn read_opcode_table<T: ?Sized>(reader: &mut T) -> Result<Vec<Opcode>>
 where
     T: Read,
 {

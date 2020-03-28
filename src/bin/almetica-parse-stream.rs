@@ -1,19 +1,18 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
+use almetica::Result;
 use almetica::config::load_configuration;
+use almetica::dataloader::load_opcode_mapping;
 use almetica::crypt::CryptSession;
-use almetica::dataloader;
 use almetica::protocol::opcode::Opcode;
 use almetica::Error;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use hex::encode;
 use log::{debug, error, info, warn};
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -106,15 +105,6 @@ fn run() -> Result<()> {
     }
     info!("Finished parsing files.");
     Ok(())
-}
-
-pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
-    let mut path = data_path.clone();
-    path.push("opcode.yaml");
-    let file = std::fs::File::open(path)?;
-    let mut buffered = BufReader::new(file);
-    let opcodes = dataloader::read_opcode_table(&mut buffered)?;
-    Ok(opcodes)
 }
 
 /// Struct to parse the provided stream. Only usefull for this parser.

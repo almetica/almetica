@@ -22,7 +22,7 @@ developing them:
  * Some kind of tests (unit / integration test etc.)
  * Written in a compiled and typed language
 
-None of he evaluated existing server projects did fullfill these requirements.
+None of he evaluated existing server projects did fullfil these requirements.
 
 ## License
 
@@ -36,8 +36,8 @@ network.
 
 ## Credits
 
-It's pretty hard to trace the origin of some of the archivements. So I will just
-credit people without their specific constributions. Most of them did discover
+It's pretty hard to trace the origin of some of the achievements. So I will just
+credit people without their specific contributions. Most of them did discover
 specific issues while reverse engineering the TERA network protocol or did some
 other kind of groundwork that this sever is based on (ordered alphabetically):
 

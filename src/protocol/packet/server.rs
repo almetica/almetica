@@ -68,7 +68,7 @@ mod tests {
         let mut org = vec![
             0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
         ];
-        let mut data = org.clone();
+        let data = org.clone();
         let mut expected = SItemCustomString {
             custom_strings: Vec::with_capacity(0),
             game_id: 144255925566078737,
@@ -82,7 +82,7 @@ mod tests {
             0x1c, 0x0, 0xff, 0xb6, 0x2, 0x0, 0x47, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0,
             0x75, 0x0, 0x0, 0x0,
         ];
-        let mut data = org.clone();
+        let data = org.clone();
         expected = SItemCustomString {
             custom_strings: vec![SItemCustomStringEntry {
                 id: 3070165020,

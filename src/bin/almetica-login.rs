@@ -55,7 +55,7 @@ async fn main() {
         .and(warp::path("auth"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::form())
-        .map(|simple_map: HashMap<String, String>| {
+        .map(|_simple_map: HashMap<String, String>| {
             // TODO proper auth handling
             let resp = AuthResponse {
                 last_connected_server_id: 4001,
