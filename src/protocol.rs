@@ -140,3 +140,14 @@ impl<'a> GameSession<'a> {
         }
     }
 }
+
+// TODO I think we can only write an integration test for the above code and we
+// would need to actually open a TcpStream for this.
+// Look at the integration tests that tokio have:
+// https://github.com/tokio-rs/tokio/blob/master/tokio/tests/tcp_echo.rs
+
+// Write test for connection
+
+// Write test for RX
+
+// Write test for TX
