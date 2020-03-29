@@ -31,12 +31,14 @@ struct AuthResponse {
 async fn main() {
     pretty_env_logger::init();
 
-    // GET /server
+    // The TERA client NEEDS to have the region endings (.uk / .de etc.) at the end or else t will not start!
+
+    // GET /server/list.uk
     let server = warp::get()
-        .and(warp::path("server"))
+        .and(warp::path!("server" / "list.uk"))
         .map(|| r###"<serverlist>
 <server>
-<id>4001</id>
+<id>1</id>
 <ip>127.0.0.1</ip>
 <port>10001</port>
 <category sort="1">Almetica</category>
@@ -59,10 +61,7 @@ async fn main() {
             // TODO proper auth handling
             let resp = AuthResponse {
                 last_connected_server_id: 4001,
-                chars_per_server: vec![ServerCharactersInfo {
-                    id: 4001,
-                    char_count: 1,
-                }],
+                chars_per_server: vec![],
                 account_bits: "0x00000000".to_string(),
                 result_message: "OK".to_string(),
                 result_code: 200,
@@ -70,7 +69,7 @@ async fn main() {
                 user_permission: 0,
                 game_account_name: "TERA".to_string(),
                 master_account_name: "Almetica".to_string(),
-                ticket: "OScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7H".to_string(),
+                ticket: "OScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7HOScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7H".to_string(),
             };
 
             warp::reply::json(&resp)
