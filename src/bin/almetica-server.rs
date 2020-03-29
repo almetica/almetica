@@ -42,7 +42,7 @@ async fn run() -> Result<()> {
     };
 
     info!("Reading opcode mapping file");
-    let _opcode_mapping = match load_opcode_mapping(&config.data.path) {
+    let opcode_mapping = match load_opcode_mapping(&config.data.path) {
         Ok(o) => {
             info!("Loaded opcode mapping table with {} entries.", o.len());
             o
@@ -64,8 +64,8 @@ async fn run() -> Result<()> {
         match listener.accept().await {
             Ok((mut socket, addr)) => {
                 info!("Incoming connection from client {:?}", addr);
-                match GameSession::new(&mut socket, addr).await {
-                    Ok(session) => {
+                match GameSession::new(&mut socket, addr, &opcode_mapping).await {
+                    Ok(mut session) => {
                         match session.handle_connection().await {
                             Ok(_) => info!("Closed connection from client {:?}", addr),
                             Err(e) => error!("Error while handling game session for client {:?}: {:?}", addr, e),

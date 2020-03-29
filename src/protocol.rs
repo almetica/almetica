@@ -4,210 +4,139 @@ pub mod packet;
 pub mod serde;
 
 use std::net::SocketAddr;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use super::crypt::CryptSession;
 use super::*;
-use log::{debug, error, info};
+use super::crypt::CryptSession;
+use opcode::Opcode;
+
+use byteorder::{ByteOrder, LittleEndian};
+use log::{debug, error, info, warn};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// Abstracts the game network protocol session.
-pub struct GameSession {
-    _uid: Option<u64>, // User ID
-    _addr: SocketAddr,
-    _crypt: CryptSession,
+pub struct GameSession<'a> {
+    uid: Option<u64>, // User ID
+    stream: &'a mut TcpStream,
+    addr: SocketAddr,
+    crypt: CryptSession,
+    opcode_table: &'a [Opcode],
     // TODO Will later have TX/RX channels to the event handler
+    // We should have two RX and two TX channels: One for the world and one for the instance ECS.
 }
 
-impl GameSession {
+impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
-    pub async fn new<T: ?Sized>(stream: &mut T, addr: SocketAddr) -> Result<GameSession>
-    where
-        T: AsyncRead + AsyncWrite + Unpin,
-    {
+    pub async fn new(stream: &'a mut TcpStream, addr: SocketAddr, opcode_table: &'a [Opcode]) -> Result<GameSession<'a>> {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1 = vec![0; 128];
         let mut client_key_2 = vec![0; 128];
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
-        debug!("Sending magic word on socket: {}", addr);
+        debug!("Sending magic word on socket: {:?}", addr);
         match stream.write_all(&magic_word_buffer).await {
             Ok(()) => (),
             Err(e) => {
-                error!("Can't send magic word on socket {}: {}", addr, e);
+                error!("Can't send magic word on socket {:?}: {:?}", addr, e);
                 return Err(Error::Io(e));
             }
         };
 
         match stream.read_exact(&mut client_key_1).await {
-            Ok(_i) => 0,
+            Ok(_i) => (),
             Err(e) => {
-                error!("Can't read client key 1 on socket {}: {}", addr, e);
+                error!("Can't read client key 1 on socket {:?}: {:?}", addr, e);
                 return Err(Error::Io(e));
             }
         };
-        debug!("Received client key 1 on socket {}", addr);
+        debug!("Received client key 1 on socket {:?}", addr);
 
         OsRng.fill_bytes(&mut server_key_1);
         match stream.write_all(&server_key_1).await {
             Ok(()) => (),
             Err(e) => {
-                error!("Can't write server key 1 on socket {}: {}", addr, e);
+                error!("Can't write server key 1 on socket {:?}: {:?}", addr, e);
                 return Err(Error::Io(e));
             }
         };
-        debug!("Send server key 1 on socket {}", addr);
+        debug!("Send server key 1 on socket {:?}", addr);
 
         match stream.read_exact(&mut client_key_2).await {
-            Ok(_i) => 0,
+            Ok(_i) => (),
             Err(e) => {
-                error!("Can't read client key 2 on socket {}: {}", addr, e);
+                error!("Can't read client key 2 on socket {:?}: {:?}", addr, e);
                 return Err(Error::Io(e));
             }
         };
-        debug!("Received client key 2 on socket {}", addr);
+        debug!("Received client key 2 on socket {:?}", addr);
 
         OsRng.fill_bytes(&mut server_key_2);
         match stream.write_all(&server_key_2).await {
             Ok(()) => (),
             Err(e) => {
-                error!("Can't write server key 2 on socket {}: {}", addr, e);
+                error!("Can't write server key 2 on socket {:?}: {:?}", addr, e);
                 return Err(Error::Io(e));
             }
         };
-        debug!("Send server key 2 on socket {}", addr);
+        debug!("Send server key 2 on socket {:?}", addr);
 
         let cs = CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]);
         let gs = GameSession {
-            _uid: None,
-            _addr: addr,
-            _crypt: cs,
+            uid: None,
+            stream: stream,
+            addr: addr,
+            crypt: cs,
+            opcode_table: opcode_table,
         };
 
-        info!("Game session initialized for socket: {}", addr);
+        info!("Game session initialized for socket: {:?}", addr);
         Ok(gs)
     }
 
     /// Handles the writing / sending on the TCP stream.
-    pub async fn handle_connection(self) -> Result<()> {
-        // TODO
-        Ok(())
-    }
-}
+    pub async fn handle_connection(&mut self) -> Result<()> {      
+        let mut header_buf = vec![0u8; 4];
+        loop {
+            // RX
+            // TODO I assume that this return quite fast if no data is to read.
+            let len = self.stream.peek(&mut header_buf).await?;
+            if len >= 4 {
+                self.stream.read_exact(&mut header_buf).await?;
+                self.crypt.crypt_client_data(&mut header_buf);
+                
+                let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize;
+                let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
 
-#[cfg(test)]
-mod tests {
-    /*
-    use super::GameSession;
-    use std::io::{Error, ErrorKind};
-    use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    use tokio::io::{AsyncRead, AsyncWrite};
-    use tokio::test;
+                let mut data_buf = vec![0u8; packet_length - 4];
+                self.stream.read_exact(&mut data_buf).await?;
+                self.crypt.crypt_client_data(&mut data_buf);
 
-    // TODO get this test running again
-    //#[tokio::test]
-    async fn test_read_gamesession_creation() -> Result<(), super::super::Error> {
-        // Mocked TCP stream. Implementation below.
-        let mut stream = StreamMock::default();
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        GameSession::new(&mut stream, addr).await?;
-
-        assert_eq!(4, stream.state);
-        Ok(())
-    }
-
-    // We need to create a mock to abstract the TCP stream.
-    struct StreamMock {
-        pub state: i64,
-    }
-
-    impl Default for StreamMock {
-        fn default() -> Self {
-            StreamMock { state: -1 }
-        }
-    }
-
-    impl AsyncRead for StreamMock {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize, Error>> {
-            match self.state {
-                0 => {
-                    self.state = 1;
-                    let client_key1: [u8; 128] = [0xaa; 128];
-                    buf.copy_from_slice(&client_key1);
-                    Poll::Ready(Ok(client_key1.len()))
-                }
-                2 => {
-                    self.state = 3;
-                    let client_key2: [u8; 128] = [0xcc; 128];
-                    buf.copy_from_slice(&client_key2);
-                    Poll::Ready(Ok(client_key2.len()))
-                }
-                _ => Poll::Ready(Err(Error::new(
-                    ErrorKind::Other,
-                    format!("unexpected read at state {}", self.state),
-                ))),
+                self.decode_packet(opcode, data_buf);
             }
+            // TX
+            // TODO Query TX channel and send data
         }
     }
 
-    impl AsyncWrite for StreamMock {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &[u8],
-        ) -> Poll<Result<usize, Error>> {
-            match self.state {
-                -1 => {
-                    self.state = 0;
-                    let mut magic_word: [u8; 4] = [0xff; 4];
-                    magic_word.copy_from_slice(buf);
-                    if magic_word[0] != 1 {
-                        return Poll::Ready(Err(Error::new(
-                            ErrorKind::Other,
-                            format!("wrong magic word"),
-                        )));
-                    }
-                    Poll::Ready(Ok(magic_word.len()))
-                }
-                1 => {
-                    self.state = 2;
-                    let mut server_key_1: [u8; 128] = [0xff; 128];
-                    server_key_1.copy_from_slice(buf);
-                    Poll::Ready(Ok(server_key_1.len()))
-                }
-                3 => {
-                    self.state = 4;
-                    let mut server_key_2: [u8; 128] = [0xff; 128];
-                    server_key_2.copy_from_slice(buf);
-                    Poll::Ready(Ok(server_key_2.len()))
-                }
-                _ => Poll::Ready(Err(Error::new(
-                    ErrorKind::Other,
-                    format!("unexpected write at state {}", self.state),
-                ))),
+    /// Decodes a packet from the given `Vec<u8>`.
+    fn decode_packet(&self, opcode: usize, _packet_data: Vec<u8>) {
+        // TODO only forward handled packet data into the right ECS (either global or instance)
+        let packet_type = &self.opcode_table[opcode];
+        match packet_type {
+            Opcode::C_CHECK_VERSION => {
+                debug!("C_CHECK_VERSION received on socket {:?}", self.addr);
             }
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Error>> {
-            Poll::Ready(Err(Error::new(
-                ErrorKind::Other,
-                format!("unexpected flush at state {}", self.state),
-            )))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Error>> {
-            Poll::Ready(Err(Error::new(
-                ErrorKind::Other,
-                format!("unexpected shutdown at state {}", self.state),
-            )))
+            Opcode::C_LOGIN_ARBITER => {
+                debug!("C_LOGIN_ARBITER received on socket {:?}", self.addr);
+            },
+            Opcode::UNKNOWN => {
+                warn!("Unmapped and unhandled opcode on socket {:?}: {:?}", opcode, self.addr);
+            }
+            _ => {
+                warn!("Mapped but unhandled opcode on socket {:?}: {:?}", opcode, self.addr);
+            },
         }
     }
-    */
 }
