@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::process;
 
-use almetica::Result;
 use almetica::config::load_configuration;
 use almetica::dataloader::load_opcode_mapping;
+use almetica::protocol::opcode::Opcode;
 use almetica::protocol::GameSession;
+use almetica::Result;
 use clap::Clap;
 use log::{error, info};
 use tokio::net::TcpListener;
@@ -43,9 +44,12 @@ async fn run() -> Result<()> {
 
     info!("Reading opcode mapping file");
     let opcode_mapping = match load_opcode_mapping(&config.data.path) {
-        Ok(o) => {
-            info!("Loaded opcode mapping table with {} entries.", o.len());
-            o
+        Ok(mapping) => {
+            info!(
+                "Loaded opcode mapping table with {} entries.",
+                mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+            );
+            mapping
         }
         Err(e) => {
             error!(
@@ -65,15 +69,16 @@ async fn run() -> Result<()> {
             Ok((mut socket, addr)) => {
                 info!("Incoming connection from client {:?}", addr);
                 match GameSession::new(&mut socket, addr, &opcode_mapping).await {
-                    Ok(mut session) => {
-                        match session.handle_connection().await {
-                            Ok(_) => info!("Closed connection from client {:?}", addr),
-                            Err(e) => error!("Error while handling game session for client {:?}: {:?}", addr, e),
-                        }
+                    Ok(mut session) => match session.handle_connection().await {
+                        Ok(_) => info!("Closed connection from client {:?}", addr),
+                        Err(e) => error!(
+                            "Error while handling game session for client {:?}: {:?}",
+                            addr, e
+                        ),
                     },
                     Err(e) => error!("Failed create game session with client {:?}: {:?}", addr, e),
                 }
-            },
+            }
             Err(e) => error!("Failed to open connection with client: {:?}", e),
         }
     }

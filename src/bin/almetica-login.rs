@@ -11,7 +11,7 @@ struct ServerCharactersInfo {
 #[derive(Serialize)]
 struct AuthResponse {
     last_connected_server_id: i32, // 1
-    chars_per_server: Vec<ServerCharactersInfo>, // Vec of ServerCharactersInfo
+    chars_per_server: Vec<ServerCharactersInfo>,
     account_bits: String, // ??? Possible vlaue: 0x041F000D or 0x00000000?
 
     #[serde(rename = "result-message")] 
@@ -22,16 +22,16 @@ struct AuthResponse {
 
     access_level: i32, // Normal user = 1
     user_permission: i32, // Normal user = 0
-    game_account_name: String, // always TERA
-    master_account_name: String, // user account name?
-    ticket: String, // TODO Seems to be 50 printable ASCII chars converted as bytes array (u8 value)
+    game_account_name: String, // Always "TERA"
+    master_account_name: String, // We will use a UUID here, so that LOGIN and GAME server don't need to expose their indexes for synchronization.
+    ticket: String, // Can be any string that is ASCII printable. Use some kind of signature so that LOGIN and GAME server don't need a connection to each other.
 }
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
 
-    // The TERA client NEEDS to have the region endings (.uk / .de etc.) at the end or else t will not start!
+    // The TERA client NEEDS to have the region endings (.uk / .de etc.) at the end or else it will not start!
 
     // GET /server/list.uk
     let server = warp::get()
@@ -68,7 +68,7 @@ async fn main() {
                 access_level: 1,
                 user_permission: 0,
                 game_account_name: "TERA".to_string(),
-                master_account_name: "Almetica".to_string(),
+                master_account_name: "cb3c75d4-66a6-4506-a549-c8ae53fbafd8".to_string(),
                 ticket: "OScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7HOScGKtmr3sngb418rFnHEDWMTrYSbHa280jveZtCeG7T7pXv7H".to_string(),
             };
 

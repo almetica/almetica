@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 
 use super::*;
 use super::crypt::CryptSession;
+use super::ecs::event::Event;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -35,7 +36,7 @@ impl<'a> GameSession<'a> {
         let mut client_key_2 = vec![0; 128];
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
-        debug!("Sending magic word on socket: {:?}", addr);
+        debug!("Sending magic word on socket {:?}", addr);
         match stream.write_all(&magic_word_buffer).await {
             Ok(()) => (),
             Err(e) => {
@@ -91,7 +92,7 @@ impl<'a> GameSession<'a> {
             opcode_table: opcode_table,
         };
 
-        info!("Game session initialized for socket: {:?}", addr);
+        info!("Game session initialized on socket {:?}", addr);
         Ok(gs)
     }
 
@@ -99,43 +100,49 @@ impl<'a> GameSession<'a> {
     pub async fn handle_connection(&mut self) -> Result<()> {      
         let mut header_buf = vec![0u8; 4];
         loop {
-            // RX
-            // TODO I assume that this return quite fast if no data is to read.
-            let len = self.stream.peek(&mut header_buf).await?;
-            if len >= 4 {
-                self.stream.read_exact(&mut header_buf).await?;
-                self.crypt.crypt_client_data(&mut header_buf);
-                
-                let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize;
-                let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
-
-                let mut data_buf = vec![0u8; packet_length - 4];
-                self.stream.read_exact(&mut data_buf).await?;
-                self.crypt.crypt_client_data(&mut data_buf);
-
-                self.decode_packet(opcode, data_buf);
+            tokio::select! {
+                // RX
+                result = self.stream.peek(&mut header_buf) => {
+                    if let Ok(read_bytes) = result {
+                        if read_bytes == 4 {
+                            self.stream.read_exact(&mut header_buf).await?;
+                            self.crypt.crypt_client_data(&mut header_buf);
+                    
+                            let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize;
+                            let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
+    
+                            let mut data_buf = vec![0u8; packet_length - 4];
+                            self.stream.read_exact(&mut data_buf).await?;
+                            self.crypt.crypt_client_data(&mut data_buf);
+    
+                            self.decode_packet(opcode, data_buf);
+                        }
+                    }
+                }
+                // TX
+                // TODO Query TX channel and send data
             }
-            // TX
-            // TODO Query TX channel and send data
         }
     }
 
     /// Decodes a packet from the given `Vec<u8>`.
-    fn decode_packet(&self, opcode: usize, _packet_data: Vec<u8>) {
-        // TODO only forward handled packet data into the right ECS (either global or instance)
-        let packet_type = &self.opcode_table[opcode];
-        match packet_type {
-            Opcode::C_CHECK_VERSION => {
-                debug!("C_CHECK_VERSION received on socket {:?}", self.addr);
-            }
-            Opcode::C_LOGIN_ARBITER => {
-                debug!("C_LOGIN_ARBITER received on socket {:?}", self.addr);
-            },
+    fn decode_packet(&self, opcode: usize, packet_data: Vec<u8>) {
+        let opcode_type = self.opcode_table[opcode];
+        match opcode_type {
             Opcode::UNKNOWN => {
-                warn!("Unmapped and unhandled opcode on socket {:?}: {:?}", opcode, self.addr);
-            }
+                warn!("Unmapped and unhandled packet with opcode {:?} on socket {:?}", opcode, self.addr);
+            },
             _ => {
-                warn!("Mapped but unhandled opcode on socket {:?}: {:?}", opcode, self.addr);
+                match Event::new_from_packet(opcode_type, packet_data) {
+                    // TODO send the event to the proper ECS
+                    Ok(_) => debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr),
+                    // TODO cerate custom error for no mapping on packet
+                    Err(e) => {
+                        match e {
+                            _ => warn!("Can't create event from valid packet {:?} on socket {:?}: {:?}", opcode_type, self.addr, e),
+                        }
+                    }
+                }
             },
         }
     }

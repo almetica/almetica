@@ -52,10 +52,13 @@ fn run() -> Result<()> {
         }
     };
     let opcode_mapping = match load_opcode_mapping(&config.data.path) {
-        Ok(o) => {
-            info!("Loaded opcode mapping table with {} entries.", o.len());
-            o
-        }
+        Ok(mapping) => {
+            info!(
+                "Loaded opcode mapping table with {} entries.",
+                mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+            );
+            mapping
+        },
         Err(e) => {
             error!(
                 "Can't read opcode mapping file {}: {}",
