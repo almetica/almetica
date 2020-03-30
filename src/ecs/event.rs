@@ -13,6 +13,8 @@ use super::super::protocol::serde::from_vec;
 use super::super::Result;
 //use super::super::protocol::packet::server::*;
 
+use tokio::sync::mpsc::Sender;
+
 macro_rules! assemble_event {
     (
     Global Request Event {
@@ -33,7 +35,7 @@ macro_rules! assemble_event {
         pub enum Event {
             $($g_ty {packet: $g_packet_type $(,$g_arg_name: $g_arg_type)*},)*
             $($l_ty {packet: $l_packet_type $(,$l_arg_name: $l_arg_type)*},)*
-            $($e_ty {$(,$e_arg_name: $e_arg_type)*},)*
+            $($e_ty {$($e_arg_name: $e_arg_type),*},)*
         }
 
         impl Event {
@@ -79,7 +81,8 @@ assemble_event! {
     Response Event {
     }
     Event {
-        DummyEvent{},
+        // Registers the tx_channel of a connection at a world.
+        RegisterConnection{tx_channel: Sender<Box<Event>>},
     }
 }
 
