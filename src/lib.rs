@@ -19,6 +19,9 @@ pub enum Error {
     #[error("serde error: {0}")]
     Serde(#[from] serde_yaml::Error),
 
+    #[error("protocol serde error: {0}")]
+    ProtocolSerde(#[from] protocol::serde::Error),
+
     #[error("unknown error")]
     Unknown,
 }
