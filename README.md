@@ -9,7 +9,7 @@ This is a server for the MMORPG TERA written in rust.
 Provide a server platform for TERA that gives better performance then the original
 server while providing the same feature set.
 
-We don't strive to emulate the original TERA server 100% the same. We will
+I don't strive to emulate the original TERA server 100% the same. We will
 optimize / improve functionality where it seems logical (for example stricter
 validation of client commands).
 

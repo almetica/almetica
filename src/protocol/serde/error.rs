@@ -1,3 +1,4 @@
+/// Custom errors used by the TERA network (de-)serializer.
 use std;
 use std::fmt::Display;
 

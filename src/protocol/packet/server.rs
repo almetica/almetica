@@ -1,3 +1,4 @@
+/// Module for server network packages.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
