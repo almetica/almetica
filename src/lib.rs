@@ -2,6 +2,7 @@ pub mod config;
 pub mod crypt;
 pub mod dataloader;
 pub mod ecs;
+pub mod model;
 pub mod protocol;
 
 use thiserror::Error;

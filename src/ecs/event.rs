@@ -85,6 +85,7 @@ assemble_event! {
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::model::Region;
     use super::super::super::protocol::opcode::Opcode;
     use super::super::super::Error;
     use super::*;
@@ -115,7 +116,7 @@ mod tests {
                 ticket: vec![],
                 unk1: 0,
                 unk2: 0,
-                language: 0,
+                region: Region::Europe,
                 patch_version: 0,
             },
         };

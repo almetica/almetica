@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use super::super::super::model::Region;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {
@@ -25,12 +26,13 @@ pub struct CLoginArbiter {
 
     pub unk1: i32,
     pub unk2: u8,
-    pub language: u32, // TODO enum
+    pub region: Region,
     pub patch_version: i32,
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::super::model::Region;
     use super::super::super::serde::{from_vec, to_vec, Error};
     use super::*;
 
@@ -94,7 +96,7 @@ mod tests {
             ],
             unk1: 0,
             unk2: 0,
-            language: 6,
+            region: Region::Europe,
             patch_version: 9002,
         };
 

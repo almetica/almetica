@@ -265,12 +265,20 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Err(Error::NotImplemented())
     }
 
+    // Enum
     fn serialize_unit_variant(
         self,
         _name: &'static str,
-        _variant_index: u32,
+        variant_index: u32,
         _variant: &'static str,
     ) -> Result<()> {
+        let mut buf = vec![0; 4];
+        LittleEndian::write_u32(&mut buf, variant_index);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .append(&mut buf);
         Ok(())
     }
 
@@ -291,7 +299,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        Ok(())
+        Err(Error::NotImplemented())
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {

@@ -216,7 +216,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             where
                 V: serde::de::DeserializeSeed<'de>,
             {
-                // TODO enums might need different sizes. So we might need to use attributes here?
+                // Enums in packets have to be a u32!
                 let idx: u32 = serde::de::Deserialize::deserialize(&mut *self)?;
                 let val: Result<_> = seed.deserialize(idx.into_deserializer());
                 Ok((val?, self))
