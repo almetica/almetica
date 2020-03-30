@@ -1,3 +1,4 @@
+/// Implements the serialization of the TERA network protocol using serde.
 use std::collections::HashMap;
 
 use super::{Error, Result};
@@ -30,7 +31,13 @@ enum DataNodeType {
 
 impl Serializer {
     /// Calculates the offset value (it's either abs or relative based on the current node depth)
-    fn calculate_offset(&self, depth: usize, pos: usize, total_data_length: usize, node_data_length: usize) -> usize {
+    fn calculate_offset(
+        &self,
+        depth: usize,
+        pos: usize,
+        total_data_length: usize,
+        node_data_length: usize,
+    ) -> usize {
         if depth == 0 {
             total_data_length
         } else {
@@ -55,7 +62,8 @@ impl Serializer {
             };
 
             // Write the offset and append the child data
-            let offset = self.calculate_offset(depth, child.parent_offset, current_length, node.data.len());
+            let offset =
+                self.calculate_offset(depth, child.parent_offset, current_length, node.data.len());
             LittleEndian::write_u16(
                 &mut node.data[child.parent_offset..child.parent_offset + 2],
                 offset as u16,
@@ -78,7 +86,7 @@ impl Serializer {
                         offset_value as u16,
                     );
                     // Next element offset
-                    if i + 1 < count { 
+                    if i + 1 < count {
                         let next_element_offset = child.array_offsets.get(i + 1).unwrap();
                         let offset_value = next_element_offset + current_length;
                         LittleEndian::write_u16(
@@ -244,7 +252,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
         // Write u16 data length
         let data_length = new_node.data.len() as u16;
-        parent_node.data.write_u16::<LittleEndian>(data_length).unwrap();
+        parent_node
+            .data
+            .write_u16::<LittleEndian>(data_length)
+            .unwrap();
 
         self.nodes.insert(num_node, new_node);
         Ok(())
@@ -324,8 +335,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             parent_node.childs.push(num_node);
 
             // Write u16 count in parent data buffer
-            parent_node.data.write_u16::<LittleEndian>(length as u16).unwrap();
-            
+            parent_node
+                .data
+                .write_u16::<LittleEndian>(length as u16)
+                .unwrap();
             // Write u16 offset as dummy in parent data buffer
             parent_node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
 

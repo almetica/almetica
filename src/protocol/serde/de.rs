@@ -1,3 +1,4 @@
+/// Implements the de-serialization of the TERA network protocol using serde.
 use std::str;
 
 use super::error::{Error, Result};
