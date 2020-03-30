@@ -5,6 +5,7 @@ pub mod ecs;
 pub mod model;
 pub mod protocol;
 
+use ecs::event::Event;
 use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -22,6 +23,9 @@ pub enum Error {
 
     #[error("protocol serde error: {0}")]
     ProtocolSerde(#[from] protocol::serde::Error),
+
+    #[error("mpsc send event error: {0}")]
+    MpscSendEventError(#[from] tokio::sync::mpsc::error::SendError<Box<Event>>),
 
     #[error("unknown error")]
     Unknown,

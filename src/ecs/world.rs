@@ -1,5 +1,6 @@
 /// Module that handles the world generation and handling
 use std::collections::HashMap;
+use std::{thread, time};
 
 use super::event::Event;
 use super::resource::EventRxChannel;
@@ -8,7 +9,7 @@ use legion::prelude::*;
 use tokio::sync::mpsc::{Sender, Receiver, channel};
 
 /// Holds the ECS for the global world and all instanced worlds.
-struct Multiverse {
+pub struct Multiverse {
     pub universe: Universe,
     pub global_world_handle: WorldHandle,
     pub instanced_world_handles: HashMap<String, World>,
@@ -34,11 +35,30 @@ impl Multiverse {
             instanced_world_handles: HashMap::new(),
         }
     }
+
+    /// Starts the main loop of the global world.
+    pub fn run(&mut self) {
+        let mut schedule = Schedule::builder().build();
+
+        // Global tick rate is at best 50ms (20 Hz)
+        let min_duration = time::Duration::from_millis(50);
+        
+        loop {
+            let start = time::Instant::now();
+
+            schedule.execute(&mut self.global_world_handle.world);
+
+            let elapsed = start.elapsed();
+            if  elapsed < min_duration {
+                thread::sleep(min_duration - elapsed);
+            }
+        }
+    }
 }
 
 /// Handle for a world.
 /// Connections can register their connection by using the `Èvent::RegisterConnection` event.
-struct WorldHandle {
+pub struct WorldHandle {
     pub tx_channel: Sender<Box<Event>>,
     pub world: World,
 }

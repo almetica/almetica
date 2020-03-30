@@ -19,7 +19,7 @@ serde_yaml = "0.8"
 strum = "0.18"
 strum_macros = "0.18"
 thiserror = "1.0"
-tokio = { version = "0.2", features = ["rt-threaded", "io-util", "net", "sync", "tcp", "macros"] }
+tokio = { version = "0.2", features = ["blocking", "io-util", "macros", "net", "rt-threaded", "sync", "tcp"] }
 ucs2 = "0.3"
 warp = "0.2"
 

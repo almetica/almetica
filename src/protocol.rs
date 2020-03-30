@@ -5,9 +5,9 @@ pub mod serde;
 
 use std::net::SocketAddr;
 
-use super::*;
 use super::crypt::CryptSession;
 use super::ecs::event::Event;
+use super::*;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -16,21 +16,32 @@ use rand::rngs::OsRng;
 use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
-    uid: Option<u64>, // User ID
     stream: &'a mut TcpStream,
     addr: SocketAddr,
     crypt: CryptSession,
     opcode_table: &'a [Opcode],
-    // TODO Will later have TX/RX channels to the event handler
-    // We should have two RX and two TX channels: One for the world and one for the instance ECS.
+    // Sending channel TO the global world
+    global_tx_channel: Option<Sender<Box<Event>>>,
+    // Receiving channel FROM the global world
+    global_rx_channel: Option<Receiver<Box<Event>>>,
+    // Sending channel TO the instance world
+    instance_tx_channel: Option<Sender<Box<Event>>>,
+    // Receiving channel FROM the instance world
+    instance_rx_channel: Option<Receiver<Box<Event>>>,
 }
 
 impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
-    pub async fn new(stream: &'a mut TcpStream, addr: SocketAddr, opcode_table: &'a [Opcode]) -> Result<GameSession<'a>> {
+    pub async fn new(
+        stream: &'a mut TcpStream,
+        addr: SocketAddr,
+        global_tx_channel: Sender<Box<Event>>,
+        opcode_table: &'a [Opcode],
+    ) -> Result<GameSession<'a>> {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1 = vec![0; 128];
         let mut client_key_2 = vec![0; 128];
@@ -83,13 +94,19 @@ impl<'a> GameSession<'a> {
         };
         debug!("Send server key 2 on socket {:?}", addr);
 
+        // TODO send Evvent::OpenConnection
+        // TODO open channel and send TX to global world
+
         let cs = CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]);
         let gs = GameSession {
-            uid: None,
             stream: stream,
             addr: addr,
             crypt: cs,
             opcode_table: opcode_table,
+            global_tx_channel: Some(global_tx_channel),
+            global_rx_channel: None,
+            instance_tx_channel: None,
+            instance_rx_channel: None,
         };
 
         info!("Game session initialized on socket {:?}", addr);
@@ -97,7 +114,7 @@ impl<'a> GameSession<'a> {
     }
 
     /// Handles the writing / sending on the TCP stream.
-    pub async fn handle_connection(&mut self) -> Result<()> {      
+    pub async fn handle_connection(&mut self) -> Result<()> {
         let mut header_buf = vec![0u8; 4];
         loop {
             tokio::select! {
@@ -107,15 +124,12 @@ impl<'a> GameSession<'a> {
                         if read_bytes == 4 {
                             self.stream.read_exact(&mut header_buf).await?;
                             self.crypt.crypt_client_data(&mut header_buf);
-                    
                             let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize;
                             let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
-    
                             let mut data_buf = vec![0u8; packet_length - 4];
                             self.stream.read_exact(&mut data_buf).await?;
                             self.crypt.crypt_client_data(&mut data_buf);
-    
-                            self.decode_packet(opcode, data_buf);
+                            self.handle_packet(opcode, data_buf).await?;
                         }
                     }
                 }
@@ -126,25 +140,47 @@ impl<'a> GameSession<'a> {
     }
 
     /// Decodes a packet from the given `Vec<u8>`.
-    fn decode_packet(&self, opcode: usize, packet_data: Vec<u8>) {
+    async fn handle_packet(&mut self, opcode: usize, packet_data: Vec<u8>) -> Result<()> {
         let opcode_type = self.opcode_table[opcode];
         match opcode_type {
             Opcode::UNKNOWN => {
-                warn!("Unmapped and unhandled packet with opcode {:?} on socket {:?}", opcode, self.addr);
-            },
+                warn!(
+                    "Unmapped and unhandled packet with opcode {:?} on socket {:?}",
+                    opcode, self.addr
+                );
+            }
             _ => {
                 match Event::new_from_packet(opcode_type, packet_data) {
-                    // TODO send the event to the proper ECS
-                    Ok(_) => debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr),
-                    // TODO cerate custom error for no mapping on packet
-                    Err(e) => {
-                        match e {
-                            _ => warn!("Can't create event from valid packet {:?} on socket {:?}: {:?}", opcode_type, self.addr, e),
-                        }
+                    Ok(event) => {
+                        debug!(
+                            "Received valid packet {:?} on socket {:?}",
+                            opcode_type, self.addr
+                        );
+                        match &mut self.global_tx_channel {
+                            Some(tx) => {
+                                tx.send(Box::new(event)).await?;
+                            }
+                            None => {
+                                error!(
+                                    "No tx channel to send event to global world on socket {:?}",
+                                    self.addr
+                                );
+                                // TODO throw error
+                            }
+                        };
                     }
+
+                    // TODO create custom error for no mapping on packet
+                    Err(e) => match e {
+                        _ => warn!(
+                            "Can't create event from valid packet {:?} on socket {:?}: {:?}",
+                            opcode_type, self.addr, e
+                        ),
+                    },
                 }
-            },
+            }
         }
+        Ok(())
     }
 }
 
