@@ -1,43 +1,43 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageList {
-    account_benefits: Vec<SAccountPackageListEntry>,
+    pub account_benefits: Vec<SAccountPackageListEntry>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageListEntry {
-    package_id: u32,
-    expiration_date: i64,
+    pub package_id: u32,
+    pub expiration_date: i64,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SGuildName {
-    guild_name: String,
-    guild_rank: String,
-    guild_title: String,
-    guild_logo: String,
-    game_id: u64,
+    pub guild_name: String,
+    pub guild_rank: String,
+    pub guild_title: String,
+    pub guild_logo: String,
+    pub game_id: u64,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SImageData {
-    name: String,
+    pub name: String,
 
     #[serde(with = "serde_bytes")]
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SItemCustomString {
-    custom_strings: Vec<SItemCustomStringEntry>,
-    game_id: u64,
+    pub custom_strings: Vec<SItemCustomStringEntry>,
+    pub game_id: u64,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SItemCustomStringEntry {
-    id: u32,
-    string: String,
+    pub id: u32,
+    pub string: String,
 }
 
 #[cfg(test)]

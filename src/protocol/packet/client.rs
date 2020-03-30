@@ -1,32 +1,32 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {
-    version: Vec<CCheckVersionEntry>,
+    pub version: Vec<CCheckVersionEntry>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersionEntry {
-    index: i32,
-    value: i32,
+    pub index: i32,
+    pub value: i32,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CGetUserGuildLogo {
-    player_id: i32,
-    guild_id: i32,
+    pub player_id: i32,
+    pub guild_id: i32,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CLoginArbiter {
-    master_account_name: String,
+    pub master_account_name: String,
     #[serde(with = "serde_bytes")]
-    ticket: Vec<u8>,
+    pub ticket: Vec<u8>,
 
-    unk1: i32,
-    unk2: u8,
-    language: u32, // TODO enum
-    patch_version: i32,
+    pub unk1: i32,
+    pub unk2: u8,
+    pub language: u32, // TODO enum
+    pub patch_version: i32,
 }
 
 #[cfg(test)]
