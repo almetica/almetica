@@ -12,31 +12,34 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
-    pub universe: Universe,
-    pub global_world_handle: WorldHandle,
-    pub instanced_world_handles: HashMap<String, World>,
+    _universe: Universe,
+    global_world_handle: WorldHandle,
+    _instanced_world_handles: HashMap<String, World>,
+    resources: Resources,
 }
 
 impl Multiverse {
     /// Creates a new Multiverse.
     pub fn new() -> Multiverse {
         let universe = Universe::new();
-        let mut global = universe.create_world();
+        let global = universe.create_world();
 
         debug!("Global world with ID {:?} created", global.id());
 
         // Create channels to send data to and from the global world.
         // At most 1024 events can be queued between server ticks
         let (tx, rx): (Sender<Box<Event>>, Receiver<Box<Event>>) = channel(1024);
-        global.resources.insert(EventRxChannel { rx_channel: rx });
+        let mut resources = Resources::default();
+        resources.insert(EventRxChannel { rx_channel: rx });
 
         Multiverse {
-            universe: universe,
+            _universe: universe,
             global_world_handle: WorldHandle {
                 tx_channel: tx,
                 world: global,
             },
-            instanced_world_handles: HashMap::new(),
+            _instanced_world_handles: HashMap::new(),
+            resources: resources,
         }
     }
 
@@ -51,14 +54,18 @@ impl Multiverse {
         let min_duration = time::Duration::from_millis(50);
         loop {
             let start = time::Instant::now();
-
-            schedule.execute(&mut self.global_world_handle.world);
+            schedule.execute(&mut self.global_world_handle.world, &mut self.resources);
 
             let elapsed = start.elapsed();
             if elapsed < min_duration {
                 thread::sleep(min_duration - elapsed);
             }
         }
+    }
+
+    /// Get the Input Event Channel of the global world
+    pub fn get_global_input_event_channel(&self) -> Sender<Box<Event>> {
+        self.global_world_handle.tx_channel.clone()
     }
 }
 

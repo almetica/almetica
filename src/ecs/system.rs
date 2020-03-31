@@ -1,7 +1,7 @@
 use super::resource::EventRxChannel;
 
-use legion::schedule::Schedulable;
-use legion::system::SystemBuilder;
+use legion::systems::schedule::Schedulable;
+use legion::systems::SystemBuilder;
 use legion::world::World;
 use log::{debug, error};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -16,28 +16,10 @@ pub fn event_dispatcher(world: &World) -> Box<dyn Schedulable> {
                 match event_channel.rx_channel.try_recv() {
                     Ok(event) => {
                         debug!("Received event {} for {:?}", event, world_id);
-
-                        command_buffer.insert((), (0..1).map(move |_| (event.clone(),)));
-                        /*
-                        match command_buffer.create_entity() {
-                            Ok(entity) => {
-                                command_buffer.add_component(
-                                    entity,
-                                    event,
-                                );
-                                // TODO
-                                /*
-                                command_buffer.add_tag(
-                                    entity,
-                                    event.get_tag(),
-                                );
-                                */
-                            },
-                            Err(_) => {
-                                error!("Error while creating entity for world with ID {:?}", world_id);
-                            }
-                        }
-                        */
+                        //command_buffer.insert((), (0..1).map(move |_| (event.clone(),)));
+                        command_buffer.start_entity()
+                            .with_component((*event,))
+                            .build();
                     }
                     Err(e) => {
                         match e {

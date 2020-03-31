@@ -110,7 +110,7 @@ async fn run() -> Result<()> {
 // Starts the multiverse on a new thread and returns a channel into the global world.
 fn start_multiverse() -> Sender<Box<Event>> {
     let mut multiverse = Multiverse::new();
-    let rx = multiverse.global_world_handle.tx_channel.clone();
+    let rx = multiverse.get_global_input_event_channel();
 
     task::spawn_blocking(move || {
         multiverse.run();
