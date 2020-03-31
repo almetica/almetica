@@ -21,9 +21,11 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
+    // User ID
+    uid: u64,
     stream: &'a mut TcpStream,
     addr: SocketAddr,
-    crypt: CryptSession,
+    cipher: CryptSession,
     opcode_table: &'a [Opcode],
     reverse_opcode_table: &'a HashMap<Opcode, u16>,
     // Sending channel TO the global world
@@ -45,6 +47,38 @@ impl<'a> GameSession<'a> {
         opcode_table: &'a [Opcode],
         reverse_opcode_table: &'a HashMap<Opcode, u16>,
     ) -> Result<GameSession<'a>> {
+        // Initialize the stream cipher with the client.
+        let cipher = GameSession::init_crypto(stream, &addr).await?;
+
+        // Channel to receive response events from the global world ECS.
+        let (tx_response_channel, mut rx_response_channel) = channel(128);
+        global_request_channel.send(Box::new(
+            Event::RegisterConnection {
+                response_channel: tx_response_channel,
+            }
+        )).await?;
+        // Wait for the global ECS to return an UID for the connection.
+        let message = rx_response_channel.recv().await;
+        let uid = GameSession::parse_guid(message).await?;
+
+        let gs = GameSession {
+            uid: uid,
+            stream: stream,
+            addr: addr,
+            cipher: cipher,
+            opcode_table: opcode_table,
+            reverse_opcode_table: reverse_opcode_table,
+            global_request_channel: global_request_channel,
+            global_response_channel: rx_response_channel,
+            _instance_request_channel: None,
+            _instance_response_channel: None,
+        };
+
+        info!("Game session initialized on socket {:?}", addr);
+        Ok(gs)
+    }
+
+    async fn init_crypto(stream: &mut TcpStream, addr: &SocketAddr) -> Result<CryptSession> {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1 = vec![0; 128];
         let mut client_key_2 = vec![0; 128];
@@ -97,29 +131,13 @@ impl<'a> GameSession<'a> {
         };
         debug!("Send server key 2 on socket {:?}", addr);
 
-        // Channel to receive response events from the global world ECS
-        let (tx_response_channel, rx_response_channel) = channel(128);
-        global_request_channel.send(Box::new(
-            Event::RegisterConnection {
-                response_channel: tx_response_channel,
-            }
-        )).await?;
+        Ok(CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]))
+    }
 
-        let cs = CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]);
-        let gs = GameSession {
-            stream: stream,
-            addr: addr,
-            crypt: cs,
-            opcode_table: opcode_table,
-            reverse_opcode_table: reverse_opcode_table,
-            global_request_channel: global_request_channel,
-            global_response_channel: rx_response_channel,
-            _instance_request_channel: None,
-            _instance_response_channel: None,
-        };
-
-        info!("Game session initialized on socket {:?}", addr);
-        Ok(gs)
+    /// Reads the message from the global world message and returns the UID.
+    async fn parse_guid(message: Option<Box<Event>>) -> Result<u64> {
+        // TODO
+        Ok(0)
     }
 
     /// Handles the writing / sending on the TCP stream.
@@ -133,13 +151,13 @@ impl<'a> GameSession<'a> {
                        Ok(read_bytes) => {
                             if read_bytes == 4 {
                                 self.stream.read_exact(&mut header_buf).await?;
-                                self.crypt.crypt_client_data(&mut header_buf);
+                                self.cipher.crypt_client_data(&mut header_buf);
                                 let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
                                 let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
                                 let mut data_buf = vec![0u8; packet_length];
                                 if packet_length != 0 {
                                     self.stream.read_exact(&mut data_buf).await?;
-                                    self.crypt.crypt_client_data(&mut data_buf);
+                                    self.cipher.crypt_client_data(&mut data_buf);
                                 }
                                 self.handle_packet(opcode, data_buf).await?;
                             }
@@ -226,6 +244,7 @@ impl<'a> GameSession<'a> {
                     opcode, self.addr
                 );
             }
+            // TODO we also need to send the UID
             _ => match Event::new_from_packet(opcode_type, packet_data) {
                 Ok(event) => {
                     debug!(
