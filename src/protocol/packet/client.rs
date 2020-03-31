@@ -32,19 +32,28 @@ pub struct CLoginArbiter {
 }
 
 #[cfg(test)]
+#[macro_use]
 mod tests {
     use super::super::super::super::model::Region;
     use super::super::super::serde::{from_vec, to_vec, Error};
     use super::*;
 
-    #[test]
-    fn test_c_check_version() -> Result<(), Error> {
-        let org = vec![
+    packet_test!(
+        name: test_get_user_guild_logo,
+        data: vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0],
+        expected: CGetUserGuildLogo {
+            player_id: 20000513,
+            guild_id: 3701,
+        }
+    );
+
+    packet_test!(
+        name: test_c_check_version,
+        data: vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0,
             0x14, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
-        ];
-        let data = org.clone();
-        let expected = CCheckVersion {
+        ],
+        expected: CCheckVersion {
             version: vec![
                 CCheckVersionEntry {
                     index: 0,
@@ -55,30 +64,12 @@ mod tests {
                     value: 359374,
                 },
             ],
-        };
+        }
+    );
 
-        assert_eq!(expected, from_vec(data)?);
-        assert_eq!(org, to_vec(expected)?);
-        Ok(())
-    }
-
-    #[test]
-    fn test_c_get_user_guild_logo() -> Result<(), Error> {
-        let org = vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0];
-        let data = org.clone();
-        let expected = CGetUserGuildLogo {
-            player_id: 20000513,
-            guild_id: 3701,
-        };
-
-        assert_eq!(expected, from_vec(data)?);
-        assert_eq!(org, to_vec(expected)?);
-        Ok(())
-    }
-
-    #[test]
-    fn test_c_login_arbiter() -> Result<(), Error> {
-        let org = vec![
+    packet_test!(
+        name: test_c_login_arbiter,
+        data: vec![
             0x17, 0x0, 0x33, 0x0, 0x32, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x2a,
             0x23, 0x0, 0x0, 0x72, 0x0, 0x6f, 0x0, 0x79, 0x0, 0x61, 0x0, 0x6c, 0x0, 0x42, 0x0, 0x75,
             0x0, 0x73, 0x0, 0x68, 0x0, 0x35, 0x0, 0x39, 0x0, 0x31, 0x0, 0x35, 0x0, 0x0, 0x0, 0x4f,
@@ -86,9 +77,8 @@ mod tests {
             0x38, 0x72, 0x46, 0x6e, 0x48, 0x45, 0x44, 0x57, 0x4d, 0x54, 0x72, 0x59, 0x53, 0x62,
             0x48, 0x61, 0x32, 0x38, 0x30, 0x6a, 0x76, 0x65, 0x5a, 0x74, 0x43, 0x65, 0x47, 0x37,
             0x54, 0x37, 0x70, 0x58, 0x76, 0x37, 0x48,
-        ];
-        let data = org.clone();
-        let expected = CLoginArbiter {
+        ],
+        expected: CLoginArbiter {
             master_account_name: "royalBush5915".to_string(),
             ticket: vec![
                 79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56, 114, 70, 110,
@@ -99,10 +89,6 @@ mod tests {
             unk2: 0,
             region: Region::Europe,
             patch_version: 9002,
-        };
-
-        assert_eq!(expected, from_vec(data)?);
-        assert_eq!(org, to_vec(expected)?);
-        Ok(())
-    }
+        }
+    );
 }
