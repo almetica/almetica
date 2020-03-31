@@ -10,7 +10,7 @@ use super::super::protocol::opcode::Opcode;
 use super::super::protocol::packet::client::*;
 use super::super::protocol::packet::server::*;
 use super::super::protocol::serde::from_vec;
-use super::super::Result;
+use super::super::{Error, Result};
 
 use tokio::sync::mpsc::Sender;
 
@@ -54,7 +54,7 @@ macro_rules! assemble_event {
                         let p = from_vec(packet_data)?;
                         Ok(Event::$r_ty{ packet: p })
                     },)*
-                    _ => panic!("No Opcode => Event mapping found for opcode {:?}", opcode),
+                    _ => Err(Error::NoEventMappingForPacket),
                 }
             }
 

@@ -145,7 +145,7 @@ impl<'a> GameSession<'a> {
         match opcode_type {
             Opcode::UNKNOWN => {
                 warn!(
-                    "Unmapped and unhandled packet with opcode {:?} on socket {:?}",
+                    "Unmapped and unhandled packet {:?} on socket {:?}",
                     opcode, self.addr
                 );
             }
@@ -169,10 +169,14 @@ impl<'a> GameSession<'a> {
                             }
                         };
                     }
-
-                    // TODO create custom error for no mapping on packet
                     Err(e) => match e {
-                        _ => warn!(
+                        Error::NoEventMappingForPacket => {
+                            warn!(
+                                "No mapping found for packet {:?} on socket {:?}",
+                                opcode_type, self.addr
+                            );
+                        },
+                        _ => error!(
                             "Can't create event from valid packet {:?} on socket {:?}: {:?}",
                             opcode_type, self.addr, e
                         ),

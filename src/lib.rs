@@ -15,6 +15,9 @@ pub enum Error {
     #[error("magic word not found at start of the stream")]
     NoMagicWord,
 
+    #[error("no event mapping found for packet")]
+    NoEventMappingForPacket,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
