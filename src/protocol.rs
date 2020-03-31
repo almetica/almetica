@@ -25,7 +25,7 @@ pub struct GameSession<'a> {
     crypt: CryptSession,
     opcode_table: &'a [Opcode],
     // Sending channel TO the global world
-    global_tx_channel: Option<Sender<Box<Event>>>,
+    global_tx_channel: Sender<Box<Event>>,
     // Receiving channel FROM the global world
     global_rx_channel: Option<Receiver<Box<Event>>>,
     // Sending channel TO the instance world
@@ -103,7 +103,7 @@ impl<'a> GameSession<'a> {
             addr: addr,
             crypt: cs,
             opcode_table: opcode_table,
-            global_tx_channel: Some(global_tx_channel),
+            global_tx_channel: global_tx_channel,
             global_rx_channel: None,
             instance_tx_channel: None,
             instance_rx_channel: None,
@@ -156,18 +156,7 @@ impl<'a> GameSession<'a> {
                             "Received valid packet {:?} on socket {:?}",
                             opcode_type, self.addr
                         );
-                        match &mut self.global_tx_channel {
-                            Some(tx) => {
-                                tx.send(Box::new(event)).await?;
-                            }
-                            None => {
-                                error!(
-                                    "No tx channel to send event to global world on socket {:?}",
-                                    self.addr
-                                );
-                                // TODO throw error
-                            }
-                        };
+                        self.global_tx_channel.send(Box::new(event)).await?;
                     }
                     Err(e) => match e {
                         Error::NoEventMappingForPacket => {

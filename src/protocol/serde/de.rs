@@ -21,7 +21,6 @@ where
 {
     let mut deserializer = Deserializer::from_vec(v);
     let t = T::deserialize(&mut deserializer)?;
-    // FIXME: We currently don't test if we have read the whole message
     Ok(t)
 }
 
