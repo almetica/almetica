@@ -6,10 +6,12 @@
 /// always send to the global world ECS first by the connection handler.
 ///
 /// Request and Response events need a protocol packet as the first argument.
+use std::fmt;
+
 use super::super::protocol::opcode::Opcode;
 use super::super::protocol::packet::client::*;
 use super::super::protocol::packet::server::*;
-use super::super::protocol::serde::from_vec;
+use super::super::protocol::serde::{from_vec, to_vec};
 use super::super::{Error, Result};
 
 use tokio::sync::mpsc::Sender;
@@ -58,13 +60,49 @@ macro_rules! assemble_event {
                 }
             }
 
+            /// Get the data from a Response event. None if a Request event or normal event.
+            pub fn get_data(&self) -> Result<Option<Vec<u8>>> {
+                match self {
+                    $(Event::$r_ty{packet $(,$r_arg_name)*} => {
+                        let data = to_vec(packet)?;
+                        Ok(Some(data))
+                    },)*
+                    _ => Ok(None),
+                }
+            }
+
+            /// Get the opcode from a Response event. None if a Request event or normal event.
+            #[allow(unused_variables)]
+            pub fn get_opcode(&self) -> Option<Opcode> {
+                match self {
+                    $(Event::$r_ty{packet $(,$r_arg_name)*} => {
+                        Some(Opcode::$r_opcode)
+                    },)*
+                    _ => None,
+                }
+            }
+
+            /// Returns true if the event is an event that needs to be send to the global world ECS.
             #[allow(unused_variables)]
             pub fn is_global(&self) -> bool {
                 match self {
-                    $(Event::$l_ty{packet $(, $l_arg_name)*} => false,)*
-                    $(Event::$g_ty{packet $(, $g_arg_name)*} => true,)*
+                    $(Event::$l_ty{packet $(,$l_arg_name)*} => false,)*
+                    $(Event::$g_ty{packet $(,$g_arg_name)*} => true,)*
                     _ => false,
                 }
+            }
+        }
+
+        impl fmt::Display for Event {
+            #[allow(unused_variables)]
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match self {
+                    $(Event::$g_ty{packet $(,$g_arg_name)*} => write!(f, "{}", stringify!($g_ty)),)*
+                    $(Event::$l_ty{packet $(,$l_arg_name)*} => write!(f, "{}", stringify!($l_ty)),)*
+                    $(Event::$r_ty{packet $(,$r_arg_name)*} => write!(f, "{}", stringify!($r_ty)),)*
+                    $(Event::$e_ty{$($e_arg_name,)*} => write!(f, "{}", stringify!($e_ty)),)*
+                }
+                
             }
         }
     };
@@ -82,8 +120,8 @@ assemble_event! {
         ResponseCheckVersion{packet: SCheckVersion} -> S_CHECK_VERSION,
     }
     Event {
-        // Registers the tx_channel of a connection at a world.
-        RegisterConnection{tx_channel: Sender<Box<Event>>},
+        // Registers the response channel of a connection at a world.
+        RegisterConnection{response_channel: Sender<Box<Event>>},
     }
 }
 

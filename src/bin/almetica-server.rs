@@ -66,6 +66,13 @@ async fn run() -> Result<()> {
         }
     };
 
+    let mut c: i64 = -1;
+    let reverse_opcode_mapping = opcode_mapping
+        .iter()
+        .filter(|&op| *op != Opcode::UNKNOWN)
+        .map(|op| { c+=1; (*op, c as u16) })
+        .collect();
+
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();
 
@@ -81,6 +88,7 @@ async fn run() -> Result<()> {
                     addr,
                     global_tx_channel.clone(),
                     &opcode_mapping,
+                    &reverse_opcode_mapping,
                 )
                 .await
                 {

@@ -18,6 +18,9 @@ pub enum Error {
     #[error("no event mapping found for packet")]
     NoEventMappingForPacket,
 
+    #[error("no sender open for response channel")]
+    NoSenderResponseChannel,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
