@@ -1,17 +1,16 @@
 /// Events that are handled / emitted by the ECS.
 ///
 /// There are Request events, Response events and normal events.
-/// 
+///
 /// Request events can be either global or local. Global request events are
 /// always send to the global world ECS first by the connection handler.
-/// 
+///
 /// Request and Response events need a protocol packet as the first argument.
-
 use super::super::protocol::opcode::Opcode;
 use super::super::protocol::packet::client::*;
+use super::super::protocol::packet::server::*;
 use super::super::protocol::serde::from_vec;
 use super::super::Result;
-//use super::super::protocol::packet::server::*;
 
 use tokio::sync::mpsc::Sender;
 
@@ -35,6 +34,7 @@ macro_rules! assemble_event {
         pub enum Event {
             $($g_ty {packet: $g_packet_type $(,$g_arg_name: $g_arg_type)*},)*
             $($l_ty {packet: $l_packet_type $(,$l_arg_name: $l_arg_type)*},)*
+            $($r_ty {packet: $r_packet_type $(,$r_arg_name: $r_arg_type)*},)*
             $($e_ty {$($e_arg_name: $e_arg_type),*},)*
         }
 
@@ -79,6 +79,7 @@ assemble_event! {
     Local Request Event {
     }
     Response Event {
+        ResponseCheckVersion{packet: SCheckVersion} -> S_CHECK_VERSION,
     }
     Event {
         // Registers the tx_channel of a connection at a world.
@@ -100,7 +101,7 @@ mod tests {
             0x14, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
         let event = Event::new_from_packet(Opcode::C_CHECK_VERSION, data)?;
-        if let Event::RequestCheckVersion{packet} = event {
+        if let Event::RequestCheckVersion { packet } = event {
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);

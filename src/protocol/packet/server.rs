@@ -13,6 +13,11 @@ pub struct SAccountPackageListEntry {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SCheckVersion {
+    pub ok: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SGuildName {
     pub guild_name: String,
     pub guild_rank: String,
@@ -58,6 +63,16 @@ mod tests {
                 package_id: 434,
                 expiration_date: 2147483647,
             }]
+        }
+    );
+
+    packet_test!(
+        name: test_s_check_version,
+        data: vec![
+            0x1
+        ],
+        expected: SCheckVersion {
+            ok: true,
         }
     );
 
