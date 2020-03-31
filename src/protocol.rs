@@ -124,11 +124,13 @@ impl<'a> GameSession<'a> {
                         if read_bytes == 4 {
                             self.stream.read_exact(&mut header_buf).await?;
                             self.crypt.crypt_client_data(&mut header_buf);
-                            let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize;
+                            let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
                             let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
-                            let mut data_buf = vec![0u8; packet_length - 4];
-                            self.stream.read_exact(&mut data_buf).await?;
-                            self.crypt.crypt_client_data(&mut data_buf);
+                            let mut data_buf = vec![0u8; packet_length];
+                            if packet_length != 0 {
+                                self.stream.read_exact(&mut data_buf).await?;
+                                self.crypt.crypt_client_data(&mut data_buf);
+                            }
                             self.handle_packet(opcode, data_buf).await?;
                         }
                     }
