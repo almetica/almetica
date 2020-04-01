@@ -12,7 +12,7 @@ use super::*;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -161,6 +161,7 @@ impl<'a> GameSession<'a> {
                                 if packet_length != 0 {
                                     self.stream.read_exact(&mut data_buf).await?;
                                     self.cipher.crypt_client_data(&mut data_buf);
+                                    trace!("Received packet with opcode value {} on socket {:?}: {:?}", opcode, self.addr, data_buf);
                                 }
                                 self.handle_packet(opcode, data_buf).await?;
                             }
@@ -236,7 +237,7 @@ impl<'a> GameSession<'a> {
         let opcode_type = self.opcode_table[opcode];
         match opcode_type {
             Opcode::UNKNOWN => {
-                warn!("Unmapped and unhandled packet {:?} on socket {:?}", opcode, self.addr);
+                warn!("Unmapped and unhandled packet with opcode value {} on socket {:?}", opcode, self.addr);
             }
             // TODO we also need to send the UID
             _ => match Event::new_from_packet(opcode_type, packet_data) {
