@@ -1,3 +1,4 @@
+#![warn(clippy::all)]
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -152,9 +153,9 @@ impl StreamParser {
                 }
 
                 let mut packet_data = vec![0; length - 4];
-                &packet_data.copy_from_slice(&self.tmp_buffer[is_server][4..length]);
-                &self.tmp_buffer[is_server].copy_within(length.., 0);
-                &self.tmp_buffer[is_server].resize(self.tmp_buffer[is_server].len() - length, 0);
+                packet_data.copy_from_slice(&self.tmp_buffer[is_server][4..length]);
+                self.tmp_buffer[is_server].copy_within(length.., 0);
+                self.tmp_buffer[is_server].resize(self.tmp_buffer[is_server].len() - length, 0);
 
                 if is_server == 1 {
                     info!(
