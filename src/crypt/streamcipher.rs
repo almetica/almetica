@@ -1,6 +1,6 @@
 // Module that implements the Pike streamcipher used in TERA.
-use byteorder::{ByteOrder, LittleEndian};
 use super::sha1::Sha1;
+use byteorder::{ByteOrder, LittleEndian};
 
 // Provides a struct for the stream cipher used by TERA.
 // Direct port the the JS implementation of tera-toolbox to rust (MIT).
@@ -56,11 +56,7 @@ impl StreamCipher {
     #[inline]
     pub fn apply_keystream(&mut self, data: &mut [u8]) {
         let size = data.len();
-        let pre = if size < self.change_len {
-            size
-        } else {
-            self.change_len
-        };
+        let pre = if size < self.change_len { size } else { self.change_len };
 
         if pre != 0 {
             for i in 0..pre {
@@ -159,17 +155,25 @@ mod tests {
 
         let mut data: [u8; 32] = [0xCE; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("1b429bb891e2a631190550a609d2a815ddb58d0866ce2d7bb3894246c4c26d0d", encode(&data));
+        assert_eq!(
+            "1b429bb891e2a631190550a609d2a815ddb58d0866ce2d7bb3894246c4c26d0d",
+            encode(&data)
+        );
 
         data = [0x00; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("1eb1321c0cb111044a7264336dc9521c8c18bbe6b5af4ee227cce206990d60ef", encode(&data));
+        assert_eq!(
+            "1eb1321c0cb111044a7264336dc9521c8c18bbe6b5af4ee227cce206990d60ef",
+            encode(&data)
+        );
 
         data = [0xFF; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d", encode(&data));
+        assert_eq!(
+            "fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d",
+            encode(&data)
+        );
     }
-
 
     #[test]
     fn test_cipher_repeat_alternative_order() {
@@ -177,15 +181,24 @@ mod tests {
 
         let mut data: [u8; 32] = [0x00; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3", encode(&data));
+        assert_eq!(
+            "d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3",
+            encode(&data)
+        );
 
         data = [0xCE; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("d07ffcd2c27fdfca84bcaafda3079cd242d675287b61802ce9022cc857c3ae21", encode(&data));
+        assert_eq!(
+            "d07ffcd2c27fdfca84bcaafda3079cd242d675287b61802ce9022cc857c3ae21",
+            encode(&data)
+        );
 
         data = [0xFF; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d", encode(&data));
+        assert_eq!(
+            "fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d",
+            encode(&data)
+        );
     }
 
     #[test]
@@ -194,7 +207,10 @@ mod tests {
 
         let mut data: [u8; 32] = [0x00; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3", encode(&data));
+        assert_eq!(
+            "d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3",
+            encode(&data)
+        );
     }
 
     #[test]
@@ -203,6 +219,9 @@ mod tests {
 
         let mut data: [u8; 32] = [0xFF; 32];
         cipher.apply_keystream(&mut data);
-        assert_eq!("2a73aa89a0d397002834619738e39924ec84bc3957ff1c4a82b87377f5f35c3c", encode(&data));
+        assert_eq!(
+            "2a73aa89a0d397002834619738e39924ec84bc3957ff1c4a82b87377f5f35c3c",
+            encode(&data)
+        );
     }
 }

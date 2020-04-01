@@ -55,7 +55,7 @@ impl Sha1 {
 
         // Break chunk into sixteen u32 big-endian words
         for i in 0..16 {
-            w[i] = BigEndian::read_u32(&self.block[i*4..]);
+            w[i] = BigEndian::read_u32(&self.block[i * 4..]);
         }
 
         // Message schedule: extend the sixteen u32 into eighty u32
@@ -145,8 +145,8 @@ mod consts {
 #[cfg(test)]
 mod tests {
     use super::Sha1;
+    use byteorder::{ByteOrder, LittleEndian};
     use hex::encode;
-    use byteorder::{LittleEndian, ByteOrder};
 
     // Helper function
     fn digest_to_hex(msg: &str) -> String {
@@ -155,25 +155,19 @@ mod tests {
         let hash = h.hash().unwrap();
         let mut buf = [0; 20];
         for i in 0..5 {
-            LittleEndian::write_u32(&mut buf[i*4..], hash[i])
+            LittleEndian::write_u32(&mut buf[i * 4..], hash[i])
         }
         encode(buf)
     }
 
     #[test]
     fn test_sha1_empty() {
-        assert_eq!(
-            "19ea6cf956ddd18a4a08ac1710c6923defc00877",
-            digest_to_hex("")
-        );
+        assert_eq!("19ea6cf956ddd18a4a08ac1710c6923defc00877", digest_to_hex(""));
     }
 
     #[test]
     fn test_sha1_hello_world() {
-        assert_eq!(
-            "c382ce9f95c18748a2b3403b85183e88a6a84f0c",
-            digest_to_hex("hello world")
-        );
+        assert_eq!("c382ce9f95c18748a2b3403b85183e88a6a84f0c", digest_to_hex("hello world"));
         assert_eq!(
             "cd4df1db2c067776df20233f305e1c8bb9101d94",
             digest_to_hex("hello, world")

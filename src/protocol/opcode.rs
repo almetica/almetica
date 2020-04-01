@@ -1,5 +1,5 @@
 /// Module that defines the opcode used in the network protocol.
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 
 /// Opcode enum

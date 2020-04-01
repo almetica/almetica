@@ -148,8 +148,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             if self.data[i] == 0 && self.data[i + 1] == 0 {
                 let mut aligned = vec![0u16; (i - abs_pos) / 2];
                 for j in 0..aligned.len() {
-                    aligned[j] =
-                        LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
+                    aligned[j] = LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
@@ -244,8 +243,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             {
                 if self.count > 0 {
                     self.count -= 1;
-                    let value =
-                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    let value = serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
                 } else {
                     Ok(None)
@@ -316,8 +314,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     self.next_offset = abs_offset;
                     self.deserializer.pos += 2;
 
-                    let value =
-                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    let value = serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
                 } else {
                     // Return to the end of the array header
@@ -361,12 +358,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         Err(Error::DeserializeMapNotSupported(self.pos))
     }
 
-    fn deserialize_struct<V>(
-        self,
-        _name: &str,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_struct<V>(self, _name: &str, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -394,12 +386,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_unit()
     }
 
-    fn deserialize_tuple_struct<V>(
-        self,
-        _name: &'static str,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_tuple_struct<V>(self, _name: &'static str, len: usize, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -471,5 +458,5 @@ mod tests {
 
         assert_eq!(expected, from_vec(data)?);
         Ok(())
-    } 
+    }
 }

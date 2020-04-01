@@ -38,11 +38,7 @@ async fn run() -> Result<()> {
     let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "Can't read configuration file {}: {:?}",
-                &opts.config.display(),
-                e
-            );
+            error!("Can't read configuration file {}: {:?}", &opts.config.display(), e);
             return Err(e);
         }
     };
@@ -57,11 +53,7 @@ async fn run() -> Result<()> {
             mapping
         }
         Err(e) => {
-            error!(
-                "Can't read opcode mapping file {}: {:?}",
-                &opts.config.display(),
-                e
-            );
+            error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
             return Err(e);
         }
     };
@@ -70,7 +62,10 @@ async fn run() -> Result<()> {
     let reverse_opcode_mapping = opcode_mapping
         .iter()
         .filter(|&op| *op != Opcode::UNKNOWN)
-        .map(|op| { c+=1; (*op, c as u16) })
+        .map(|op| {
+            c += 1;
+            (*op, c as u16)
+        })
         .collect();
 
     info!("Starting the ECS multiverse");
@@ -94,10 +89,7 @@ async fn run() -> Result<()> {
                 {
                     Ok(mut session) => match session.handle_connection().await {
                         Ok(_) => info!("Closed connection on socket {:?}", addr),
-                        Err(e) => error!(
-                            "Error while handling game session on socket {:?}: {:?}",
-                            addr, e
-                        ),
+                        Err(e) => error!("Error while handling game session on socket {:?}: {:?}", addr, e),
                     },
                     Err(e) => error!("Failed create game session on socket {:?}: {:?}", addr, e),
                 }

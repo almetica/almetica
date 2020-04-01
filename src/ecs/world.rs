@@ -4,7 +4,7 @@ use std::{thread, time};
 
 use super::event::Event;
 use super::resource::EventRxChannel;
-use super::system::event_dispatcher;
+use super::system::*;
 
 use legion::prelude::*;
 use log::debug;
@@ -46,7 +46,7 @@ impl Multiverse {
     /// Starts the main loop of the global world.
     pub fn run(&mut self) {
         let mut schedule = Schedule::builder()
-            .add_system(event_dispatcher(&self.global_world_handle.world))
+            .add_system(event_handler::init(&self.global_world_handle.world))
             .flush()
             .build();
 
@@ -91,9 +91,8 @@ mod tests {
         match m
             .global_world_handle
             .tx_channel
-            .try_send(Box::new(Event::RegisterConnection {
-                response_channel: tx,
-            })) {
+            .try_send(Box::new(Event::RegisterConnection { response_channel: tx }))
+        {
             Ok(()) => return Ok(()),
             Err(e) => panic!(e),
         }

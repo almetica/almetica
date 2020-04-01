@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use serde::Serialize;
 use warp::Filter;
 
 #[derive(Serialize)]
@@ -15,15 +15,15 @@ struct AuthResponse {
     chars_per_server: Vec<ServerCharactersInfo>,
     account_bits: String, // ??? Possible vlaue: 0x041F000D or 0x00000000?
 
-    #[serde(rename = "result-message")] 
+    #[serde(rename = "result-message")]
     result_message: String, // OK
 
     #[serde(rename = "result-code")]
     result_code: i32, // 200
 
-    access_level: i32, // Normal user = 1
-    user_permission: i32, // Normal user = 0
-    game_account_name: String, // Always "TERA"
+    access_level: i32,           // Normal user = 1
+    user_permission: i32,        // Normal user = 0
+    game_account_name: String,   // Always "TERA"
     master_account_name: String, // We will use a UUID here, so that LOGIN and GAME server don't need to expose their indexes for synchronization.
     ticket: String, // Can be any string that is ASCII printable. Use some kind of signature so that LOGIN and GAME server don't need a connection to each other.
 }
@@ -35,9 +35,8 @@ async fn main() {
     // The TERA client NEEDS to have the region endings (.uk / .de etc.) at the end or else it will not start!
 
     // GET /server/list.uk
-    let server = warp::get()
-        .and(warp::path!("server" / "list.uk"))
-        .map(|| r###"<serverlist>
+    let server = warp::get().and(warp::path!("server" / "list.uk")).map(|| {
+        r###"<serverlist>
 <server>
 <id>1</id>
 <ip>127.0.0.1</ip>
@@ -51,7 +50,8 @@ async fn main() {
 <popup> This server isn't up yet! </popup>
 <language>en</language>
 </server>
-</serverlist>"###);
+</serverlist>"###
+    });
 
     // GET /auth
     let auth = warp::post()
@@ -81,8 +81,6 @@ async fn main() {
 
     // TODO read from configuration
     let listen_addr_string = "127.0.0.1:80";
-    let listen_addr: SocketAddr = listen_addr_string
-        .parse()
-        .expect("Unable to parse listen address");
+    let listen_addr: SocketAddr = listen_addr_string.parse().expect("Unable to parse listen address");
     warp::serve(routes).run(listen_addr).await;
 }

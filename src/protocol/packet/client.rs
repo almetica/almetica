@@ -1,6 +1,6 @@
+use super::super::super::model::Region;
 /// Module for client network packages.
 use serde::{Deserialize, Serialize};
-use super::super::super::model::Region;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {

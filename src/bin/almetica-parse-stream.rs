@@ -3,12 +3,12 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
-use almetica::Result;
 use almetica::config::read_configuration;
-use almetica::dataloader::load_opcode_mapping;
 use almetica::crypt::CryptSession;
+use almetica::dataloader::load_opcode_mapping;
 use almetica::protocol::opcode::Opcode;
 use almetica::Error;
+use almetica::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use hex::encode;
@@ -43,11 +43,7 @@ fn run() -> Result<()> {
     let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "Can't read configuration file {}: {}",
-                &opts.config.display(),
-                e
-            );
+            error!("Can't read configuration file {}: {}", &opts.config.display(), e);
             return Err(e);
         }
     };
@@ -58,13 +54,9 @@ fn run() -> Result<()> {
                 mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
             );
             mapping
-        },
+        }
         Err(e) => {
-            error!(
-                "Can't read opcode mapping file {}: {}",
-                &opts.config.display(),
-                e
-            );
+            error!("Can't read opcode mapping file {}: {}", &opts.config.display(), e);
             return Err(e);
         }
     };
@@ -125,7 +117,6 @@ struct StreamParser {
 }
 
 impl StreamParser {
-
     /// Parses a packet in the payload. Handles the crypt session initialization.
     pub fn parse_packet(&mut self, is_server: usize, payload: &mut Vec<u8>) -> Result<()> {
         if self.state != 4 {

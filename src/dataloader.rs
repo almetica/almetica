@@ -4,8 +4,8 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
 
-use super::*;
 use super::protocol::opcode::Opcode;
+use super::*;
 
 /// Load opcode mapping from a file.
 pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {
@@ -32,19 +32,22 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::protocol::opcode::Opcode;
     use super::super::*;
     use super::read_opcode_table;
-    use super::super::protocol::opcode::Opcode;
     use std::io::Write;
 
     #[test]
     fn test_read_opcode_table() -> Result<()> {
         let mut file = Vec::new();
-        file.write_all("
+        file.write_all(
+            "
         C_UNEQUIP_ITEM: 1
         S_ANNOUNCE_MESSAGE: 5
         C_ADD_FRIEND: 2
-        ".as_bytes())?;
+        "
+            .as_bytes(),
+        )?;
 
         let table = read_opcode_table(&mut file.as_slice())?;
 

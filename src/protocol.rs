@@ -52,11 +52,11 @@ impl<'a> GameSession<'a> {
 
         // Channel to receive response events from the global world ECS.
         let (tx_response_channel, mut rx_response_channel) = channel(128);
-        global_request_channel.send(Box::new(
-            Event::RegisterConnection {
+        global_request_channel
+            .send(Box::new(Event::RegisterConnection {
                 response_channel: tx_response_channel,
-            }
-        )).await?;
+            }))
+            .await?;
         // Wait for the global ECS to return an UID for the connection.
         let message = rx_response_channel.recv().await;
         let uid = GameSession::parse_guid(message).await?;
@@ -131,7 +131,10 @@ impl<'a> GameSession<'a> {
         };
         debug!("Send server key 2 on socket {:?}", addr);
 
-        Ok(CryptSession::new([client_key_1, client_key_2], [server_key_1, server_key_2]))
+        Ok(CryptSession::new(
+            [client_key_1, client_key_2],
+            [server_key_1, server_key_2],
+        ))
     }
 
     /// Reads the message from the global world message and returns the UID.
@@ -187,17 +190,11 @@ impl<'a> GameSession<'a> {
                             self.send_packet(opcode, data).await?;
                         }
                         None => {
-                            error!(
-                                "Can't find opcode in event {:?} on socket {:?}",
-                                event, self.addr
-                            );
+                            error!("Can't find opcode in event {:?} on socket {:?}", event, self.addr);
                         }
                     },
                     None => {
-                        error!(
-                            "Can't find data in event {:?} on socket {:?}",
-                            event, self.addr
-                        );
+                        error!("Can't find data in event {:?} on socket {:?}", event, self.addr);
                     }
                 }
             }
@@ -239,18 +236,12 @@ impl<'a> GameSession<'a> {
         let opcode_type = self.opcode_table[opcode];
         match opcode_type {
             Opcode::UNKNOWN => {
-                warn!(
-                    "Unmapped and unhandled packet {:?} on socket {:?}",
-                    opcode, self.addr
-                );
+                warn!("Unmapped and unhandled packet {:?} on socket {:?}", opcode, self.addr);
             }
             // TODO we also need to send the UID
             _ => match Event::new_from_packet(opcode_type, packet_data) {
                 Ok(event) => {
-                    debug!(
-                        "Received valid packet {:?} on socket {:?}",
-                        opcode_type, self.addr
-                    );
+                    debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr);
                     self.global_request_channel.send(Box::new(event)).await?;
                 }
                 Err(e) => match e {

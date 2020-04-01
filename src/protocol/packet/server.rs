@@ -49,7 +49,7 @@ pub struct SItemCustomStringEntry {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use super::super::super::serde::{Error, from_vec, to_vec};
+    use super::super::super::serde::{from_vec, to_vec, Error};
     use super::*;
 
     packet_test!(
