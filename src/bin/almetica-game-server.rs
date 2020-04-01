@@ -38,6 +38,7 @@ async fn main() {
     }
 }
 
+// TODO refactor logging to use the tracing capabilities
 fn init_logging() {
     let fmt_layer = Layer::builder().with_target(true).finish();
 

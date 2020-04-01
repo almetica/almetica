@@ -11,7 +11,7 @@ pub struct EventRxChannel {
     pub channel: Receiver<Arc<Event>>,
 }
 
-/// Holds the UID to response channel mapping
+/// Holds the uid to response channel mapping
 pub struct ConnectionMapping {
     pub map: HashMap<u64, Sender<Arc<Event>>>,
 }

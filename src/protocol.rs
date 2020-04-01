@@ -17,7 +17,7 @@ use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info,span, trace, warn, Level};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
@@ -47,6 +47,9 @@ impl<'a> GameSession<'a> {
         opcode_table: &'a [Opcode],
         reverse_opcode_table: &'a HashMap<Opcode, u16>,
     ) -> Result<GameSession<'a>> {
+        let span = span!(Level::DEBUG, "connection", ?addr);
+        let _enter = span.enter();
+
         // Initialize the stream cipher with the client.
         let cipher = GameSession::init_crypto(stream, &addr).await?;
 
@@ -58,11 +61,11 @@ impl<'a> GameSession<'a> {
                 response_channel: tx_response_channel,
             }))
             .await?;
-        // Wait for the global ECS to return an UID for the connection.
+        // Wait for the global ECS to return an uid for the connection.
         let message = rx_response_channel.recv().await;
         let uid = GameSession::parse_uid(message).await?;
 
-        info!("Game session initialized on socket {:?}", addr);
+        info!("Game session initialized with uid {}", uid);
 
         Ok(GameSession {
             uid,
@@ -122,7 +125,7 @@ impl<'a> GameSession<'a> {
         ))
     }
 
-    /// Reads the message from the global world message and returns the UID.
+    /// Reads the message from the global world message and returns the uid.
     async fn parse_uid(message: Option<Arc<Event>>) -> Result<u64> {
         match message {
             Some(event) => match &*event {
@@ -135,6 +138,9 @@ impl<'a> GameSession<'a> {
 
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
+        let span = span!(Level::DEBUG, "connection", addr = ?self.addr, uid = self.uid);
+        let _enter = span.enter();
+
         let mut header_buf = vec![0u8; 4];
         loop {
             tokio::select! {
@@ -151,7 +157,7 @@ impl<'a> GameSession<'a> {
                                 if packet_length != 0 {
                                     self.stream.read_exact(&mut data_buf).await?;
                                     self.cipher.crypt_client_data(&mut data_buf);
-                                    trace!("Received packet with opcode value {} on socket {:?}: {:?}", opcode, self.addr, data_buf);
+                                    trace!("Received packet with opcode value {}: {:?}", opcode, data_buf);
                                 }
                                 if let Err(e) = self.handle_packet(opcode, data_buf).await {
                                     match e {
@@ -192,11 +198,11 @@ impl<'a> GameSession<'a> {
                             self.send_packet(opcode, data).await?;
                         }
                         None => {
-                            error!("Can't find opcode in event {:?} on socket {:?}", event, self.addr);
+                            error!("Can't find opcode in event {:?}", event);
                         }
                     },
                     None => {
-                        error!("Can't find data in event {:?} on socket {:?}", event, self.addr);
+                        error!("Can't find data in event {:?}", event);
                     }
                 }
             }
@@ -214,8 +220,8 @@ impl<'a> GameSession<'a> {
                 let len = data.len() + 4;
                 if len > std::u16::MAX as usize {
                     error!(
-                        "Length of packet {:?} too big for u16 length ({}) on socket {}",
-                        opcode, len, self.addr
+                        "Length of packet {:?} too big for u16 length ({})",
+                        opcode, len
                     );
                 } else {
                     self.stream.write_u16(len as u16).await?;
@@ -225,8 +231,8 @@ impl<'a> GameSession<'a> {
             }
             None => {
                 error!(
-                    "Can't find opcode {} in reverse mapping on socket {}",
-                    opcode, self.addr
+                    "Can't find opcode {} in reverse mapping",
+                    opcode
                 );
             }
         }
@@ -239,26 +245,26 @@ impl<'a> GameSession<'a> {
         match opcode_type {
             Opcode::UNKNOWN => {
                 warn!(
-                    "Unmapped and unhandled packet with opcode value {} on socket {:?}",
-                    opcode, self.addr
+                    "Unmapped and unhandled packet with opcode value {}",
+                    opcode
                 );
             }
             _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
                 Ok(event) => {
-                    debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr);
+                    debug!("Received valid packet {:?}", opcode_type);
                     // TODO test if the packet needs to be send to the global or the local ecs.
                     self.global_request_channel.send(Arc::new(event)).await?;
                 }
                 Err(e) => match e {
                     Error::NoEventMappingForPacket => {
                         warn!(
-                            "No mapping found for packet {:?} on socket {:?}",
-                            opcode_type, self.addr
+                            "No mapping found for packet {:?}",
+                            opcode_type
                         );
                     }
                     _ => error!(
-                        "Can't create event from valid packet {:?} on socket {:?}: {:?}",
-                        opcode_type, self.addr, e
+                        "Can't create event from valid packet {:?}: {:?}",
+                        opcode_type, e
                     ),
                 },
             },

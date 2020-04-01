@@ -28,7 +28,7 @@ pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
                         debug!("Registration event incoming for {:?}", world_id);
                         let uid = OsRng.next_u64();
                         connection_mapping.map.insert(uid, response_channel.clone());
-                        debug!("Registered connection with UID {} for {:?}", uid, world_id);
+                        debug!("Registered connection with uid {} for {:?}", uid, world_id);
 
                         let new_event = Arc::new(Event::ResponseRegisterConnection { uid });
                         debug!("Created {:?} event for {:?}", new_event, world_id);
@@ -38,8 +38,11 @@ pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
                             .with_component((new_event,))
                             .build();
                     }
-                    Event::ResponseRegisterConnection { .. } => {
-                        error!("TODO remove me later.");
+                    Event::RequestLoginArbiter { .. } => {
+                        error!("NOT IMPLEMENTED YET1");
+                    }
+                    Event::RequestCheckVersion { .. } => {
+                        error!("NOT IMPLEMENTED YET2");
                     }
                     _ => { /* Skip all other events */ }
                 }

@@ -27,21 +27,21 @@ pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
                             if let Err(err) = channel.try_send(e.clone()) {
                                 match err {
                                     TrySendError::Full(..) => {
-                                        error!("Dropping event for connection with UID {} because channel is full on {:?}", uid, world_id);
+                                        error!("Dropping event for connection with uid {} because channel is full on {:?}", uid, world_id);
                                     },
                                     TrySendError::Closed(..) => {
-                                        error!("Couldn't send event for connection with UID {} because channel is closed on {:?}", uid, world_id);
+                                        error!("Couldn't send event for connection with uid {} because channel is closed on {:?}", uid, world_id);
                                         connection_mapping.map.remove(&uid);
                                     }
                                 }
                             }
                         },
                         None => {
-                            error!("Couldn't find channel mapping for connection with UID {} on {:?}", uid, world_id);
+                            error!("Couldn't find channel mapping for connection with uid {} on {:?}", uid, world_id);
                         }
                     }
                 } else {
-                    error!("Event didn't had an UID attached on {:?}", world_id);
+                    error!("Event didn't had an uid attached on {:?}", world_id);
                 }
             }
         })
