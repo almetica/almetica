@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process;
 
-use almetica::config::load_configuration;
+use almetica::config::read_configuration;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
@@ -34,8 +34,8 @@ async fn main() {
 async fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
 
-    info!("Loading configuration file");
-    let config = match load_configuration(&opts.config) {
+    info!("Reading configuration file");
+    let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
             error!(

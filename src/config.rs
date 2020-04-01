@@ -17,7 +17,7 @@ pub struct DataConfiguration {
     pub iv: String,
 }
 
-pub fn load_configuration(path: &PathBuf) -> Result<Configuration>{
+pub fn read_configuration(path: &PathBuf) -> Result<Configuration>{
     let f = File::open(path)?;
     let configuration = serde_yaml::from_reader(f)?;
     Ok(configuration)

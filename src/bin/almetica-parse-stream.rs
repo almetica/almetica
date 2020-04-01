@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process;
 
 use almetica::Result;
-use almetica::config::load_configuration;
+use almetica::config::read_configuration;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::crypt::CryptSession;
 use almetica::protocol::opcode::Opcode;
@@ -40,7 +40,7 @@ fn main() {
 ///
 fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
-    let config = match load_configuration(&opts.config) {
+    let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
             error!(

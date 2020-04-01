@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use serde::Serialize;
 use warp::Filter;
 
@@ -78,9 +79,10 @@ async fn main() {
     let log = warp::log("almetica::login");
     let routes = server.or(auth).with(log);
 
-    // TODO configuration file system
-    warp::serve(routes)
-        // TODO find a sane way to configure this mess
-        .run(([127, 0, 0, 1], 8080))
-        .await;
+    // TODO read from configuration
+    let listen_addr_string = "127.0.0.1:80";
+    let listen_addr: SocketAddr = listen_addr_string
+        .parse()
+        .expect("Unable to parse listen address");
+    warp::serve(routes).run(listen_addr).await;
 }
