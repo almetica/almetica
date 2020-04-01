@@ -242,8 +242,7 @@ impl<'a> GameSession<'a> {
                     opcode, self.addr
                 );
             }
-            // TODO we also need to send the UID
-            _ => match Event::new_from_packet(opcode_type, packet_data) {
+            _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
                 Ok(event) => {
                     debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr);
                     self.global_request_channel.send(Box::new(event)).await?;

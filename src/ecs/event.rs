@@ -34,27 +34,27 @@ macro_rules! assemble_event {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
-            $($g_ty {packet: $g_packet_type $(,$g_arg_name: $g_arg_type)*},)*
-            $($l_ty {packet: $l_packet_type $(,$l_arg_name: $l_arg_type)*},)*
-            $($r_ty {packet: $r_packet_type $(,$r_arg_name: $r_arg_type)*},)*
+            $($g_ty {uid: u64, packet: $g_packet_type $(,$g_arg_name: $g_arg_type)*},)*
+            $($l_ty {uid: u64, packet: $l_packet_type $(,$l_arg_name: $l_arg_type)*},)*
+            $($r_ty {uid: u64, packet: $r_packet_type $(,$r_arg_name: $r_arg_type)*},)*
             $($e_ty {$($e_arg_name: $e_arg_type),*},)*
         }
 
         impl Event {
             /// Creates a new Request/Response event for the given opcode & packet data.
-            pub fn new_from_packet(opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
+            pub fn new_from_packet(uid: u64, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
                 match opcode {
                     $(Opcode::$g_opcode => {
-                        let p = from_vec(packet_data)?;
-                        Ok(Event::$g_ty{ packet: p })
+                        let packet = from_vec(packet_data)?;
+                        Ok(Event::$g_ty{uid, packet})
                     },)*
                     $(Opcode::$l_opcode => {
-                        let p = from_vec(packet_data)?;
-                        Ok(Event::$l_ty{ packet: p })
+                        let packet = from_vec(packet_data)?;
+                        Ok(Event::$l_ty{uid, packet})
                     },)*
                     $(Opcode::$r_opcode => {
-                        let p = from_vec(packet_data)?;
-                        Ok(Event::$r_ty{ packet: p })
+                        let packet = from_vec(packet_data)?;
+                        Ok(Event::$r_ty{uid, packet})
                     },)*
                     _ => Err(Error::NoEventMappingForPacket),
                 }
@@ -63,7 +63,7 @@ macro_rules! assemble_event {
             /// Get the data from a Response event. None if a Request event or normal event.
             pub fn get_data(&self) -> Result<Option<Vec<u8>>> {
                 match self {
-                    $(Event::$r_ty{packet $(,$r_arg_name)*} => {
+                    $(Event::$r_ty{packet, ..} => {
                         let data = to_vec(packet)?;
                         Ok(Some(data))
                     },)*
@@ -75,7 +75,7 @@ macro_rules! assemble_event {
             #[allow(unused_variables)]
             pub fn get_opcode(&self) -> Option<Opcode> {
                 match self {
-                    $(Event::$r_ty{packet $(,$r_arg_name)*} => {
+                    $(Event::$r_ty{..} => {
                         Some(Opcode::$r_opcode)
                     },)*
                     _ => None,
@@ -86,8 +86,8 @@ macro_rules! assemble_event {
             #[allow(unused_variables)]
             pub fn is_global(&self) -> bool {
                 match self {
-                    $(Event::$l_ty{packet $(,$l_arg_name)*} => false,)*
-                    $(Event::$g_ty{packet $(,$g_arg_name)*} => true,)*
+                    $(Event::$l_ty{..} => false,)*
+                    $(Event::$g_ty{..} => true,)*
                     _ => false,
                 }
             }
@@ -143,8 +143,8 @@ mod tests {
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0, 0x14, 0x0, 0x0, 0x0,
             0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
-        let event = Event::new_from_packet(Opcode::C_CHECK_VERSION, data)?;
-        if let Event::RequestCheckVersion { packet } = event {
+        let event = Event::new_from_packet(0, Opcode::C_CHECK_VERSION, data)?;
+        if let Event::RequestCheckVersion { uid: 0, packet } = event {
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
@@ -158,6 +158,7 @@ mod tests {
     #[test]
     fn test_is_global() -> Result<(), Error> {
         let org = Event::RequestLoginArbiter {
+            uid: 0,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
                 ticket: vec![],
@@ -174,6 +175,7 @@ mod tests {
     #[test]
     fn test_get_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
+            uid: 0,
             packet: SCheckVersion { ok: true },
         };
         assert_eq!(Some(Opcode::S_CHECK_VERSION), org.get_opcode());
