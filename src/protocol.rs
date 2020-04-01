@@ -61,21 +61,20 @@ impl<'a> GameSession<'a> {
         let message = rx_response_channel.recv().await;
         let uid = GameSession::parse_guid(message).await?;
 
-        let gs = GameSession {
-            uid: uid,
-            stream: stream,
-            addr: addr,
-            cipher: cipher,
-            opcode_table: opcode_table,
-            reverse_opcode_table: reverse_opcode_table,
-            global_request_channel: global_request_channel,
+        info!("Game session initialized on socket {:?}", addr);
+
+        Ok(GameSession {
+            uid,
+            stream,
+            addr,
+            cipher,
+            opcode_table,
+            reverse_opcode_table,
+            global_request_channel,
             global_response_channel: rx_response_channel,
             _instance_request_channel: None,
             _instance_response_channel: None,
-        };
-
-        info!("Game session initialized on socket {:?}", addr);
-        Ok(gs)
+        })
     }
 
     async fn init_crypto(stream: &mut TcpStream, addr: &SocketAddr) -> Result<CryptSession> {
@@ -237,7 +236,10 @@ impl<'a> GameSession<'a> {
         let opcode_type = self.opcode_table[opcode];
         match opcode_type {
             Opcode::UNKNOWN => {
-                warn!("Unmapped and unhandled packet with opcode value {} on socket {:?}", opcode, self.addr);
+                warn!(
+                    "Unmapped and unhandled packet with opcode value {} on socket {:?}",
+                    opcode, self.addr
+                );
             }
             // TODO we also need to send the UID
             _ => match Event::new_from_packet(opcode_type, packet_data) {

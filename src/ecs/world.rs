@@ -8,7 +8,7 @@ use super::system::*;
 
 use legion::prelude::*;
 use log::debug;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{channel, Sender};
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
@@ -21,26 +21,7 @@ pub struct Multiverse {
 impl Multiverse {
     /// Creates a new Multiverse.
     pub fn new() -> Multiverse {
-        let universe = Universe::new();
-        let global = universe.create_world();
-
-        debug!("Global world with ID {:?} created", global.id());
-
-        // Create channels to send data to and from the global world.
-        // At most 1024 events can be queued between server ticks
-        let (tx, rx): (Sender<Box<Event>>, Receiver<Box<Event>>) = channel(1024);
-        let mut resources = Resources::default();
-        resources.insert(EventRxChannel { rx_channel: rx });
-
-        Multiverse {
-            _universe: universe,
-            global_world_handle: WorldHandle {
-                tx_channel: tx,
-                world: global,
-            },
-            _instanced_world_handles: HashMap::new(),
-            resources: resources,
-        }
+        Default::default()
     }
 
     /// Starts the main loop of the global world.
@@ -66,6 +47,31 @@ impl Multiverse {
     /// Get the Input Event Channel of the global world
     pub fn get_global_input_event_channel(&self) -> Sender<Box<Event>> {
         self.global_world_handle.tx_channel.clone()
+    }
+}
+
+impl Default for Multiverse {
+    fn default() -> Self {
+        let universe = Universe::new();
+        let world = universe.create_world();
+
+        debug!("Global world with ID {:?} created", world.id());
+
+        // Create channels to send data to and from the global world.
+        // At most 1024 events can be queued between server ticks
+        let (tx_channel, rx_channel) = channel(1024);
+        let mut resources = Resources::default();
+        resources.insert(EventRxChannel { rx_channel });
+
+        Multiverse {
+            _universe: universe,
+            global_world_handle: WorldHandle {
+                tx_channel,
+                world,
+            },
+            _instanced_world_handles: HashMap::new(),
+            resources,
+        }
     }
 }
 

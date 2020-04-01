@@ -25,7 +25,7 @@ where
     let opcode_map: HashMap<Opcode, u16> = serde_yaml::from_reader(reader)?;
     let mut opcode_table: Vec<Opcode> = vec![Opcode::UNKNOWN; std::u16::MAX as usize];
     for (key, value) in opcode_map.iter() {
-        opcode_table[*value as usize] = key.clone();
+        opcode_table[*value as usize] = *key;
     }
     Ok(opcode_table)
 }

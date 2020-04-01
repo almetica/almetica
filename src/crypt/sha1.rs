@@ -18,14 +18,7 @@ pub struct Sha1 {
 impl Sha1 {
     /// Construct a `Sha1` object
     pub fn new() -> Sha1 {
-        let st = Sha1 {
-            digest: consts::H,
-            block: [0; 64],
-            block_index: 0,
-            length: 0,
-            computed: false,
-        };
-        st
+        Default::default()
     }
 
     /// Update the hash with new data
@@ -51,16 +44,16 @@ impl Sha1 {
     }
 
     fn process_message_block(&mut self) {
-        let mut w: [u32; 80] = [0; 80];
+        let mut words: [u32; 80] = [0; 80];
 
         // Break chunk into sixteen u32 big-endian words
-        for i in 0..16 {
-            w[i] = BigEndian::read_u32(&self.block[i * 4..]);
+        for (i, el) in words.iter_mut().take(16).enumerate() {
+            *el = BigEndian::read_u32(&self.block[i * 4..]);
         }
 
         // Message schedule: extend the sixteen u32 into eighty u32
         for i in 16..80 {
-            w[i] = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+            words[i] = words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16];
         }
 
         // Initialize hash value for this chunk
@@ -71,8 +64,8 @@ impl Sha1 {
         let mut e = self.digest[4];
 
         // Main loop
-        for i in 0..80 {
-            let mut temp = e.wrapping_add(left_rotate(a, 5)).wrapping_add(w[i]);
+        for (i, el) in words.iter().enumerate() {
+            let mut temp = e.wrapping_add(left_rotate(a, 5)).wrapping_add(*el);
             if i < 20 {
                 temp = temp.wrapping_add((b & c) | ((!b) & d));
                 temp = temp.wrapping_add(consts::K[0]);
@@ -132,14 +125,26 @@ impl Sha1 {
     }
 }
 
+impl Default for Sha1 {
+    fn default() -> Self {
+        Sha1 {
+            digest: consts::H,
+            block: [0; 64],
+            block_index: 0,
+            length: 0,
+            computed: false,
+        }
+    }
+}
+
 #[inline]
 fn left_rotate(word: u32, shift: u32) -> u32 {
     (word << shift) | (word >> (32 - shift))
 }
 
 mod consts {
-    pub const H: [u32; 5] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
-    pub const K: [u32; 4] = [0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6];
+    pub const H: [u32; 5] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476, 0xc3d2_e1f0];
+    pub const K: [u32; 4] = [0x5a82_7999, 0x6ed9_eba1, 0x8f1b_bcdc, 0xca62_c1d6];
 }
 
 #[cfg(test)]

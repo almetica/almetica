@@ -63,12 +63,12 @@ pub enum Error {
 
 impl de::Error for Error {
     fn custom<T: Display>(desc: T) -> Error {
-        Error::Custom(desc.to_string()).into()
+        Error::Custom(desc.to_string())
     }
 }
 
 impl ser::Error for Error {
     fn custom<T: Display>(msg: T) -> Self {
-        Error::Custom(msg.to_string()).into()
+        Error::Custom(msg.to_string())
     }
 }

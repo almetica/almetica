@@ -50,11 +50,10 @@ impl CryptSession {
         client_packet_cipher.apply_keystream(&mut tmp1);
         let server_packet_cipher = StreamCipher::new(&tmp1);
 
-        let cs = CryptSession {
-            server_packet_cipher: server_packet_cipher,
-            client_packet_cipher: client_packet_cipher,
-        };
-        cs
+        CryptSession {
+            server_packet_cipher,
+            client_packet_cipher,
+        }
     }
 
     /// Applies the StreamCipher for client packets on the given data and advances the state of the StreamCipher.

@@ -147,8 +147,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             // Look for null terminator
             if self.data[i] == 0 && self.data[i + 1] == 0 {
                 let mut aligned = vec![0u16; (i - abs_pos) / 2];
-                for j in 0..aligned.len() {
-                    aligned[j] = LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
+                for (j, el) in aligned.iter_mut().enumerate() {
+                    *el = LittleEndian::read_u16(&self.data[abs_pos + j * 2..abs_pos + j * 2 + 2]);
                 }
                 let mut utf8 = vec![0u8; aligned.len() * 3];
                 let size = ucs2::decode(&aligned, &mut utf8).unwrap();
@@ -168,7 +168,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        return self.deserialize_str(visitor);
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
@@ -257,7 +257,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
 
         visitor.visit_seq(Access {
             deserializer: self,
-            count: count,
+            count,
         })
     }
 
@@ -332,21 +332,21 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         let count: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
         self.pos += 2;
         let tmp_offset: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let abs_offset: usize = self.abs_offset(tmp_offset, self.depth);
+        let next_offset: usize = self.abs_offset(tmp_offset, self.depth);
         self.pos += 2;
 
-        let old_pos = self.pos.clone();
-        let current_depth = self.depth.clone();
+        let old_pos = self.pos;
+        let current_depth = self.depth;
         let data_len = self.data.len();
 
         self.depth += 1;
 
         visitor.visit_seq(Access {
             deserializer: self,
-            count: count,
-            data_len: data_len,
-            next_offset: abs_offset,
-            old_pos: old_pos,
+            count,
+            data_len,
+            next_offset,
+            old_pos,
             depth: current_depth,
         })
     }

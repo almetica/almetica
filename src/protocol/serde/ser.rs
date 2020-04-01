@@ -382,7 +382,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
         let nodes = &mut self.nodes;
         let node = nodes.get_mut(&self.current_node).unwrap();
 
-        if node.data.len() != 0 {
+        if !node.data.is_empty() {
             let parent = self.nodes.get(&self.current_node).unwrap().parent;
             self.current_node = parent;
         }

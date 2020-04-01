@@ -59,9 +59,9 @@ impl StreamCipher {
         let pre = if size < self.change_len { size } else { self.change_len };
 
         if pre != 0 {
-            for i in 0..pre {
+            for (i, el) in data.iter_mut().take(pre).enumerate() {
                 let shift = 8 * (4 - self.change_len + i);
-                data[i] ^= (self.change_data >> shift) as u8;
+                *el ^= (self.change_data >> shift) as u8;
             }
             self.change_len -= pre;
         }
@@ -127,15 +127,14 @@ struct KeyGenerator {
 impl KeyGenerator {
     /// Construct a `KeyGenerator` object
     pub fn new(size: usize, coefficient: u32) -> KeyGenerator {
-        let ck = KeyGenerator {
-            size: size,
+        KeyGenerator {
+            size,
             pos1: 0,
             pos2: coefficient,
             carry: false,
             buffer: vec![0; size],
             sum: 0,
-        };
-        ck
+        }
     }
 }
 

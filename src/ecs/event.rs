@@ -131,6 +131,7 @@ mod tests {
     use super::super::super::protocol::opcode::Opcode;
     use super::super::super::Error;
     use super::*;
+    use tokio::sync::mpsc::channel;
 
     #[test]
     fn test_opcode_mapping() -> Result<(), Error> {
@@ -163,6 +164,26 @@ mod tests {
             },
         };
         assert_eq!(true, org.is_global());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_opcode_some() -> Result<(), Error> {
+        let org = Event::ResponseCheckVersion {
+            packet: SCheckVersion {
+                ok: true,
+            },
+        };
+        assert_eq!(Some(Opcode::S_CHECK_VERSION), org.get_opcode());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_opcode_none() -> Result<(), Error> {
+        let (response_channel, _) = channel(1);
+        let org = Event::RegisterConnection{response_channel};
+
+        assert_eq!(None, org.get_opcode());
         Ok(())
     }
 }
