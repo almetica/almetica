@@ -84,50 +84,35 @@ impl<'a> GameSession<'a> {
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
         debug!("Sending magic word on socket {:?}", addr);
-        match stream.write_all(&magic_word_buffer).await {
-            Ok(()) => (),
-            Err(e) => {
-                error!("Can't send magic word on socket {:?}: {:?}", addr, e);
-                return Err(Error::Io(e));
-            }
-        };
+        if let Err(e) = stream.write_all(&magic_word_buffer).await {
+            error!("Can't send magic word on socket {:?}: {:?}", addr, e);
+            return Err(Error::Io(e));
+        }
 
-        match stream.read_exact(&mut client_key_1).await {
-            Ok(_i) => (),
-            Err(e) => {
-                error!("Can't read client key 1 on socket {:?}: {:?}", addr, e);
-                return Err(Error::Io(e));
-            }
-        };
+        if let Err(e) = stream.read_exact(&mut client_key_1).await {
+            error!("Can't read client key 1 on socket {:?}: {:?}", addr, e);
+            return Err(Error::Io(e));
+        }
         debug!("Received client key 1 on socket {:?}", addr);
 
         OsRng.fill_bytes(&mut server_key_1);
-        match stream.write_all(&server_key_1).await {
-            Ok(()) => (),
-            Err(e) => {
-                error!("Can't write server key 1 on socket {:?}: {:?}", addr, e);
-                return Err(Error::Io(e));
-            }
-        };
+        if let Err(e) = stream.write_all(&server_key_1).await {
+            error!("Can't write server key 1 on socket {:?}: {:?}", addr, e);
+            return Err(Error::Io(e));
+        }
         debug!("Send server key 1 on socket {:?}", addr);
 
-        match stream.read_exact(&mut client_key_2).await {
-            Ok(_i) => (),
-            Err(e) => {
-                error!("Can't read client key 2 on socket {:?}: {:?}", addr, e);
-                return Err(Error::Io(e));
-            }
-        };
+        if let Err(e) = stream.read_exact(&mut client_key_2).await {
+            error!("Can't read client key 2 on socket {:?}: {:?}", addr, e);
+            return Err(Error::Io(e));
+        }
         debug!("Received client key 2 on socket {:?}", addr);
 
         OsRng.fill_bytes(&mut server_key_2);
-        match stream.write_all(&server_key_2).await {
-            Ok(()) => (),
-            Err(e) => {
-                error!("Can't write server key 2 on socket {:?}: {:?}", addr, e);
-                return Err(Error::Io(e));
-            }
-        };
+        if let Err(e) = stream.write_all(&server_key_2).await {
+            error!("Can't write server key 2 on socket {:?}: {:?}", addr, e);
+            return Err(Error::Io(e));
+        }
         debug!("Send server key 2 on socket {:?}", addr);
 
         Ok(CryptSession::new(
@@ -139,19 +124,11 @@ impl<'a> GameSession<'a> {
     /// Reads the message from the global world message and returns the UID.
     async fn parse_uid(message: Option<Box<Event>>) -> Result<u64> {
         match message {
-            Some(event) => {
-                match &*event {
-                    Event::RegisterConnectionOk{uid} => {
-                        Ok(*uid)
-                    }
-                    _ => {
-                        Err(Error::WrongEventReceived)
-                    }
-                } 
-            }
-            None => {
-                Err(Error::NoSenderWaitingUid)
-            }
+            Some(event) => match &*event {
+                Event::RegisterConnectionOk { uid } => Ok(*uid),
+                _ => Err(Error::WrongEventReceived),
+            },
+            None => Err(Error::NoSenderWaitingUid),
         }
     }
 
@@ -175,7 +152,16 @@ impl<'a> GameSession<'a> {
                                     self.cipher.crypt_client_data(&mut data_buf);
                                     trace!("Received packet with opcode value {} on socket {:?}: {:?}", opcode, self.addr, data_buf);
                                 }
-                                self.handle_packet(opcode, data_buf).await?;
+                                if let Err(e) = self.handle_packet(opcode, data_buf).await {
+                                    match e {
+                                        Error::ConnectionClosed { .. } => {
+                                            return Ok(());
+                                        },
+                                        _ => {
+                                            return Err(e);
+                                        }
+                                    }
+                                }
                             }
                         }
                         Err(e) => {
@@ -195,8 +181,10 @@ impl<'a> GameSession<'a> {
     /// Handles the incoming messages that could contain Response events or normal events.
     async fn handle_message(&mut self, message: Option<Box<Event>>) -> Result<()> {
         match message {
-            Some(boxed) => {
-                let event = *boxed;
+            Some(event) => {
+                if let Event::DropConnection { .. } = &*event {
+                    return Err(Error::ConnectionClosed);
+                }
                 match event.get_data()? {
                     Some(data) => match event.get_opcode() {
                         Some(opcode) => {

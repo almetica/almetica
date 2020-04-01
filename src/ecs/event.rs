@@ -97,10 +97,10 @@ macro_rules! assemble_event {
             #[allow(unused_variables)]
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 match self {
-                    $(Event::$g_ty{packet $(,$g_arg_name)*} => write!(f, "{}", stringify!($g_ty)),)*
-                    $(Event::$l_ty{packet $(,$l_arg_name)*} => write!(f, "{}", stringify!($l_ty)),)*
-                    $(Event::$r_ty{packet $(,$r_arg_name)*} => write!(f, "{}", stringify!($r_ty)),)*
-                    $(Event::$e_ty{$($e_arg_name,)*} => write!(f, "{}", stringify!($e_ty)),)*
+                    $(Event::$g_ty{..} => write!(f, "{}", stringify!($g_ty)),)*
+                    $(Event::$l_ty{..} => write!(f, "{}", stringify!($l_ty)),)*
+                    $(Event::$r_ty{..} => write!(f, "{}", stringify!($r_ty)),)*
+                    $(Event::$e_ty{..} => write!(f, "{}", stringify!($e_ty)),)*
                 }
 
             }
@@ -122,8 +122,10 @@ assemble_event! {
     Event {
         // Registers the response channel of a connection at a world.
         RegisterConnection{response_channel: Sender<Box<Event>>},
-        //  
+        // The connection will get it's uid returned with this message after registration.
         RegisterConnectionOk{uid: u64},
+        // The connection will be dropped after it recieves this message.
+        DropConnection{uid: u64},
     }
 }
 

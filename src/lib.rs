@@ -16,6 +16,9 @@ pub enum Error {
     #[error("magic word not found at start of the stream")]
     NoMagicWord,
 
+    #[error("connection closed")]
+    ConnectionClosed,
+
     #[error("no event mapping found for packet")]
     NoEventMappingForPacket,
 
