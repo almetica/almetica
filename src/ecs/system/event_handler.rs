@@ -16,7 +16,6 @@ pub fn init(world: &World) -> Box<dyn Schedulable> {
                 match event_channel.rx_channel.try_recv() {
                     Ok(event) => {
                         debug!("Received event {} for {:?}", event, world_id);
-                        //command_buffer.insert((), (0..1).map(move |_| (event.clone(),)));
                         command_buffer.start_entity().with_component((event,)).build();
                     }
                     Err(e) => {
