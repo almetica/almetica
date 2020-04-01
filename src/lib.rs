@@ -22,6 +22,12 @@ pub enum Error {
     #[error("no sender open for response channel")]
     NoSenderResponseChannel,
 
+    #[error("no sender open when waiting for uid")]
+    NoSenderWaitingUid,
+
+    #[error("wrong event received")]
+    WrongEventReceived,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

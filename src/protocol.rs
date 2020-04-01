@@ -59,7 +59,7 @@ impl<'a> GameSession<'a> {
             .await?;
         // Wait for the global ECS to return an UID for the connection.
         let message = rx_response_channel.recv().await;
-        let uid = GameSession::parse_guid(message).await?;
+        let uid = GameSession::parse_uid(message).await?;
 
         info!("Game session initialized on socket {:?}", addr);
 
@@ -137,9 +137,22 @@ impl<'a> GameSession<'a> {
     }
 
     /// Reads the message from the global world message and returns the UID.
-    async fn parse_guid(message: Option<Box<Event>>) -> Result<u64> {
-        // TODO
-        Ok(0)
+    async fn parse_uid(message: Option<Box<Event>>) -> Result<u64> {
+        match message {
+            Some(event) => {
+                match &*event {
+                    Event::RegisterConnectionOk{uid} => {
+                        Ok(*uid)
+                    }
+                    _ => {
+                        Err(Error::WrongEventReceived)
+                    }
+                } 
+            }
+            None => {
+                Err(Error::NoSenderWaitingUid)
+            }
+        }
     }
 
     /// Handles the writing / sending on the TCP stream.

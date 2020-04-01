@@ -122,6 +122,8 @@ assemble_event! {
     Event {
         // Registers the response channel of a connection at a world.
         RegisterConnection{response_channel: Sender<Box<Event>>},
+        //  
+        RegisterConnectionOk{uid: u64},
     }
 }
 
