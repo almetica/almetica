@@ -1,5 +1,5 @@
-use super::super::super::model::Region;
 /// Module for client network packages.
+use crate::model::Region;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -34,9 +34,9 @@ pub struct CLoginArbiter {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use super::super::super::super::model::Region;
-    use super::super::super::serde::{from_vec, to_vec, Error};
     use super::*;
+    use crate::model::Region;
+    use crate::protocol::serde::{from_vec, to_vec, Error};
 
     packet_test!(
         name: test_get_user_guild_logo,

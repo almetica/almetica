@@ -149,7 +149,7 @@ mod consts {
 
 #[cfg(test)]
 mod tests {
-    use super::Sha1;
+    use super::*;
     use byteorder::{ByteOrder, LittleEndian};
     use hex::encode;
 

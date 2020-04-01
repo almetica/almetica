@@ -2,7 +2,7 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use super::*;
+use crate::*;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

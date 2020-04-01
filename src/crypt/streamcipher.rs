@@ -1,5 +1,5 @@
 // Module that implements the Pike streamcipher used in TERA.
-use super::sha1::Sha1;
+use crate::crypt::sha1::Sha1;
 use byteorder::{ByteOrder, LittleEndian};
 
 // Provides a struct for the stream cipher used by TERA.

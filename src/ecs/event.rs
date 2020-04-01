@@ -127,10 +127,10 @@ assemble_event! {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::model::Region;
-    use super::super::super::protocol::opcode::Opcode;
-    use super::super::super::Error;
     use super::*;
+    use crate::model::Region;
+    use crate::protocol::opcode::Opcode;
+    use crate::Error;
     use tokio::sync::mpsc::channel;
 
     #[test]
@@ -170,9 +170,7 @@ mod tests {
     #[test]
     fn test_get_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
-            packet: SCheckVersion {
-                ok: true,
-            },
+            packet: SCheckVersion { ok: true },
         };
         assert_eq!(Some(Opcode::S_CHECK_VERSION), org.get_opcode());
         Ok(())
@@ -181,7 +179,7 @@ mod tests {
     #[test]
     fn test_get_opcode_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
-        let org = Event::RegisterConnection{response_channel};
+        let org = Event::RegisterConnection { response_channel };
 
         assert_eq!(None, org.get_opcode());
         Ok(())

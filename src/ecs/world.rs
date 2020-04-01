@@ -2,9 +2,9 @@
 use std::collections::HashMap;
 use std::{thread, time};
 
-use super::event::Event;
-use super::resource::EventRxChannel;
-use super::system::*;
+use crate::ecs::event::Event;
+use crate::ecs::resource::EventRxChannel;
+use crate::ecs::system::*;
 
 use legion::prelude::*;
 use log::debug;
@@ -65,10 +65,7 @@ impl Default for Multiverse {
 
         Multiverse {
             _universe: universe,
-            global_world_handle: WorldHandle {
-                tx_channel,
-                world,
-            },
+            global_world_handle: WorldHandle { tx_channel, world },
             _instanced_world_handles: HashMap::new(),
             resources,
         }
@@ -84,9 +81,9 @@ pub struct WorldHandle {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::Result;
-    use super::super::event::Event;
     use super::*;
+    use crate::ecs::event::Event;
+    use crate::Result;
     use tokio::sync::mpsc::{channel, Receiver, Sender};
 
     #[test]

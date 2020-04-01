@@ -4,8 +4,8 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
 
-use super::protocol::opcode::Opcode;
-use super::*;
+use crate::protocol::opcode::Opcode;
+use crate::*;
 
 /// Load opcode mapping from a file.
 pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<Vec<Opcode>> {

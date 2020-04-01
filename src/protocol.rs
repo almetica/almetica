@@ -6,9 +6,9 @@ pub mod serde;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use super::crypt::CryptSession;
-use super::ecs::event::Event;
-use super::*;
+use crate::crypt::CryptSession;
+use crate::ecs::event::Event;
+use crate::*;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
