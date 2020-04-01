@@ -6,6 +6,8 @@ pub mod ecs;
 pub mod model;
 pub mod protocol;
 
+use std::sync::Arc;
+
 use ecs::event::Event;
 use thiserror::Error;
 
@@ -41,7 +43,7 @@ pub enum Error {
     ProtocolSerde(#[from] protocol::serde::Error),
 
     #[error("mpsc send event error: {0}")]
-    MpscSendEventError(#[from] tokio::sync::mpsc::error::SendError<Box<Event>>),
+    MpscSendEventError(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
 
     #[error("unknown error")]
     Unknown,

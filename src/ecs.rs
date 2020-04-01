@@ -3,4 +3,5 @@ pub mod component;
 pub mod event;
 pub mod resource;
 pub mod system;
+pub mod tag;
 pub mod world;

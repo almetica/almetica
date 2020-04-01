@@ -29,13 +29,13 @@ pub struct GameSession<'a> {
     opcode_table: &'a [Opcode],
     reverse_opcode_table: &'a HashMap<Opcode, u16>,
     // Sending channel TO the global world
-    global_request_channel: Sender<Box<Event>>,
+    global_request_channel: Sender<Arc<Event>>,
     // Receiving channel FROM the global world
-    global_response_channel: Receiver<Box<Event>>,
+    global_response_channel: Receiver<Arc<Event>>,
     // Sending channel TO the instance world
-    _instance_request_channel: Option<Sender<Box<Event>>>,
+    _instance_request_channel: Option<Sender<Arc<Event>>>,
     // Receiving channel FROM the instance world
-    _instance_response_channel: Option<Receiver<Box<Event>>>,
+    _instance_response_channel: Option<Receiver<Arc<Event>>>,
 }
 
 impl<'a> GameSession<'a> {
@@ -43,7 +43,7 @@ impl<'a> GameSession<'a> {
     pub async fn new(
         stream: &'a mut TcpStream,
         addr: SocketAddr,
-        mut global_request_channel: Sender<Box<Event>>,
+        mut global_request_channel: Sender<Arc<Event>>,
         opcode_table: &'a [Opcode],
         reverse_opcode_table: &'a HashMap<Opcode, u16>,
     ) -> Result<GameSession<'a>> {
@@ -53,7 +53,8 @@ impl<'a> GameSession<'a> {
         // Channel to receive response events from the global world ECS.
         let (tx_response_channel, mut rx_response_channel) = channel(128);
         global_request_channel
-            .send(Box::new(Event::RegisterConnection {
+            .send(Arc::new(Event::RequestRegisterConnection{
+                uid: 0,
                 response_channel: tx_response_channel,
             }))
             .await?;
@@ -122,10 +123,10 @@ impl<'a> GameSession<'a> {
     }
 
     /// Reads the message from the global world message and returns the UID.
-    async fn parse_uid(message: Option<Box<Event>>) -> Result<u64> {
+    async fn parse_uid(message: Option<Arc<Event>>) -> Result<u64> {
         match message {
             Some(event) => match &*event {
-                Event::RegisterConnectionOk { uid } => Ok(*uid),
+                Event::ResponseRegisterConnection { uid } => Ok(*uid),
                 _ => Err(Error::WrongEventReceived),
             },
             None => Err(Error::NoSenderWaitingUid),
@@ -179,14 +180,14 @@ impl<'a> GameSession<'a> {
     }
 
     /// Handles the incoming messages that could contain Response events or normal events.
-    async fn handle_message(&mut self, message: Option<Box<Event>>) -> Result<()> {
+    async fn handle_message(&mut self, message: Option<Arc<Event>>) -> Result<()> {
         match message {
             Some(event) => {
-                if let Event::DropConnection { .. } = &*event {
+                if let Event::ResponseDropConnection { .. } = &*event {
                     return Err(Error::ConnectionClosed);
                 }
-                match event.get_data()? {
-                    Some(data) => match event.get_opcode() {
+                match event.data()? {
+                    Some(data) => match event.opcode() {
                         Some(opcode) => {
                             self.send_packet(opcode, data).await?;
                         }
@@ -245,7 +246,8 @@ impl<'a> GameSession<'a> {
             _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
                 Ok(event) => {
                     debug!("Received valid packet {:?} on socket {:?}", opcode_type, self.addr);
-                    self.global_request_channel.send(Box::new(event)).await?;
+                    // TODO test if the packet needs to be send to the global or the local ecs.
+                    self.global_request_channel.send(Arc::new(event)).await?;
                 }
                 Err(e) => match e {
                     Error::NoEventMappingForPacket => {

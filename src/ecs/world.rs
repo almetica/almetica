@@ -1,9 +1,10 @@
 /// Module that handles the world generation and handling
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::{thread, time};
 
 use crate::ecs::event::Event;
-use crate::ecs::resource::EventRxChannel;
+use crate::ecs::resource::*;
 use crate::ecs::system::*;
 
 use legion::prelude::*;
@@ -27,8 +28,12 @@ impl Multiverse {
     /// Starts the main loop of the global world.
     pub fn run(&mut self) {
         let mut schedule = Schedule::builder()
-            .add_system(event_handler::init(&self.global_world_handle.world))
+            .add_system(event_receiver::init(self.global_world_handle.world.id()))
             .flush()
+            .add_system(connection_manager::init(self.global_world_handle.world.id()))
+            .add_system(event_sender::init(self.global_world_handle.world.id()))
+            .flush()
+            .add_system(event_cleaner::init())
             .build();
 
         // Global tick rate is at best 50ms (20 Hz)
@@ -45,7 +50,7 @@ impl Multiverse {
     }
 
     /// Get the Input Event Channel of the global world
-    pub fn get_global_input_event_channel(&self) -> Sender<Box<Event>> {
+    pub fn get_global_input_event_channel(&self) -> Sender<Arc<Event>> {
         self.global_world_handle.tx_channel.clone()
     }
 }
@@ -61,7 +66,10 @@ impl Default for Multiverse {
         // At most 1024 events can be queued between server ticks
         let (tx_channel, rx_channel) = channel(1024);
         let mut resources = Resources::default();
-        resources.insert(EventRxChannel { rx_channel });
+        resources.insert(EventRxChannel { channel: rx_channel });
+        resources.insert(ConnectionMapping {
+            map: HashMap::with_capacity(128),
+        });
 
         Multiverse {
             _universe: universe,
@@ -75,7 +83,7 @@ impl Default for Multiverse {
 /// Handle for a world.
 /// Connections can register their connection by using the `Èvent::RegisterConnection` event.
 pub struct WorldHandle {
-    pub tx_channel: Sender<Box<Event>>,
+    pub tx_channel: Sender<Arc<Event>>,
     pub world: World,
 }
 
@@ -84,17 +92,17 @@ mod tests {
     use super::*;
     use crate::ecs::event::Event;
     use crate::Result;
-    use tokio::sync::mpsc::{channel, Receiver, Sender};
+    use tokio::sync::mpsc::channel;
 
     #[test]
     fn test_multiverse_creation() -> Result<()> {
         let mut m = Multiverse::new();
-        let (tx, _): (Sender<Box<Event>>, Receiver<Box<Event>>) = channel(128);
+        let (tx, _) = channel(128);
 
         match m
             .global_world_handle
             .tx_channel
-            .try_send(Box::new(Event::RegisterConnection { response_channel: tx }))
+            .try_send(Arc::new(Event::RequestRegisterConnection{uid:0, response_channel: tx}))
         {
             Ok(()) => return Ok(()),
             Err(e) => panic!(e),

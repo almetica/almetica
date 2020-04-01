@@ -1,12 +1,13 @@
 /// Events that are handled / emitted by the ECS.
 ///
-/// There are Request events, Response events and normal events.
+/// There are packet and system events.
 ///
-/// Request events can be either global or local. Global request events are
-/// always send to the global world ECS first by the connection handler.
+/// A request can either be for the local or for the global ECS.
 ///
-/// Request and Response events need a protocol packet as the first argument.
+/// We also differentiate if a Event is an request or a response (from the ECS
+/// perspective).
 use std::fmt;
+use std::sync::Arc;
 
 use super::super::protocol::opcode::Opcode;
 use super::super::protocol::packet::client::*;
@@ -16,54 +17,64 @@ use super::super::{Error, Result};
 
 use tokio::sync::mpsc::Sender;
 
+/// The kind of an the event.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EventKind {
+    Request,
+    Response,
+}
+
+/// The target of the event.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EventTarget {
+    Global,
+    Local,
+}
+
 macro_rules! assemble_event {
     (
-    Global Request Event {
-        $($g_ty:ident{packet: $g_packet_type:ty $(, $g_arg_name:ident: $g_arg_type:ty)*} -> $g_opcode:ident,)*
+    Packet Events {
+        $($p_ty:ident{packet: $p_packet_type:ty $(, $p_arg_name:ident: $p_arg_type:ty)*}, $p_opcode:ident, $p_kind:ident, $p_target:ident;)*
     }
-    Local Request Event {
-        $($l_ty:ident{packet: $l_packet_type:ty $(, $l_arg_name:ident: $l_arg_type:ty)*} -> $l_opcode:ident,)*
-    }
-    Response Event {
-        $($r_ty:ident{packet: $r_packet_type:ty $(, $r_arg_name:ident: $r_arg_type:ty)*} -> $r_opcode:ident,)*
-    }
-    Event {
-        $($e_ty:ident{$($e_arg_name:ident: $e_arg_type:ty)*},)*
+    System Events {
+        $($e_ty:ident{$($e_arg_name:ident: $e_arg_type:ty)*}, $e_kind:ident;)*
     }
     ) => {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
-            $($g_ty {uid: u64, packet: $g_packet_type $(,$g_arg_name: $g_arg_type)*},)*
-            $($l_ty {uid: u64, packet: $l_packet_type $(,$l_arg_name: $l_arg_type)*},)*
-            $($r_ty {uid: u64, packet: $r_packet_type $(,$r_arg_name: $r_arg_type)*},)*
-            $($e_ty {$($e_arg_name: $e_arg_type),*},)*
+            $($p_ty {uid: u64, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
+            $($e_ty {uid: u64, $($e_arg_name: $e_arg_type),*},)*
         }
 
         impl Event {
             /// Creates a new Request/Response event for the given opcode & packet data.
             pub fn new_from_packet(uid: u64, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
                 match opcode {
-                    $(Opcode::$g_opcode => {
+                    $(Opcode::$p_opcode => {
                         let packet = from_vec(packet_data)?;
-                        Ok(Event::$g_ty{uid, packet})
-                    },)*
-                    $(Opcode::$l_opcode => {
-                        let packet = from_vec(packet_data)?;
-                        Ok(Event::$l_ty{uid, packet})
-                    },)*
-                    $(Opcode::$r_opcode => {
-                        let packet = from_vec(packet_data)?;
-                        Ok(Event::$r_ty{uid, packet})
+                        Ok(Event::$p_ty{uid, packet})
                     },)*
                     _ => Err(Error::NoEventMappingForPacket),
                 }
             }
 
-            /// Get the data from a Response event. None if a Request event or normal event.
-            pub fn get_data(&self) -> Result<Option<Vec<u8>>> {
+            /// Get the uid of a packet event.
+            pub fn uid(&self) -> Option<u64> {
                 match self {
-                    $(Event::$r_ty{packet, ..} => {
+                    $(Event::$p_ty{uid,..} => {
+                        Some(*uid)
+                    },)*
+                    $(Event::$e_ty{uid,..} => {
+                        Some(*uid)
+                    },)*
+                }
+            }
+
+            /// Get the data from a packet event.
+            pub fn data(&self) -> Result<Option<Vec<u8>>> {
+                match self {
+                    $(Event::$p_ty{packet, ..} => {
                         let data = to_vec(packet)?;
                         Ok(Some(data))
                     },)*
@@ -71,61 +82,57 @@ macro_rules! assemble_event {
                 }
             }
 
-            /// Get the opcode from a Response event. None if a Request event or normal event.
-            #[allow(unused_variables)]
-            pub fn get_opcode(&self) -> Option<Opcode> {
+            /// Get the opcode from a packet event.
+            pub fn opcode(&self) -> Option<Opcode> {
                 match self {
-                    $(Event::$r_ty{..} => {
-                        Some(Opcode::$r_opcode)
+                    $(Event::$p_ty{..} => {
+                        Some(Opcode::$p_opcode)
                     },)*
                     _ => None,
                 }
             }
 
-            /// Returns true if the event is an event that needs to be send to the global world ECS.
-            #[allow(unused_variables)]
-            pub fn is_global(&self) -> bool {
+            /// Get the target of the event (global / local world).
+            pub fn target(&self) -> Option<EventTarget> {
                 match self {
-                    $(Event::$l_ty{..} => false,)*
-                    $(Event::$g_ty{..} => true,)*
-                    _ => false,
+                    $(Event::$p_ty{..} => Some(EventTarget::$p_target),)*
+                    _ => None,
+                }
+            }
+
+            /// Get the kind of the event (Request or Response).
+            pub fn kind(&self) -> EventKind {
+                match self {
+                    $(Event::$p_ty{..} => EventKind::$p_kind,)*
+                    $(Event::$e_ty{..} => EventKind::$e_kind,)*
                 }
             }
         }
 
         impl fmt::Display for Event {
-            #[allow(unused_variables)]
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 match self {
-                    $(Event::$g_ty{..} => write!(f, "{}", stringify!($g_ty)),)*
-                    $(Event::$l_ty{..} => write!(f, "{}", stringify!($l_ty)),)*
-                    $(Event::$r_ty{..} => write!(f, "{}", stringify!($r_ty)),)*
+                    $(Event::$p_ty{..} => write!(f, "{}", stringify!($p_ty)),)*
                     $(Event::$e_ty{..} => write!(f, "{}", stringify!($e_ty)),)*
                 }
-
             }
         }
     };
 }
 
-// Request and Response events need to have a packet as it's first argument and an Opcode mapping.
 assemble_event! {
-    Global Request Event {
-        RequestLoginArbiter{packet: CLoginArbiter} -> C_LOGIN_ARBITER,
-        RequestCheckVersion{packet: CCheckVersion} -> C_CHECK_VERSION,
+    Packet Events {
+        RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Request, Global;
+        RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Request, Global;
+        ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Response, Global;
     }
-    Local Request Event {
-    }
-    Response Event {
-        ResponseCheckVersion{packet: SCheckVersion} -> S_CHECK_VERSION,
-    }
-    Event {
+    System Events {
         // Registers the response channel of a connection at a world.
-        RegisterConnection{response_channel: Sender<Box<Event>>},
+        RequestRegisterConnection{response_channel: Sender<Arc<Event>>}, Request;
         // The connection will get it's uid returned with this message after registration.
-        RegisterConnectionOk{uid: u64},
+        ResponseRegisterConnection{}, Response;
         // The connection will be dropped after it recieves this message.
-        DropConnection{uid: u64},
+        ResponseDropConnection{}, Response;
     }
 }
 
@@ -144,7 +151,7 @@ mod tests {
             0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
         let event = Event::new_from_packet(0, Opcode::C_CHECK_VERSION, data)?;
-        if let Event::RequestCheckVersion { uid: 0, packet } = event {
+        if let Event::RequestCheckVersion{uid: 0, packet} = event {
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
@@ -156,8 +163,8 @@ mod tests {
     }
 
     #[test]
-    fn test_is_global() -> Result<(), Error> {
-        let org = Event::RequestLoginArbiter {
+    fn test_global_target() -> Result<(), Error> {
+        let org = Event::RequestLoginArbiter{
             uid: 0,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
@@ -168,7 +175,7 @@ mod tests {
                 patch_version: 0,
             },
         };
-        assert_eq!(true, org.is_global());
+        assert_eq!(Some(EventTarget::Global), org.target());
         Ok(())
     }
 
@@ -176,18 +183,38 @@ mod tests {
     fn test_get_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
             uid: 0,
-            packet: SCheckVersion { ok: true },
+            packet: SCheckVersion{ok: true},
         };
-        assert_eq!(Some(Opcode::S_CHECK_VERSION), org.get_opcode());
+        assert_eq!(Some(Opcode::S_CHECK_VERSION), org.opcode());
         Ok(())
     }
 
     #[test]
     fn test_get_opcode_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
-        let org = Event::RegisterConnection { response_channel };
+        let org = Event::RequestRegisterConnection{uid: 0, response_channel };
 
-        assert_eq!(None, org.get_opcode());
+        assert_eq!(None, org.opcode());
         Ok(())
     }
+
+    #[test]
+    fn test_event_kind() -> Result<(), Error> {
+        let org = Event::RequestLoginArbiter{
+            uid: 0,
+            packet: CLoginArbiter {
+                master_account_name: "test".to_string(),
+                ticket: vec![],
+                unk1: 0,
+                unk2: 0,
+                region: Region::Europe,
+                patch_version: 0,
+            },
+        };
+        assert_eq!(EventKind::Request, org.kind());
+        Ok(())
+    }
+
+    // TODO test uid()
 }
+

@@ -1,6 +1,7 @@
 #![warn(clippy::all)]
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
 
 use almetica::config::read_configuration;
 use almetica::dataloader::load_opcode_mapping;
@@ -101,7 +102,7 @@ async fn run() -> Result<()> {
 }
 
 // Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse() -> Sender<Box<Event>> {
+fn start_multiverse() -> Sender<Arc<Event>> {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 

@@ -81,7 +81,7 @@ async fn main() {
     let routes = server.or(auth).with(log);
 
     // TODO read from configuration
-    let listen_addr_string = "127.0.0.1:80";
+    let listen_addr_string = "127.0.0.1:8080";
     let listen_addr: SocketAddr = listen_addr_string.parse().expect("Unable to parse listen address");
     warp::serve(routes).run(listen_addr).await;
 }
