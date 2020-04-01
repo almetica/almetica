@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 /// Holds the Receiver channel of a world.
 // We use an arc to not copy the event data between the threads.
 pub struct EventRxChannel {
-    pub channel: Receiver<Arc<Event>>, 
+    pub channel: Receiver<Arc<Event>>,
 }
 
 /// Holds the UID to response channel mapping

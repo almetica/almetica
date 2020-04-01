@@ -53,7 +53,7 @@ impl<'a> GameSession<'a> {
         // Channel to receive response events from the global world ECS.
         let (tx_response_channel, mut rx_response_channel) = channel(128);
         global_request_channel
-            .send(Arc::new(Event::RequestRegisterConnection{
+            .send(Arc::new(Event::RequestRegisterConnection {
                 uid: 0,
                 response_channel: tx_response_channel,
             }))

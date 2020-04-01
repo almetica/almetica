@@ -151,7 +151,7 @@ mod tests {
             0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
         let event = Event::new_from_packet(0, Opcode::C_CHECK_VERSION, data)?;
-        if let Event::RequestCheckVersion{uid: 0, packet} = event {
+        if let Event::RequestCheckVersion { uid: 0, packet } = event {
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_global_target() -> Result<(), Error> {
-        let org = Event::RequestLoginArbiter{
+        let org = Event::RequestLoginArbiter {
             uid: 0,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
@@ -183,7 +183,7 @@ mod tests {
     fn test_get_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
             uid: 0,
-            packet: SCheckVersion{ok: true},
+            packet: SCheckVersion { ok: true },
         };
         assert_eq!(Some(Opcode::S_CHECK_VERSION), org.opcode());
         Ok(())
@@ -192,7 +192,10 @@ mod tests {
     #[test]
     fn test_get_opcode_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
-        let org = Event::RequestRegisterConnection{uid: 0, response_channel };
+        let org = Event::RequestRegisterConnection {
+            uid: 0,
+            response_channel,
+        };
 
         assert_eq!(None, org.opcode());
         Ok(())
@@ -200,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_event_kind() -> Result<(), Error> {
-        let org = Event::RequestLoginArbiter{
+        let org = Event::RequestLoginArbiter {
             uid: 0,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
@@ -217,4 +220,3 @@ mod tests {
 
     // TODO test uid()
 }
-

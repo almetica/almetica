@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::ecs::event::{Event, EventKind};
-use crate::ecs::tag;
 use crate::ecs::resource::ConnectionMapping;
+use crate::ecs::tag;
 
 use legion::prelude::*;
 use legion::systems::schedule::Schedulable;
@@ -24,9 +24,6 @@ pub fn init(id: WorldId) -> Box<dyn Schedulable> {
                     match connection_mapping.map.get_mut(&uid) {
                         Some(channel) => {
                             debug!("Sending event {} on {:?}", *event, world_id);
-                            // TODO this is the reason why we use Arc and not Box.
-                            // We would otherwhise copy the boxed value,
-                            // since we can't move the value here.
                             let e = &*event;
                             if let Err(err) = channel.try_send(e.clone()) {
                                 match err {
@@ -42,7 +39,7 @@ pub fn init(id: WorldId) -> Box<dyn Schedulable> {
                         },
                         None => {
                             error!("Couldn't find channel mapping for connection with UID {} on {:?}", uid, world_id);
-                        } 
+                        }
                     }
                 } else {
                     error!("Event didn't had an UID attached on {:?}", world_id);

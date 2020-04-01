@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 /// Module that handles the world generation and handling
 use std::sync::Arc;
-use std::collections::HashMap;
 use std::{thread, time};
 
 use crate::ecs::event::Event;
@@ -31,6 +31,7 @@ impl Multiverse {
             .add_system(event_receiver::init(self.global_world_handle.world.id()))
             .flush()
             .add_system(connection_manager::init(self.global_world_handle.world.id()))
+            .flush()
             .add_system(event_sender::init(self.global_world_handle.world.id()))
             .flush()
             .add_system(event_cleaner::init())
@@ -102,8 +103,10 @@ mod tests {
         match m
             .global_world_handle
             .tx_channel
-            .try_send(Arc::new(Event::RequestRegisterConnection{uid:0, response_channel: tx}))
-        {
+            .try_send(Arc::new(Event::RequestRegisterConnection {
+                uid: 0,
+                response_channel: tx,
+            })) {
             Ok(()) => return Ok(()),
             Err(e) => panic!(e),
         }

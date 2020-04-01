@@ -21,7 +21,10 @@ pub fn init(id: WorldId) -> Box<dyn Schedulable> {
         .build(move |command_buffer, world, connection_mapping, queries| {
             for event in queries.iter_mut(&mut *world) {
                 match &**event {
-                    Event::RequestRegisterConnection{uid: 0, response_channel} => {
+                    Event::RequestRegisterConnection {
+                        uid: 0,
+                        response_channel,
+                    } => {
                         debug!("Registration event incoming for {:?}", world_id);
                         let uid = OsRng.next_u64();
                         connection_mapping.map.insert(uid, response_channel.clone());
@@ -29,7 +32,11 @@ pub fn init(id: WorldId) -> Box<dyn Schedulable> {
 
                         let new_event = Event::ResponseRegisterConnection { uid };
                         debug!("Created {:?} Event for {:?}", new_event, world_id);
-                        command_buffer.start_entity().with_component((new_event,)).build();
+                        command_buffer
+                            .start_entity()
+                            .with_tag((tag::EventKind(EventKind::Response),))
+                            .with_component((new_event,))
+                            .build();
                     }
                     Event::ResponseRegisterConnection { .. } => {
                         error!("TODO remove me later.");

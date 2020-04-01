@@ -73,8 +73,8 @@ async fn run() -> Result<()> {
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();
 
-    info!("Starting the network server on 0.0.0.0:10001");
-    let mut listener = TcpListener::bind("0.0.0.0:10001").await?;
+    info!("Starting the network server on 127.0.0.1:10001");
+    let mut listener = TcpListener::bind("127.0.0.1:10001").await?;
 
     loop {
         match listener.accept().await {
