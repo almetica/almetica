@@ -8,12 +8,11 @@ use legion::prelude::*;
 use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
 use legion::world::WorldId;
-use log::{debug, error};
 use tokio::sync::mpsc::error::TrySendError;
+use tracing::{debug, error};
 
 /// Event sender sends all outgoing events to the connection / local worlds.
-pub fn init(id: WorldId) -> Box<dyn Schedulable> {
-    let world_id = id;
+pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventSender")
         .write_resource::<ConnectionMapping>()
         .with_query(<Read<Arc<Event>>>::query().filter(tag_value(&tag::EventKind(EventKind::Response))))

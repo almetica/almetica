@@ -5,12 +5,11 @@ use crate::ecs::tag;
 use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
 use legion::world::WorldId;
-use log::{debug, error};
 use tokio::sync::mpsc::error::TryRecvError;
+use tracing::{debug, error};
 
 /// Event receiver dispatches the events from the Request channel into the ECS.
-pub fn init(id: WorldId) -> Box<dyn Schedulable> {
-    let world_id = id;
+pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventReceiver")
         .write_resource::<EventRxChannel>()
         .build(move |command_buffer, _world, event_channel, _queries| {

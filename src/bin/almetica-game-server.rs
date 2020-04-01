@@ -12,10 +12,14 @@ use almetica::protocol::GameSession;
 
 use almetica::Result;
 use clap::Clap;
-use log::{error, info};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 use tokio::task;
+use tracing::{error, info};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -26,11 +30,22 @@ struct Opts {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    init_logging();
+
     if let Err(e) = run().await {
         error!("Error while executing program: {:?}", e);
         process::exit(1);
     }
+}
+
+fn init_logging() {
+    let fmt_layer = Layer::builder().with_target(true).finish();
+
+    let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
+
+    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 }
 
 async fn run() -> Result<()> {

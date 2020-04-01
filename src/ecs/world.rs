@@ -8,8 +8,8 @@ use crate::ecs::resource::*;
 use crate::ecs::system::*;
 
 use legion::prelude::*;
-use log::debug;
 use tokio::sync::mpsc::{channel, Sender};
+use tracing::debug;
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
@@ -27,14 +27,15 @@ impl Multiverse {
 
     /// Starts the main loop of the global world.
     pub fn run(&mut self) {
+        let world_id = self.global_world_handle.world.id();
         let mut schedule = Schedule::builder()
-            .add_system(event_receiver::init(self.global_world_handle.world.id()))
+            .add_system(event_receiver::init(world_id))
             .flush()
-            .add_system(connection_manager::init(self.global_world_handle.world.id()))
+            .add_system(connection_manager::init(world_id))
             .flush()
-            .add_system(event_sender::init(self.global_world_handle.world.id()))
+            .add_system(event_sender::init(world_id))
             .flush()
-            .add_system(event_cleaner::init())
+            .add_system(event_cleaner::init(world_id))
             .build();
 
         // Global tick rate is at best 50ms (20 Hz)

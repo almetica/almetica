@@ -2,6 +2,10 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
 use warp::Filter;
 
 #[derive(Serialize)]
@@ -31,7 +35,7 @@ struct AuthResponse {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    init_logging();
 
     // The TERA client NEEDS to have the region endings (.uk / .de etc.) at the end or else it will not start!
 
@@ -84,4 +88,14 @@ async fn main() {
     let listen_addr_string = "127.0.0.1:8080";
     let listen_addr: SocketAddr = listen_addr_string.parse().expect("Unable to parse listen address");
     warp::serve(routes).run(listen_addr).await;
+}
+
+fn init_logging() {
+    let fmt_layer = Layer::builder().with_target(true).finish();
+
+    let filter_layer = EnvFilter::from_default_env();
+
+    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 }

@@ -12,12 +12,12 @@ use crate::*;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug, error, info, trace, warn};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tracing::{debug, error, info, trace, warn};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
