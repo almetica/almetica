@@ -30,6 +30,9 @@ pub enum Error {
     #[error("no sender open when waiting for uid")]
     NoSenderWaitingUid,
 
+    #[error("uid was not set")]
+    UidNotSet,
+
     #[error("wrong event received")]
     WrongEventReceived,
 

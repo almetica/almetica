@@ -57,7 +57,7 @@ impl<'a> GameSession<'a> {
         let (tx_response_channel, mut rx_response_channel) = channel(128);
         global_request_channel
             .send(Arc::new(Event::RequestRegisterConnection {
-                uid: 0,
+                uid: None,
                 response_channel: tx_response_channel,
             }))
             .await?;
@@ -129,7 +129,13 @@ impl<'a> GameSession<'a> {
     async fn parse_uid(message: Option<Arc<Event>>) -> Result<u64> {
         match message {
             Some(event) => match &*event {
-                Event::ResponseRegisterConnection { uid } => Ok(*uid),
+                Event::ResponseRegisterConnection { uid } => {
+                    if let Some(id) = uid {
+                        Ok(*id)
+                    } else {
+                        Err(Error::UidNotSet)
+                    }
+                }
                 _ => Err(Error::WrongEventReceived),
             },
             None => Err(Error::NoSenderWaitingUid),

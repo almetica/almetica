@@ -24,15 +24,15 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
             for event in queries.iter_mut(&mut *world) {
                 match &**event {
                     Event::RequestRegisterConnection {
-                        uid: 0,
                         response_channel,
+                        ..
                     } => {
                         debug!("Registration event incoming for");
                         let uid = OsRng.next_u64();
                         connection_mapping.map.insert(uid, response_channel.clone());
                         debug!("Registered connection with uid {}", uid);
 
-                        let new_event = Arc::new(Event::ResponseRegisterConnection { uid });
+                        let new_event = Arc::new(Event::ResponseRegisterConnection { uid: Some(uid) });
                         debug!("Created {:?} event", new_event);
                         command_buffer
                             .start_entity()
