@@ -194,6 +194,8 @@ impl<'a> GameSession<'a> {
                 match event.data()? {
                     Some(data) => match event.opcode() {
                         Some(opcode) => {
+                            debug!("Sending packet {:?}", opcode);
+                            trace!("Packet data: {:?}", data);
                             self.send_packet(opcode, data).await?;
                         }
                         None => {
