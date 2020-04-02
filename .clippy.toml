@@ -1,1 +1,3 @@
+# These are up to discussion.
 single-char-binding-names-threshold = 6
+cognitive-complexity-threshold = 50

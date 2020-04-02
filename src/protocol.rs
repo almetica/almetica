@@ -17,7 +17,7 @@ use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::{debug, error, info,span, trace, warn, Level};
+use tracing::{debug, error, info, info_span, trace, warn};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
@@ -47,7 +47,7 @@ impl<'a> GameSession<'a> {
         opcode_table: &'a [Opcode],
         reverse_opcode_table: &'a HashMap<Opcode, u16>,
     ) -> Result<GameSession<'a>> {
-        let span = span!(Level::DEBUG, "connection", ?addr);
+        let span = info_span!("connection", ?addr);
         let _enter = span.enter();
 
         // Initialize the stream cipher with the client.
@@ -138,7 +138,7 @@ impl<'a> GameSession<'a> {
 
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
-        let span = span!(Level::DEBUG, "connection", addr = ?self.addr, uid = self.uid);
+        let span = info_span!("connection", addr = ?self.addr, uid = self.uid);
         let _enter = span.enter();
 
         let mut header_buf = vec![0u8; 4];
@@ -219,10 +219,7 @@ impl<'a> GameSession<'a> {
             Some(opcode_value) => {
                 let len = data.len() + 4;
                 if len > std::u16::MAX as usize {
-                    error!(
-                        "Length of packet {:?} too big for u16 length ({})",
-                        opcode, len
-                    );
+                    error!("Length of packet {:?} too big for u16 length ({})", opcode, len);
                 } else {
                     self.stream.write_u16(len as u16).await?;
                     self.stream.write_u16(*opcode_value).await?;
@@ -230,10 +227,7 @@ impl<'a> GameSession<'a> {
                 }
             }
             None => {
-                error!(
-                    "Can't find opcode {} in reverse mapping",
-                    opcode
-                );
+                error!("Can't find opcode {} in reverse mapping", opcode);
             }
         }
         Ok(())
@@ -244,10 +238,7 @@ impl<'a> GameSession<'a> {
         let opcode_type = self.opcode_table[opcode];
         match opcode_type {
             Opcode::UNKNOWN => {
-                warn!(
-                    "Unmapped and unhandled packet with opcode value {}",
-                    opcode
-                );
+                warn!("Unmapped and unhandled packet with opcode value {}", opcode);
             }
             _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
                 Ok(event) => {
@@ -257,15 +248,9 @@ impl<'a> GameSession<'a> {
                 }
                 Err(e) => match e {
                     Error::NoEventMappingForPacket => {
-                        warn!(
-                            "No mapping found for packet {:?}",
-                            opcode_type
-                        );
+                        warn!("No mapping found for packet {:?}", opcode_type);
                     }
-                    _ => error!(
-                        "Can't create event from valid packet {:?}: {:?}",
-                        opcode_type, e
-                    ),
+                    _ => error!("Can't create event from valid packet {:?}: {:?}", opcode_type, e),
                 },
             },
         }

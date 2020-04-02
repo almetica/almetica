@@ -4,19 +4,21 @@ use crate::ecs::tag;
 
 use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
-use legion::world::WorldId;
 use tokio::sync::mpsc::error::TryRecvError;
-use tracing::{debug, error};
+use tracing::{debug, error, info_span};
 
 /// Event receiver dispatches the events from the Request channel into the ECS.
-pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
+pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventReceiver")
         .write_resource::<EventRxChannel>()
         .build(move |command_buffer, _world, event_channel, _queries| {
+            let span = info_span!("world", world_id);
+            let _enter = span.enter();
+
             loop {
                 match event_channel.channel.try_recv() {
                     Ok(event) => {
-                        debug!("Received event {} for {:?}", event, world_id);
+                        debug!("Received event {}", event);
                         command_buffer
                             .start_entity()
                             .with_tag((tag::EventKind(EventKind::Request),))
@@ -30,7 +32,7 @@ pub fn init(world_id: WorldId) -> Box<dyn Schedulable> {
                                 return;
                             }
                             TryRecvError::Closed => {
-                                error!("Request channel was closed for {:?}", world_id);
+                                error!("Request channel was closed");
                             }
                         }
                     }
