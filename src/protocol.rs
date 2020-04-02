@@ -4,10 +4,9 @@ pub mod packet;
 pub mod serde;
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 
 use crate::crypt::CryptSession;
-use crate::ecs::event::Event;
+use crate::ecs::event::{Event, EventTarget};
 use crate::*;
 use opcode::Opcode;
 
@@ -24,7 +23,6 @@ pub struct GameSession<'a> {
     // User ID
     uid: u64,
     stream: &'a mut TcpStream,
-    addr: SocketAddr,
     cipher: CryptSession,
     opcode_table: &'a [Opcode],
     reverse_opcode_table: &'a HashMap<Opcode, u16>,
@@ -42,16 +40,12 @@ impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
     pub async fn new(
         stream: &'a mut TcpStream,
-        addr: SocketAddr,
         mut global_request_channel: Sender<Arc<Event>>,
         opcode_table: &'a [Opcode],
         reverse_opcode_table: &'a HashMap<Opcode, u16>,
     ) -> Result<GameSession<'a>> {
-        let span = info_span!("connection", ?addr);
-        let _enter = span.enter();
-
         // Initialize the stream cipher with the client.
-        let cipher = GameSession::init_crypto(stream, &addr).await?;
+        let cipher = GameSession::init_crypto(stream).await?;
 
         // Channel to receive response events from the global world ECS.
         let (tx_response_channel, mut rx_response_channel) = channel(128);
@@ -70,7 +64,6 @@ impl<'a> GameSession<'a> {
         Ok(GameSession {
             uid,
             stream,
-            addr,
             cipher,
             opcode_table,
             reverse_opcode_table,
@@ -81,43 +74,43 @@ impl<'a> GameSession<'a> {
         })
     }
 
-    async fn init_crypto(stream: &mut TcpStream, addr: &SocketAddr) -> Result<CryptSession> {
+    async fn init_crypto(stream: &mut TcpStream) -> Result<CryptSession> {
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1 = vec![0; 128];
         let mut client_key_2 = vec![0; 128];
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
-        debug!("Sending magic word on socket {:?}", addr);
+        debug!("Sending magic word");
         if let Err(e) = stream.write_all(&magic_word_buffer).await {
-            error!("Can't send magic word on socket {:?}: {:?}", addr, e);
+            error!("Can't send magic word: {:?}", e);
             return Err(Error::Io(e));
         }
 
         if let Err(e) = stream.read_exact(&mut client_key_1).await {
-            error!("Can't read client key 1 on socket {:?}: {:?}", addr, e);
+            error!("Can't read client key 1: {:?}", e);
             return Err(Error::Io(e));
         }
-        debug!("Received client key 1 on socket {:?}", addr);
+        debug!("Received client key 1");
 
         OsRng.fill_bytes(&mut server_key_1);
         if let Err(e) = stream.write_all(&server_key_1).await {
-            error!("Can't write server key 1 on socket {:?}: {:?}", addr, e);
+            error!("Can't write server key 1: {:?}", e);
             return Err(Error::Io(e));
         }
-        debug!("Send server key 1 on socket {:?}", addr);
+        debug!("Send server key 1");
 
         if let Err(e) = stream.read_exact(&mut client_key_2).await {
-            error!("Can't read client key 2 on socket {:?}: {:?}", addr, e);
+            error!("Can't read client key 2: {:?}", e);
             return Err(Error::Io(e));
         }
-        debug!("Received client key 2 on socket {:?}", addr);
+        debug!("Received client key 2");
 
         OsRng.fill_bytes(&mut server_key_2);
         if let Err(e) = stream.write_all(&server_key_2).await {
-            error!("Can't write server key 2 on socket {:?}: {:?}", addr, e);
+            error!("Can't write server key 2: {:?}", e);
             return Err(Error::Io(e));
         }
-        debug!("Send server key 2 on socket {:?}", addr);
+        debug!("Send server key 2");
 
         Ok(CryptSession::new(
             [client_key_1, client_key_2],
@@ -144,7 +137,7 @@ impl<'a> GameSession<'a> {
 
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
-        let span = info_span!("connection", addr = ?self.addr, uid = self.uid);
+        let span = info_span!("connection", uid = self.uid);
         let _enter = span.enter();
 
         let mut header_buf = vec![0u8; 4];
@@ -249,8 +242,17 @@ impl<'a> GameSession<'a> {
             _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
                 Ok(event) => {
                     debug!("Received valid packet {:?}", opcode_type);
-                    // TODO test if the packet needs to be send to the global or the local ecs.
-                    self.global_request_channel.send(Arc::new(event)).await?;
+                    match event.target() {
+                        EventTarget::Global => {
+                            self.global_request_channel.send(Arc::new(event)).await?;
+                        }
+                        EventTarget::Local => {
+                            // TODO send to the local world                            
+                        }
+                        EventTarget::Connection => {
+                            error!("Can't send event {} with target Connection from a connection", event);
+                        }
+                    }
                 }
                 Err(e) => match e {
                     Error::NoEventMappingForPacket => {

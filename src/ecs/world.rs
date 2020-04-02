@@ -62,7 +62,7 @@ impl Default for Multiverse {
         let universe = Universe::new();
         let world = universe.create_world();
 
-        debug!("Global world with ID {:?} created", world.id());
+        debug!("Global world with ID {} created", world.id().index());
 
         // Create channels to send data to and from the global world.
         // At most 1024 events can be queued between server ticks

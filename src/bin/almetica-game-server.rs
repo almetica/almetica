@@ -15,7 +15,7 @@ use clap::Clap;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 use tokio::task;
-use tracing::{error, info};
+use tracing::{error, info, info_span};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
@@ -38,14 +38,10 @@ async fn main() {
     }
 }
 
-// TODO refactor logging to use the tracing capabilities
 fn init_logging() {
     let fmt_layer = Layer::builder().with_target(true).finish();
-
     let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
-
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
-
     tracing::subscriber::set_global_default(subscriber).unwrap();
 }
 
@@ -95,10 +91,12 @@ async fn run() -> Result<()> {
     loop {
         match listener.accept().await {
             Ok((mut socket, addr)) => {
-                info!("Incoming connection on socket {:?}", addr);
+                let span = info_span!("socket", %addr);
+                let _enter = span.enter();
+
+                info!("Incoming connection");
                 match GameSession::new(
                     &mut socket,
-                    addr,
                     global_tx_channel.clone(),
                     &opcode_mapping,
                     &reverse_opcode_mapping,
@@ -106,13 +104,13 @@ async fn run() -> Result<()> {
                 .await
                 {
                     Ok(mut session) => match session.handle_connection().await {
-                        Ok(_) => info!("Closed connection on socket {:?}", addr),
-                        Err(e) => error!("Error while handling game session on socket {:?}: {:?}", addr, e),
+                        Ok(_) => info!("Closed connection"),
+                        Err(e) => error!("Error while handling game session: {:?}", e),
                     },
-                    Err(e) => error!("Failed create game session on socket {:?}: {:?}", addr, e),
+                    Err(e) => error!("Failed create game session: {:?}", e),
                 }
             }
-            Err(e) => error!("Failed to open connection on socket: {:?}", e),
+            Err(e) => error!("Failed to open connection: {:?}", e),
         }
     }
 }

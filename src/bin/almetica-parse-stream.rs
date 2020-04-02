@@ -40,11 +40,8 @@ fn main() {
 
 fn init_logging() {
     let fmt_layer = Layer::builder().with_target(true).finish();
-
     let filter_layer = EnvFilter::from_default_env();
-
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
-
     tracing::subscriber::set_global_default(subscriber).unwrap();
 }
 
