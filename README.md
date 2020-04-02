@@ -1,6 +1,50 @@
 # Almetica
 
-This is a server for the MMORPG TERA written in rust.
+![Discord Shield](https://discordapp.com/api/guilds/694792322952462387/widget.png?style=shield)
+
+This is a server for the MMORPG TERA written in rust. Currently targeting 
+TERA EU 90.02.
+
+## Requirements
+
+A stable rust installation (version 1.42+).
+
+## Building
+
+```bash
+cargo build
+```
+
+## Running
+
+Configure the server with the help of the provided configuration template
+(config.yaml.tmpl). In your data folder you need currently following files:
+ * messages.yaml 
+   (A YAML list with all system messages in the same order as the client.)
+ * opcocode.yaml
+   (A YAML hashmap with the packet name as key and the opcode value as the value
+   as defined in the client.)
+
+The configuration file also need the key and IV of the TERA datacenter file you
+are using. You need to extract the information out of the TERA client file you
+are targeting.
+
+We will provide tools / instructions how to do so in the future.
+
+You can run the servers with the following commands:
+
+```bash
+RUST_LOG=info cargo run --bin almetica-login-server
+RUST_LOG=info cargo run --bin almetica-game-server
+```
+
+## Contributing
+
+Please contacts us in advance if you want to help with the server development so
+that we don't work on the same stuff at the same time.
+
+Always write tests for the stuff you program. Code without tests will not be
+included.
 
 ## FAQ
 
