@@ -211,22 +211,24 @@ fn reject_check_version(connection: Entity) -> Arc<Event> {
     })
 }
 
+// TODO read PVP option out of configuration
 fn accept_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event> {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),
         packet: SLoginArbiter {
             success: true,
             login_queue: false,
-            status: 1,
+            status: 65538,
             unk1: 0,
             region: packet.region,
-            pvp_disabled: true,
+            pvp_disabled: false,
             unk2: 0,
             unk3: 0,
         },
     })
 }
 
+// TODO read PVP option out of configuration
 fn reject_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event> {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),

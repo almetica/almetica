@@ -64,9 +64,9 @@ pub struct SLoginArbiter {
     pub region: Region,
     pub pvp_disabled: bool,
     // checked against 0
-    pub unk2: u32,
+    pub unk2: u16,
     // checked against level
-    pub unk3: u32,
+    pub unk3: u16,
 }
 
 #[cfg(test)]
@@ -160,6 +160,51 @@ mod tests {
             data: vec![
                 0x54, 0x45, 0x52, 0x41, 0x1, 0x0, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0,
             ],
+        }
+    );
+
+    packet_test!(
+        name: test_s_loading_screen_control_info,
+        data: vec![
+            0x1,
+        ],
+        expected: SLoadingScreenControlInfo {
+            custom_screen_enabled: true,
+        }
+    );
+
+    packet_test!(
+        name: test_s_login_arbiter,
+        data: vec![
+            0x1,
+            0x0,
+            0x2,
+            0x0,
+            0x1,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+            0x6,
+            0x0,
+            0x0,
+            0x0,
+            0x1,
+            0x0,
+            0x0,
+            0x0,
+            0x0,
+        ],
+        expected: SLoginArbiter {
+            success: true,
+            login_queue: false,
+            status: 65538,
+            unk1: 0,
+            region: Region::Europe,
+            pvp_disabled: true,
+            unk2: 0,
+            unk3: 0,
         }
     );
 }
