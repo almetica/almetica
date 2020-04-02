@@ -11,6 +11,7 @@ use crate::*;
 use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian};
+use legion::entity::Entity;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -20,8 +21,7 @@ use tracing::{debug, error, info, info_span, trace, warn};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
-    // User ID
-    uid: u64,
+    connection: Entity,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
     opcode_table: &'a [Opcode],
@@ -51,18 +51,18 @@ impl<'a> GameSession<'a> {
         let (tx_response_channel, mut rx_response_channel) = channel(128);
         global_request_channel
             .send(Arc::new(Event::RequestRegisterConnection {
-                uid: None,
+                connection: None,
                 response_channel: tx_response_channel,
             }))
             .await?;
         // Wait for the global ECS to return an uid for the connection.
         let message = rx_response_channel.recv().await;
-        let uid = GameSession::parse_uid(message).await?;
+        let connection = GameSession::parse_connection(message).await?;
 
-        info!("Game session initialized with uid {}", uid);
+        info!("Game session initialized under entity ID {}", connection);
 
         Ok(GameSession {
-            uid,
+            connection,
             stream,
             cipher,
             opcode_table,
@@ -118,26 +118,26 @@ impl<'a> GameSession<'a> {
         ))
     }
 
-    /// Reads the message from the global world message and returns the uid.
-    async fn parse_uid(message: Option<Arc<Event>>) -> Result<u64> {
+    /// Reads the message from the global world message and returns the connection.
+    async fn parse_connection(message: Option<Arc<Event>>) -> Result<Entity> {
         match message {
             Some(event) => match &*event {
-                Event::ResponseRegisterConnection { uid } => {
-                    if let Some(id) = uid {
-                        Ok(*id)
+                Event::ResponseRegisterConnection { connection } => {
+                    if let Some(entity) = connection {
+                        Ok(*entity)
                     } else {
-                        Err(Error::UidNotSet)
+                        Err(Error::EntityNotSet)
                     }
                 }
                 _ => Err(Error::WrongEventReceived),
             },
-            None => Err(Error::NoSenderWaitingUid),
+            None => Err(Error::NoSenderWaitingConnectionEntity),
         }
     }
 
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
-        let span = info_span!("connection", uid = self.uid);
+        let span = info_span!("connection", connection = %self.connection);
         let _enter = span.enter();
 
         let mut header_buf = vec![0u8; 4];
@@ -239,7 +239,7 @@ impl<'a> GameSession<'a> {
             Opcode::UNKNOWN => {
                 warn!("Unmapped and unhandled packet with opcode value {}", opcode);
             }
-            _ => match Event::new_from_packet(self.uid, opcode_type, packet_data) {
+            _ => match Event::new_from_packet(self.connection, opcode_type, packet_data) {
                 Ok(event) => {
                     debug!("Received valid packet {:?}", opcode_type);
                     match event.target() {
@@ -247,7 +247,7 @@ impl<'a> GameSession<'a> {
                             self.global_request_channel.send(Arc::new(event)).await?;
                         }
                         EventTarget::Local => {
-                            // TODO send to the local world                            
+                            // TODO send to the local world
                         }
                         EventTarget::Connection => {
                             error!("Can't send event {} with target Connection from a connection", event);

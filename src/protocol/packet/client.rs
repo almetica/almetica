@@ -1,5 +1,6 @@
 /// Module for client network packages.
 use crate::model::Region;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]

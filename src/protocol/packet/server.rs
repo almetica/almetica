@@ -1,4 +1,6 @@
 /// Module for server network packages.
+use crate::model::Region;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -44,6 +46,22 @@ pub struct SItemCustomString {
 pub struct SItemCustomStringEntry {
     pub id: u32,
     pub string: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoginArbiter {
+    pub success: bool,
+    pub login_queue: bool,
+    pub status: u32,
+    // ignored by client
+    pub unk1: u32,
+    // must match CLoginArbiter.region
+    pub region: Region,
+    pub pvp_disabled: bool,
+    // checked against 0
+    pub unk2: u32,
+    // checked against level
+    pub unk3: u32,
 }
 
 #[cfg(test)]

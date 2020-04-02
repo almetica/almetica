@@ -21,7 +21,8 @@ macro_rules! packet_test {
     };
 }
 
-#[macro_use]
-pub mod client;
-#[macro_use]
-pub mod server;
+mod client;
+mod server;
+
+pub use client::*;
+pub use server::*;

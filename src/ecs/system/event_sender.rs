@@ -21,12 +21,12 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 
             for event in queries.iter_mut(&mut *world) {
                 // TODO handle system events between the ECS
-                if let Some(uid) = event.uid() {
-                    let span = info_span!("connection", uid);
+                if let Some(connection) = event.connection() {
+                    let span = info_span!("connection", %connection);
                     let _enter = span.enter();
 
                     let connection_map = &mut connection_mapping.map;
-                    if let Some(channel) = connection_map.get_mut(&uid) {
+                    if let Some(channel) = connection_map.get_mut(&connection) {
                         debug!("Sending event {}", *event);
                         let e = &*event;
                         if let Err(err) = channel.try_send(e.clone()) {
@@ -36,7 +36,7 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
                                 }
                                 TrySendError::Closed(..) => {
                                     error!("Couldn't send event for connection because channel is closed");
-                                    connection_map.remove(&uid);
+                                    connection_map.remove(&connection);
                                 }
                             }
                         }

@@ -10,11 +10,11 @@ use std::fmt;
 use std::sync::Arc;
 
 use super::super::protocol::opcode::Opcode;
-use super::super::protocol::packet::client::*;
-use super::super::protocol::packet::server::*;
+use super::super::protocol::packet::*;
 use super::super::protocol::serde::{from_vec, to_vec};
 use super::super::{Error, Result};
 
+use legion::prelude::Entity;
 use tokio::sync::mpsc::Sender;
 
 /// The kind of an the event.
@@ -44,30 +44,30 @@ macro_rules! assemble_event {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
-            $($p_ty {uid: Option<u64>, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
-            $($e_ty {uid: Option<u64>, $($e_arg_name: $e_arg_type),*},)*
+            $($p_ty {connection: Option<Entity>, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
+            $($e_ty {connection: Option<Entity>, $($e_arg_name: $e_arg_type),*},)*
         }
 
         impl Event {
             /// Creates a new Request/Response event for the given opcode & packet data.
-            pub fn new_from_packet(connection_uid: u64, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
+            pub fn new_from_packet(connection: Entity, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
                 match opcode {
                     $(Opcode::$p_opcode => {
                         let packet = from_vec(packet_data)?;
-                        Ok(Event::$p_ty{uid: Some(connection_uid), packet})
+                        Ok(Event::$p_ty{connection: Some(connection), packet})
                     },)*
                     _ => Err(Error::NoEventMappingForPacket),
                 }
             }
 
-            /// Get the uid of a packet event.
-            pub fn uid(&self) -> Option<u64> {
+            /// Get the connection of a packet event.
+            pub fn connection(&self) -> Option<Entity> {
                 match self {
-                    $(Event::$p_ty{uid,..} => {
-                        *uid
+                    $(Event::$p_ty{connection,..} => {
+                        *connection
                     },)*
-                    $(Event::$e_ty{uid,..} => {
-                        *uid
+                    $(Event::$e_ty{connection,..} => {
+                        *connection
                     },)*
                 }
             }
@@ -124,6 +124,7 @@ macro_rules! assemble_event {
 assemble_event! {
     Packet Events {
         RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Request, Global;
+        ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Response, Connection;
         RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Request, Global;
         ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Response, Connection;
     }
@@ -143,16 +144,25 @@ mod tests {
     use crate::model::Region;
     use crate::protocol::opcode::Opcode;
     use crate::Error;
+    use legion::prelude::World;
     use tokio::sync::mpsc::channel;
 
     #[test]
     fn test_opcode_mapping() -> Result<(), Error> {
+        let mut world = World::new();
+        let entities = world.insert((), vec![(1,),]);
+        let entity_id = entities[0];
+
         let data = vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0, 0x14, 0x0, 0x0, 0x0,
             0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
-        let event = Event::new_from_packet(5343, Opcode::C_CHECK_VERSION, data)?;
-        if let Event::RequestCheckVersion { uid: Some(5343), packet } = event {
+        let event = Event::new_from_packet(entity_id, Opcode::C_CHECK_VERSION, data)?;
+        if let Event::RequestCheckVersion {
+            connection: _entity_id,
+            packet,
+        } = event
+        {
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
@@ -166,7 +176,7 @@ mod tests {
     #[test]
     fn test_target_global() -> Result<(), Error> {
         let org = Event::RequestLoginArbiter {
-            uid: None,
+            connection: None,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
                 ticket: vec![],
@@ -183,7 +193,7 @@ mod tests {
     #[test]
     fn test_target_connection() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
-            uid: None,
+            connection: None,
             packet: SCheckVersion { ok: true },
         };
         assert_eq!(EventTarget::Connection, org.target());
@@ -193,7 +203,7 @@ mod tests {
     #[test]
     fn test_event_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
-            uid: None,
+            connection: None,
             packet: SCheckVersion { ok: true },
         };
         assert_eq!(Some(Opcode::S_CHECK_VERSION), org.opcode());
@@ -204,7 +214,7 @@ mod tests {
     fn test_event_opcode_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
         let org = Event::RequestRegisterConnection {
-            uid: None,
+            connection: None,
             response_channel,
         };
 
@@ -215,7 +225,7 @@ mod tests {
     #[test]
     fn test_event_kind() -> Result<(), Error> {
         let org = Event::RequestLoginArbiter {
-            uid: None,
+            connection: None,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
                 ticket: vec![],
@@ -230,24 +240,28 @@ mod tests {
     }
 
     #[test]
-    fn test_event_uid_some() -> Result<(), Error> {
+    fn test_event_connection_some() -> Result<(), Error> {
+        let mut world = World::new();
+        let entities = world.insert((), vec![(1,),]);
+        let entity_id = entities[0];
+
         let org = Event::ResponseCheckVersion {
-            uid: Some(123),
+            connection: Some(entity_id),
             packet: SCheckVersion { ok: true },
         };
-        assert_eq!(Some(123), org.uid());
+        assert_eq!(Some(entity_id), org.connection());
         Ok(())
     }
 
     #[test]
-    fn test_event_uid_none() -> Result<(), Error> {
+    fn test_event_connection_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
         let org = Event::RequestRegisterConnection {
-            uid: None,
+            connection: None,
             response_channel,
         };
 
-        assert_eq!(None, org.uid());
+        assert_eq!(None, org.connection());
         Ok(())
     }
 }

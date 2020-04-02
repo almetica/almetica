@@ -105,7 +105,7 @@ mod tests {
             .global_world_handle
             .tx_channel
             .try_send(Arc::new(Event::RequestRegisterConnection {
-                uid: None,
+                connection: None,
                 response_channel: tx,
             })) {
             Ok(()) => return Ok(()),

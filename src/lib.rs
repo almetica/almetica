@@ -27,11 +27,11 @@ pub enum Error {
     #[error("no sender open for response channel")]
     NoSenderResponseChannel,
 
-    #[error("no sender open when waiting for uid")]
-    NoSenderWaitingUid,
+    #[error("no sender open when waiting for connection entity")]
+    NoSenderWaitingConnectionEntity,
 
-    #[error("uid was not set")]
-    UidNotSet,
+    #[error("entity was not set")]
+    EntityNotSet,
 
     #[error("wrong event received")]
     WrongEventReceived,
@@ -46,7 +46,10 @@ pub enum Error {
     ProtocolSerde(#[from] protocol::serde::Error),
 
     #[error("mpsc send event error: {0}")]
-    MpscSendEventError(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
+    MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
+
+    #[error("utf8 error: {0}")]
+    Utf8Error(#[from] std::str::Utf8Error),
 
     #[error("unknown error")]
     Unknown,

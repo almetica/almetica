@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ecs::event::Event;
+use legion::entity::Entity;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Holds the Receiver channel of a world.
@@ -13,5 +14,5 @@ pub struct EventRxChannel {
 
 /// Holds the uid to response channel mapping
 pub struct ConnectionMapping {
-    pub map: HashMap<u64, Sender<Arc<Event>>>,
+    pub map: HashMap<Entity, Sender<Arc<Event>>>,
 }
