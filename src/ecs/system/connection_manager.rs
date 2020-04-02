@@ -28,40 +28,29 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
             let _enter = span.enter();
 
             for event in queries.iter_mut(&mut *world) {
-                let response: Option<Arc<Event>> = match &**event {
-                    Event::RequestRegisterConnection { response_channel, .. } => Some(handle_connection_registration(
-                        &mut connection_mapping.map,
-                        response_channel,
-                        &mut command_buffer,
-                    )),
-                    Event::RequestLoginArbiter { connection, packet } => {
-                        match handle_request_login_arbiter(*connection, &packet, &mut world) {
-                            Ok(event) => Some(event),
-                            Err(e) => {
-                                debug!("Can't handle RequestLoginArbiter event: {:?}", e);
-                                None
-                            }
-                        }
+                match &**event {
+                    Event::RequestRegisterConnection { response_channel, .. } => {
+                        handle_connection_registration(
+                            &mut connection_mapping.map,
+                            response_channel,
+                            &mut command_buffer,
+                        );
                     }
                     Event::RequestCheckVersion { connection, packet } => {
-                        match handle_request_check_version(*connection, &packet, &mut world) {
-                            Ok(event) => Some(event),
-                            Err(e) => {
-                                debug!("Can't handle RequestCheckVersion event: {:?}", e);
-                                None
-                            }
+                        if let Err(e) =
+                            handle_request_check_version(*connection, &packet, &mut world, &mut command_buffer)
+                        {
+                            debug!("Can't handle RequestCheckVersion event: {:?}", e);
                         }
                     }
-                    _ => None, // Ignore all other events
-                };
-                if let Some(new_event) = response {
-                    debug!("Created {} event", new_event);
-                    trace!("Event data: {}", new_event);
-                    command_buffer
-                        .start_entity()
-                        .with_tag((tag::EventKind(EventKind::Response),))
-                        .with_component((new_event,))
-                        .build();
+                    Event::RequestLoginArbiter { connection, packet } => {
+                        if let Err(e) =
+                            handle_request_login_arbiter(*connection, &packet, &mut world, &mut command_buffer)
+                        {
+                            debug!("Can't handle RequestLoginArbiter event: {:?}", e);
+                        }
+                    }
+                    _ => { /* Ignore all other events */ }
                 }
             }
         })
@@ -70,8 +59,8 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 fn handle_connection_registration(
     connection_mapping: &mut HashMap<Entity, Sender<Arc<Event>>>,
     response_channel: &Sender<Arc<Event>>,
-    command_buffer: &mut CommandBuffer,
-) -> Arc<Event> {
+    mut command_buffer: &mut CommandBuffer,
+) {
     debug!("Registration event incoming");
 
     // Create a new connection component to properly handle it's state
@@ -86,48 +75,15 @@ fn handle_connection_registration(
 
     debug!("Registered connection with entity id {}", connection_entity.index());
 
-    Arc::new(Event::ResponseRegisterConnection {
-        connection: Some(connection_entity),
-    })
-}
-
-fn handle_request_login_arbiter(
-    connection: Option<Entity>,
-    packet: &CLoginArbiter,
-    world: &mut SubWorld,
-) -> Result<Arc<Event>> {
-    if let Some(connection) = connection {
-        let span = info_span!("connection", %connection);
-        let _enter = span.enter();
-
-        debug!(
-            "Login arbiter event incoming for master account: {}",
-            packet.master_account_name
-        );
-
-        let ticket = from_utf8(&packet.ticket)?;
-        trace!("Ticket value: {}", ticket);
-
-        // TODO properly handle the request with DB and token verification
-
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.verified = true;
-            Ok(accept_login_arbiter(connection, &packet))
-        } else {
-            error!("Could not find connection component for entity");
-            Ok(reject_login_arbiter(connection, &packet))
-        }
-    } else {
-        error!("Entity of the connection for event RequestCheckVersion was not set");
-        Err(Error::EntityNotSet)
-    }
+    send_event(accept_connection_registration(connection_entity), &mut command_buffer);
 }
 
 fn handle_request_check_version(
     connection: Option<Entity>,
     packet: &CCheckVersion,
     world: &mut SubWorld,
-) -> Result<Arc<Event>> {
+    mut command_buffer: &mut CommandBuffer,
+) -> Result<()> {
     if let Some(connection) = connection {
         let span = info_span!("connection", %connection);
         let _enter = span.enter();
@@ -139,10 +95,12 @@ fn handle_request_check_version(
                 "Expected version array to be of length 2 but is {}",
                 packet.version.len()
             );
-            return Ok(reject_check_version(connection));
+            send_event(reject_check_version(connection), &mut command_buffer);
+            return Ok(());
         }
 
         // TODO properly do the version verification
+
         trace!(
             "Version 1: {} version 2: {}",
             packet.version[0].value,
@@ -151,15 +109,106 @@ fn handle_request_check_version(
 
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.version_checked = true;
-            Ok(accept_check_version(connection))
+            send_event(accept_check_version(connection), &mut command_buffer);
+
+            if component.verified && component.version_checked {
+                // Now that the client is vetted, we will send it some additional information
+                handle_post_initialization(connection, &mut command_buffer)?;
+            }
         } else {
             error!("Could not find connection component for entity");
-            Ok(reject_check_version(connection))
+            send_event(reject_check_version(connection), &mut command_buffer);
         }
+        Ok(())
     } else {
         error!("Entity of the connection for event RequestCheckVersion was not set");
         Err(Error::EntityNotSet)
     }
+}
+
+fn handle_request_login_arbiter(
+    connection: Option<Entity>,
+    packet: &CLoginArbiter,
+    world: &mut SubWorld,
+    mut command_buffer: &mut CommandBuffer,
+) -> Result<()> {
+    if let Some(connection) = connection {
+        let span = info_span!("connection", %connection);
+        let _enter = span.enter();
+
+        debug!(
+            "Login arbiter event incoming for master account: {}",
+            packet.master_account_name
+        );
+        let ticket = from_utf8(&packet.ticket)?;
+        trace!("Ticket value: {}", ticket);
+
+        // TODO properly handle the request with DB and token verification
+
+        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
+            component.verified = true;
+            send_event(accept_login_arbiter(connection, &packet), &mut command_buffer);
+
+            if component.verified && component.version_checked {
+                // Now that the client is vetted, we will send it some additional information
+                handle_post_initialization(connection, &mut command_buffer)?;
+            }
+        } else {
+            error!("Could not find connection component for entity. Rejecting.");
+            send_event(reject_login_arbiter(connection, &packet), &mut command_buffer);
+        }
+        Ok(())
+    } else {
+        error!("Entity of the connection for event RequestCheckVersion was not set");
+        Err(Error::EntityNotSet)
+    }
+}
+
+fn handle_post_initialization(connection: Entity, mut command_buffer: &mut CommandBuffer) -> Result<()> {
+    send_event(assemble_loading_screen_info(connection), &mut command_buffer);
+    // TODO send
+    // - S_REMAIN_PLAY_TIME
+    // - S_LOGIN_ACCOUNT_INFO
+    Ok(())
+}
+
+fn assemble_loading_screen_info(connection: Entity) -> Arc<Event> {
+    Arc::new(Event::ResponseLoadingScreenControlInfo{
+        connection: Some(connection),
+        packet: SLoadingScreenControlInfo{
+        custom_screen_enabled: false,
+        }
+    })
+}
+
+fn send_event(event: Arc<Event>, command_buffer: &mut CommandBuffer) {
+    debug!("Created {} event", event);
+    trace!("Event data: {}", event);
+    command_buffer
+        .start_entity()
+        .with_tag((tag::EventKind(EventKind::Response),))
+        .with_component((event,))
+        .build();
+}
+
+fn accept_connection_registration(connection: Entity) -> Arc<Event> {
+    Arc::new(Event::ResponseRegisterConnection {
+        connection: Some(connection),
+    })
+}
+
+fn accept_check_version(connection: Entity) -> Arc<Event> {
+    Arc::new(Event::ResponseCheckVersion {
+        connection: Some(connection),
+        packet: SCheckVersion { ok: true },
+    })
+}
+
+fn reject_check_version(connection: Entity) -> Arc<Event> {
+    Arc::new(Event::ResponseCheckVersion {
+        connection: Some(connection),
+        packet: SCheckVersion { ok: false },
+    })
 }
 
 fn accept_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event> {
@@ -191,20 +240,6 @@ fn reject_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event
             unk2: 0,
             unk3: 0,
         },
-    })
-}
-
-fn accept_check_version(connection: Entity) -> Arc<Event> {
-    Arc::new(Event::ResponseCheckVersion {
-        connection: Some(connection),
-        packet: SCheckVersion { ok: true },
-    })
-}
-
-fn reject_check_version(connection: Entity) -> Arc<Event> {
-    Arc::new(Event::ResponseCheckVersion {
-        connection: Some(connection),
-        packet: SCheckVersion { ok: false },
     })
 }
 

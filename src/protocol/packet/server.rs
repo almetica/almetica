@@ -49,6 +49,11 @@ pub struct SItemCustomStringEntry {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoadingScreenControlInfo {
+    pub custom_screen_enabled: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginArbiter {
     pub success: bool,
     pub login_queue: bool,

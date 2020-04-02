@@ -127,6 +127,7 @@ assemble_event! {
         ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Response, Connection;
         RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Request, Global;
         ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Response, Connection;
+        ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Response, Connection;
     }
     System Events {
         // Registers the response channel of a connection at a world.
@@ -150,7 +151,7 @@ mod tests {
     #[test]
     fn test_opcode_mapping() -> Result<(), Error> {
         let mut world = World::new();
-        let entities = world.insert((), vec![(1,),]);
+        let entities = world.insert((), vec![(1,)]);
         let entity_id = entities[0];
 
         let data = vec![
@@ -242,7 +243,7 @@ mod tests {
     #[test]
     fn test_event_connection_some() -> Result<(), Error> {
         let mut world = World::new();
-        let entities = world.insert((), vec![(1,),]);
+        let entities = world.insert((), vec![(1,)]);
         let entity_id = entities[0];
 
         let org = Event::ResponseCheckVersion {
