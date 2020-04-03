@@ -24,8 +24,8 @@ pub struct GameSession<'a> {
     connection: Entity,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
-    opcode_table: &'a [Opcode],
-    reverse_opcode_table: &'a HashMap<Opcode, u16>,
+    opcode_table: Arc<Vec<Opcode>>,
+    reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     // Sending channel TO the global world
     global_request_channel: Sender<Arc<Event>>,
     // Receiving channel FROM the global world
@@ -41,8 +41,8 @@ impl<'a> GameSession<'a> {
     pub async fn new(
         stream: &'a mut TcpStream,
         mut global_request_channel: Sender<Arc<Event>>,
-        opcode_table: &'a [Opcode],
-        reverse_opcode_table: &'a HashMap<Opcode, u16>,
+        opcode_table: Arc<Vec<Opcode>>,
+        reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     ) -> Result<GameSession<'a>> {
         // Initialize the stream cipher with the client.
         let cipher = GameSession::init_crypto(stream).await?;

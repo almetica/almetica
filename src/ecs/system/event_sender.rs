@@ -43,10 +43,10 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
                             }
                         }
                     } else {
-                        error!("Couldn't find channel mapping for connection");
+                        error!("Couldn't find a channel mapping for the connection");
                     }
                 } else {
-                    error!("Event didn't had an uid attached");
+                    error!("Event didn't had an connection attached");
                 }
             }
         })

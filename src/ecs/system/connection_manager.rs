@@ -166,9 +166,9 @@ fn handle_request_login_arbiter(
 
 fn handle_post_initialization(connection: Entity, mut command_buffer: &mut CommandBuffer) -> Result<()> {
     send_event(assemble_loading_screen_info(connection), &mut command_buffer);
-    // TODO send
-    // - S_REMAIN_PLAY_TIME
-    // - S_LOGIN_ACCOUNT_INFO
+    send_event(assemble_remain_play_time(connection), &mut command_buffer);
+    // TODO get from configuration and database
+    send_event(assemble_login_account_info(connection, "Almetica".to_string(), 456_456), &mut command_buffer);
     Ok(())
 }
 
@@ -177,6 +177,26 @@ fn assemble_loading_screen_info(connection: Entity) -> Arc<Event> {
         connection: Some(connection),
         packet: SLoadingScreenControlInfo{
         custom_screen_enabled: false,
+        }
+    })
+}
+
+fn assemble_remain_play_time(connection: Entity) -> Arc<Event> {
+    Arc::new(Event::ResponseRemainPlayTime {
+        connection: Some(connection),
+        packet: SRemainPlayTime {
+            account_type: 6,
+            minutes_left: 0,
+        }
+    })
+}
+
+fn assemble_login_account_info(connection: Entity, server_name: String, account_id: u64) -> Arc<Event> {
+    Arc::new(Event::ResponseLoginAccountInfo{
+        connection: Some(connection),
+        packet: SLoginAccountInfo {
+            server_name,
+            account_id,
         }
     })
 }

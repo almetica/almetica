@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
@@ -64,7 +65,7 @@ async fn run() -> Result<()> {
                 "Loaded opcode mapping table with {} entries",
                 mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
             );
-            mapping
+            Arc::new(mapping)
         }
         Err(e) => {
             error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
@@ -73,14 +74,14 @@ async fn run() -> Result<()> {
     };
 
     let mut c: i64 = -1;
-    let reverse_opcode_mapping = opcode_mapping
+    let reverse_opcode_mapping = Arc::new(opcode_mapping
         .iter()
         .filter(|&op| *op != Opcode::UNKNOWN)
         .map(|op| {
             c += 1;
             (*op, c as u16)
         })
-        .collect();
+        .collect::<HashMap<Opcode, u16>>());
 
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();
@@ -91,24 +92,30 @@ async fn run() -> Result<()> {
     loop {
         match listener.accept().await {
             Ok((mut socket, addr)) => {
-                let span = info_span!("socket", %addr);
-                let _enter = span.enter();
+                let thread_channel = global_tx_channel.clone();
+                let thread_opcode_mapping = opcode_mapping.clone();
+                let thread_reverse_opcode_mapping = reverse_opcode_mapping.clone();
 
-                info!("Incoming connection");
-                match GameSession::new(
-                    &mut socket,
-                    global_tx_channel.clone(),
-                    &opcode_mapping,
-                    &reverse_opcode_mapping,
-                )
-                .await
-                {
-                    Ok(mut session) => match session.handle_connection().await {
-                        Ok(_) => info!("Closed connection"),
-                        Err(e) => error!("Error while handling game session: {:?}", e),
-                    },
-                    Err(e) => error!("Failed create game session: {:?}", e),
-                }
+                tokio::spawn(async move {
+                    let span = info_span!("socket", %addr);
+                    let _enter = span.enter();
+
+                    info!("Incoming connection");
+                    match GameSession::new(
+                        &mut socket,
+                        thread_channel,
+                        thread_opcode_mapping,
+                        thread_reverse_opcode_mapping,
+                    )
+                    .await
+                    {
+                        Ok(mut session) => match session.handle_connection().await {
+                            Ok(_) => info!("Closed connection"),
+                            Err(e) => error!("Error while handling game session: {:?}", e),
+                        },
+                        Err(e) => error!("Failed create game session: {:?}", e),
+                    }
+                });
             }
             Err(e) => error!("Failed to open connection: {:?}", e),
         }

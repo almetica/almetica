@@ -54,6 +54,12 @@ pub struct SLoadingScreenControlInfo {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoginAccountInfo {
+    pub server_name: String,
+    pub account_id: u64,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginArbiter {
     pub success: bool,
     pub login_queue: bool,
@@ -202,12 +208,24 @@ mod tests {
 
     packet_test!(
         name: test_s_remain_play_time,
-        data: vec!    [
+        data: vec![
             0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ],
         expected: SRemainPlayTime {
             account_type: 6,
             minutes_left: 0,
+        }
+    );
+
+    packet_test!(
+        name: test_s_login_account_info,
+        data: vec![
+            0xe, 0x0, 0xfe, 0x5c, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0x50, 0x0, 0x6c, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x65, 0x0,
+            0x74, 0x0, 0x44, 0x0, 0x42, 0x0, 0x5f, 0x0, 0x32, 0x0, 0x37, 0x0, 0x0, 0x0,
+        ],
+        expected: SLoginAccountInfo {
+            server_name: "PlanetDB_27".to_string(),
+            account_id: 482558,
         }
     );
 }

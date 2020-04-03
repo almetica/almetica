@@ -129,6 +129,7 @@ assemble_event! {
         ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Response, Connection;
         ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Response, Connection;
         ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Response, Connection;
+        ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Response, Connection;
     }
     System Events {
         // Registers the response channel of a connection at a world.
