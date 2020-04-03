@@ -224,7 +224,7 @@ impl<'a> GameSession<'a> {
             Some(opcode_value) => {
                 let len = data.len() + 4;
                 if len > std::u16::MAX as usize {
-                    error!("Length of packet {:?} too big for u16 length ({})", opcode, len);
+                    error!("Length of packet {:?} too big for u16 length ({}). Dropping packet.", opcode, len);
                 } else {
                     let mut buffer = Vec::with_capacity(4 + data.len());
                     LittleEndian::write_u16(&mut buffer, len as u16);
@@ -236,7 +236,7 @@ impl<'a> GameSession<'a> {
                 }
             }
             None => {
-                error!("Can't find opcode {:?} in reverse mapping", opcode);
+                error!("Can't find opcode {:?} in reverse mapping. Dropping packet.", opcode);
             }
         }
         Ok(())
