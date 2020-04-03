@@ -7,6 +7,7 @@ use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
 use crate::ecs::tag;
+use crate::model::Region;
 use crate::protocol::packet::*;
 use crate::*;
 
@@ -67,6 +68,7 @@ fn handle_connection_registration(
     let connection = Connection {
         verified: false,
         version_checked: false,
+        region: None,
     };
     let connection_entity = command_buffer.start_entity().with_component((connection,)).build();
 
@@ -109,11 +111,15 @@ fn handle_request_check_version(
 
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.version_checked = true;
-            send_event(accept_check_version(connection), &mut command_buffer);
 
+            // TODO refactor me
             if component.verified && component.version_checked {
-                // Now that the client is vetted, we will send it some additional information
-                handle_post_initialization(connection, &mut command_buffer)?;
+                if let Some(region) = component.region {
+                    // Now that the client is vetted, we will send it some additional information
+                    handle_post_initialization(connection, region, &mut command_buffer)?;
+                } else {
+                    error!("Region was not set in connection component");
+                }
             }
         } else {
             error!("Could not find connection component for entity");
@@ -147,15 +153,20 @@ fn handle_request_login_arbiter(
 
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.verified = true;
-            send_event(accept_login_arbiter(connection, &packet), &mut command_buffer);
+            component.region = Some(packet.region);
 
+            // TODO refactor me
             if component.verified && component.version_checked {
-                // Now that the client is vetted, we will send it some additional information
-                handle_post_initialization(connection, &mut command_buffer)?;
+                if let Some(region) = component.region {
+                    // Now that the client is vetted, we will send it some additional information
+                    handle_post_initialization(connection, region, &mut command_buffer)?;
+                } else {
+                    error!("Region was not set in connection component");
+                }
             }
         } else {
             error!("Could not find connection component for entity. Rejecting.");
-            send_event(reject_login_arbiter(connection, &packet), &mut command_buffer);
+            send_event(reject_login_arbiter(connection, packet.region), &mut command_buffer);
         }
         Ok(())
     } else {
@@ -164,20 +175,30 @@ fn handle_request_login_arbiter(
     }
 }
 
-fn handle_post_initialization(connection: Entity, mut command_buffer: &mut CommandBuffer) -> Result<()> {
+fn handle_post_initialization(
+    connection: Entity,
+    region: Region,
+    mut command_buffer: &mut CommandBuffer,
+) -> Result<()> {
+    // TODO: The order IS important! Maybe we need some kind of batch sending "event".
+    send_event(accept_check_version(connection), &mut command_buffer);
     send_event(assemble_loading_screen_info(connection), &mut command_buffer);
     send_event(assemble_remain_play_time(connection), &mut command_buffer);
+    send_event(accept_login_arbiter(connection, region), &mut command_buffer);
     // TODO get from configuration and database
-    send_event(assemble_login_account_info(connection, "Almetica".to_string(), 456_456), &mut command_buffer);
+    send_event(
+        assemble_login_account_info(connection, "PlanetDB_28".to_string(), 456_456),
+        &mut command_buffer,
+    );
     Ok(())
 }
 
 fn assemble_loading_screen_info(connection: Entity) -> Arc<Event> {
-    Arc::new(Event::ResponseLoadingScreenControlInfo{
+    Arc::new(Event::ResponseLoadingScreenControlInfo {
         connection: Some(connection),
-        packet: SLoadingScreenControlInfo{
-        custom_screen_enabled: false,
-        }
+        packet: SLoadingScreenControlInfo {
+            custom_screen_enabled: false,
+        },
     })
 }
 
@@ -187,17 +208,17 @@ fn assemble_remain_play_time(connection: Entity) -> Arc<Event> {
         packet: SRemainPlayTime {
             account_type: 6,
             minutes_left: 0,
-        }
+        },
     })
 }
 
 fn assemble_login_account_info(connection: Entity, server_name: String, account_id: u64) -> Arc<Event> {
-    Arc::new(Event::ResponseLoginAccountInfo{
+    Arc::new(Event::ResponseLoginAccountInfo {
         connection: Some(connection),
         packet: SLoginAccountInfo {
             server_name,
             account_id,
-        }
+        },
     })
 }
 
@@ -232,7 +253,7 @@ fn reject_check_version(connection: Entity) -> Arc<Event> {
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event> {
+fn accept_login_arbiter(connection: Entity, region: Region) -> Arc<Event> {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),
         packet: SLoginArbiter {
@@ -240,7 +261,7 @@ fn accept_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event
             login_queue: false,
             status: 65538,
             unk1: 0,
-            region: packet.region,
+            region,
             pvp_disabled: false,
             unk2: 0,
             unk3: 0,
@@ -249,7 +270,7 @@ fn accept_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event> {
+fn reject_login_arbiter(connection: Entity, region: Region) -> Arc<Event> {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),
         packet: SLoginArbiter {
@@ -257,7 +278,7 @@ fn reject_login_arbiter(connection: Entity, packet: &CLoginArbiter) -> Arc<Event
             login_queue: false,
             status: 0,
             unk1: 0,
-            region: packet.region,
+            region,
             pvp_disabled: false,
             unk2: 0,
             unk3: 0,

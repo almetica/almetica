@@ -47,7 +47,7 @@ async fn main() {
 <ip>127.0.0.1</ip>
 <port>10001</port>
 <category sort="1">Almetica</category>
-<name raw_name="Almetica"> Almetica </name>
+<name raw_name="Almetica">Almetica</name>
 <crowdness sort="1">None</crowdness>
 <open sort="1">Recommended</open>
 <permission_mask>0x00000000</permission_mask>
