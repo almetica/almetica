@@ -11,7 +11,7 @@ use crate::ecs::event::{Event, EventTarget};
 use crate::*;
 use opcode::Opcode;
 
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use legion::entity::Entity;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
@@ -227,14 +227,16 @@ impl<'a> GameSession<'a> {
                     error!("Length of packet {:?} too big for u16 length ({})", opcode, len);
                 } else {
                     let mut header_buffer = Vec::with_capacity(4);
-                    header_buffer.write_u16(len as u16);
-                    header_buffer.write_u16(*opcode_value);
+                    WriteBytesExt::write_u16::<LittleEndian>(&mut header_buffer, len as u16)?;
+                    WriteBytesExt::write_u16::<LittleEndian>(&mut header_buffer, *opcode_value)?;
+
+                    debug!("length: {}", header_buffer.len());
 
                     self.cipher.crypt_server_data(header_buffer.as_mut_slice());
-                    self.stream.write(&header_buffer).await?;
-                    
+                    self.stream.write_all(&header_buffer).await?;
+
                     self.cipher.crypt_server_data(data.as_mut_slice());
-                    self.stream.write(&data).await?;
+                    self.stream.write_all(&data).await?;
                 }
             }
             None => {

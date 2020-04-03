@@ -66,6 +66,7 @@ impl StreamCipher {
             self.change_len -= pre;
         }
 
+        // TODO doesn't work with exactly 4 bytes?
         for i in (pre..size - 3).step_by(4) {
             self.clock_keys();
             for k in self.generators.iter() {
@@ -220,6 +221,18 @@ mod tests {
         cipher.apply_keystream(&mut data);
         assert_eq!(
             "2a73aa89a0d397002834619738e39924ec84bc3957ff1c4a82b87377f5f35c3c",
+            encode(&data)
+        );
+    }
+
+    #[test]
+    fn test_cipher_4_byte() {
+        let mut cipher = setup_cipher();
+
+        let mut data: [u8; 4] = [0x11; 4];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(
+            "c49d4467",
             encode(&data)
         );
     }
