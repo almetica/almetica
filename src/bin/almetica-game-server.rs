@@ -17,6 +17,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 use tokio::task;
 use tracing::{error, info, info_span};
+use tracing_futures::Instrument;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
@@ -74,14 +75,16 @@ async fn run() -> Result<()> {
     };
 
     let mut c: i64 = -1;
-    let reverse_opcode_mapping = Arc::new(opcode_mapping
-        .iter()
-        .filter(|&op| *op != Opcode::UNKNOWN)
-        .map(|op| {
-            c += 1;
-            (*op, c as u16)
-        })
-        .collect::<HashMap<Opcode, u16>>());
+    let reverse_opcode_mapping = Arc::new(
+        opcode_mapping
+            .iter()
+            .filter(|&op| *op != Opcode::UNKNOWN)
+            .map(|op| {
+                c += 1;
+                (*op, c as u16)
+            })
+            .collect::<HashMap<Opcode, u16>>(),
+    );
 
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();
@@ -109,10 +112,17 @@ async fn run() -> Result<()> {
                     )
                     .await
                     {
-                        Ok(mut session) => match session.handle_connection().await {
-                            Ok(_) => info!("Closed connection"),
-                            Err(e) => error!("Error while handling game session: {:?}", e),
-                        },
+                        Ok(mut session) => {
+                            let connection = session.connection;
+                            match session
+                                .handle_connection()
+                                .instrument(info_span!("connection", connection = %connection))
+                                .await
+                            {
+                                Ok(_) => info!("Closed connection"),
+                                Err(e) => error!("Error while handling game session: {:?}", e),
+                            }
+                        }
                         Err(e) => error!("Failed create game session: {:?}", e),
                     }
                 });

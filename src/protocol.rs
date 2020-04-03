@@ -4,6 +4,7 @@ pub mod packet;
 pub mod serde;
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::crypt::CryptSession;
 use crate::ecs::event::{Event, EventTarget};
@@ -14,14 +15,15 @@ use byteorder::{ByteOrder, LittleEndian};
 use legion::entity::Entity;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
+use tokio::time::delay_for;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::{debug, error, info, info_span, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
-    connection: Entity,
+    pub connection: Entity,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
     opcode_table: Arc<Vec<Opcode>>,
@@ -137,12 +139,14 @@ impl<'a> GameSession<'a> {
 
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
-        let span = info_span!("connection", connection = %self.connection);
-        let _enter = span.enter();
-
         let mut header_buf = vec![0u8; 4];
         loop {
             tokio::select! {
+                // Timeout
+                _ = delay_for(Duration::from_secs(300)) => {
+                    info!("Connection timed out");
+                    return Ok(());
+                }
                 // RX
                 result = self.stream.peek(&mut header_buf) => {
                    match result {
