@@ -219,15 +219,21 @@ impl<'a> GameSession<'a> {
     }
 
     /// Send packet to client.
-    async fn send_packet(&mut self, opcode: Opcode, data: Vec<u8>) -> Result<()> {
+    async fn send_packet(&mut self, opcode: Opcode, mut data: Vec<u8>) -> Result<()> {
         match self.reverse_opcode_table.get(&opcode) {
             Some(opcode_value) => {
                 let len = data.len() + 4;
                 if len > std::u16::MAX as usize {
                     error!("Length of packet {:?} too big for u16 length ({})", opcode, len);
                 } else {
-                    self.stream.write_u16(len as u16).await?;
-                    self.stream.write_u16(*opcode_value).await?;
+                    let mut header_buffer = Vec::with_capacity(4);
+                    header_buffer.write_u16(len as u16);
+                    header_buffer.write_u16(*opcode_value);
+
+                    self.cipher.crypt_server_data(header_buffer.as_mut_slice());
+                    self.stream.write(&header_buffer).await?;
+                    
+                    self.cipher.crypt_server_data(data.as_mut_slice());
                     self.stream.write(&data).await?;
                 }
             }
