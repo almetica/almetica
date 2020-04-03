@@ -171,14 +171,14 @@ impl StreamParser {
 
                 if is_server == 1 {
                     info!(
-                        "Found packet {} from server. Length: {} Rest: {}",
+                        "Found packet {:?} from server. Length: {} Rest: {}",
                         packet_type,
                         packet_data.len(),
                         self.tmp_buffer[1].len()
                     );
                 } else {
                     info!(
-                        "Found packet {} from client. Length: {} Rest: {}",
+                        "Found packet {:?} from client. Length: {} Rest: {}",
                         packet_type,
                         packet_data.len(),
                         self.tmp_buffer[0].len()

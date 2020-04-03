@@ -228,7 +228,7 @@ impl<'a> GameSession<'a> {
                 }
             }
             None => {
-                error!("Can't find opcode {} in reverse mapping", opcode);
+                error!("Can't find opcode {:?} in reverse mapping", opcode);
             }
         }
         Ok(())

@@ -69,6 +69,15 @@ pub struct SLoginArbiter {
     pub unk3: u16,
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SRemainPlayTime {
+    // 1 = P2P (active subscription), 2 = P2P (no active subscription),
+    //3 = F2P (free-play event), 4 = F2P (legacy restriction),
+    //5 = Premium, 6 = Basic
+    pub account_type: i32,
+    pub minutes_left: i32,
+}
+
 #[cfg(test)]
 #[macro_use]
 mod tests {
@@ -176,25 +185,8 @@ mod tests {
     packet_test!(
         name: test_s_login_arbiter,
         data: vec![
-            0x1,
-            0x0,
-            0x2,
-            0x0,
-            0x1,
-            0x0,
-            0x0,
-            0x0,
-            0x0,
-            0x0,
-            0x6,
-            0x0,
-            0x0,
-            0x0,
-            0x1,
-            0x0,
-            0x0,
-            0x0,
-            0x0,
+            0x1, 0x0, 0x2, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x1, 0x0, 
+            0x0, 0x0, 0x0,
         ],
         expected: SLoginArbiter {
             success: true,
@@ -205,6 +197,17 @@ mod tests {
             pvp_disabled: true,
             unk2: 0,
             unk3: 0,
+        }
+    );
+
+    packet_test!(
+        name: test_s_remain_play_time,
+        data: vec!    [
+            0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        ],
+        expected: SRemainPlayTime {
+            account_type: 6,
+            minutes_left: 0,
         }
     );
 }

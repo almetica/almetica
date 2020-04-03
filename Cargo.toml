@@ -32,3 +32,9 @@ tokio = { version = "0.2", features = ["full"] }
 [[bench]]
 name = "crypt"
 harness = false
+
+[profile.release]
+lto = true
+
+[profile.bench]
+lto = true

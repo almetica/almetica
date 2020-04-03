@@ -11,6 +11,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, error, info_span};
 
 /// Event sender sends all outgoing events to the connection / local worlds.
+/// TODO if sending order is critical, we need to move the functionality of this
+/// system into the other systems.
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventSender")
         .write_resource::<ConnectionMapping>()

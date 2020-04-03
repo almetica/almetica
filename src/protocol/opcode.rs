@@ -1,10 +1,10 @@
 /// Module that defines the opcode used in the network protocol.
-use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumString};
+use serde::Deserialize;
+use strum_macros::{EnumString};
 
 /// Opcode enum
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, Display, Deserialize, Eq, EnumString, Hash, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, EnumString, Hash, PartialEq)]
 pub enum Opcode {
     UNKNOWN,
     C_ACCEPT_CONTRACT,
