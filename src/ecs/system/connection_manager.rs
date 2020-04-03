@@ -187,7 +187,7 @@ fn handle_post_initialization(
     send_event(accept_login_arbiter(connection, region), &mut command_buffer);
     // TODO get from configuration and database
     send_event(
-        assemble_login_account_info(connection, "PlanetDB_28".to_string(), 456_456),
+        assemble_login_account_info(connection, "Almetica".to_string(), 456_456),
         &mut command_buffer,
     );
     Ok(())
