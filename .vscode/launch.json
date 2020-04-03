@@ -44,53 +44,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'almetica-parse-stream'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=almetica-parse-stream",
-                    "--package=almetica"
-                ],
-                "filter": {
-                    "name": "almetica-parse-stream",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'almetica-server'",
+            "name": "Debug executable 'almetica-game-server'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=almetica-server",
+                    "--bin=almetica-game-server",
                     "--package=almetica"
                 ],
                 "filter": {
-                    "name": "almetica-server",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'almetica-server'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=almetica-server",
-                    "--package=almetica"
-                ],
-                "filter": {
-                    "name": "almetica-server",
+                    "name": "almetica-game-server",
                     "kind": "bin"
                 }
             },
