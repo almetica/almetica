@@ -180,11 +180,12 @@ fn handle_post_initialization(
     region: Region,
     mut command_buffer: &mut CommandBuffer,
 ) -> Result<()> {
-    // TODO: The order IS important! Maybe we need some kind of batch sending "event".
+    // TODO: Currently we don't gurante an ORDER of packets that we queue. 
     send_event(accept_check_version(connection), &mut command_buffer);
     send_event(assemble_loading_screen_info(connection), &mut command_buffer);
     send_event(assemble_remain_play_time(connection), &mut command_buffer);
     send_event(accept_login_arbiter(connection, region), &mut command_buffer);
+    
     // TODO get from configuration and database
     send_event(
         assemble_login_account_info(connection, "Almetica".to_string(), 456_456),

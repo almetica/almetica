@@ -232,9 +232,6 @@ impl<'a> GameSession<'a> {
                     let mut buffer = Vec::with_capacity(4 + data.len());
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, len as u16)?;
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, *opcode_value)?;
-
-                    debug!("{:?}", buffer);
-
                     buffer.append(&mut data);
 
                     self.cipher.crypt_server_data(buffer.as_mut_slice());
