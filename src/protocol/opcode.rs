@@ -1,6 +1,6 @@
 /// Module that defines the opcode used in the network protocol.
 use serde::Deserialize;
-use strum_macros::{EnumString};
+use strum_macros::EnumString;
 
 /// Opcode enum
 #[allow(non_camel_case_types)]

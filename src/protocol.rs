@@ -15,10 +15,10 @@ use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use legion::entity::Entity;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
-use tokio::time::delay_for;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::time::delay_for;
 use tracing::{debug, error, info, trace, warn};
 
 /// Abstracts the game network protocol session.
@@ -224,11 +224,17 @@ impl<'a> GameSession<'a> {
             Some(opcode_value) => {
                 let len = data.len() + 4;
                 if len > std::u16::MAX as usize {
-                    error!("Length of packet {:?} too big for u16 length ({}). Dropping packet.", opcode, len);
+                    error!(
+                        "Length of packet {:?} too big for u16 length ({}). Dropping packet.",
+                        opcode, len
+                    );
                 } else {
                     let mut buffer = Vec::with_capacity(4 + data.len());
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, len as u16)?;
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, *opcode_value)?;
+
+                    debug!("{:?}", buffer);
+
                     buffer.append(&mut data);
 
                     self.cipher.crypt_server_data(buffer.as_mut_slice());

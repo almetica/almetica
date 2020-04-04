@@ -60,16 +60,16 @@ fn run() -> Result<()> {
             return Err(e);
         }
     };
-    let opcode_mapping = match load_opcode_mapping(&config.data.path) {
-        Ok(mapping) => {
+    let (opcode_mapping, _reverse_opcode_mapping) = match load_opcode_mapping(&config.data.path) {
+        Ok((opcode_mapping, reverse_opcode_mapping)) => {
             info!(
-                "Loaded opcode mapping table with {} entries.",
-                mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+                "Loaded opcode mapping table with {} entries",
+                opcode_mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
             );
-            mapping
+            (opcode_mapping, reverse_opcode_mapping)
         }
         Err(e) => {
-            error!("Can't read opcode mapping file {}: {}", &opts.config.display(), e);
+            error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
             return Err(e);
         }
     };

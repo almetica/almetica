@@ -1,5 +1,4 @@
 #![warn(clippy::all)]
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
@@ -60,31 +59,19 @@ async fn run() -> Result<()> {
     };
 
     info!("Reading opcode mapping file");
-    let opcode_mapping = match load_opcode_mapping(&config.data.path) {
-        Ok(mapping) => {
+    let (opcode_mapping, reverse_opcode_mapping) = match load_opcode_mapping(&config.data.path) {
+        Ok((opcode_mapping, reverse_opcode_mapping)) => {
             info!(
                 "Loaded opcode mapping table with {} entries",
-                mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+                opcode_mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
             );
-            Arc::new(mapping)
+            (Arc::new(opcode_mapping), Arc::new(reverse_opcode_mapping))
         }
         Err(e) => {
             error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
             return Err(e);
         }
     };
-
-    let mut c: i64 = -1;
-    let reverse_opcode_mapping = Arc::new(
-        opcode_mapping
-            .iter()
-            .filter(|&op| *op != Opcode::UNKNOWN)
-            .map(|op| {
-                c += 1;
-                (*op, c as u16)
-            })
-            .collect::<HashMap<Opcode, u16>>(),
-    );
 
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();

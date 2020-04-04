@@ -231,9 +231,6 @@ mod tests {
 
         let mut data: [u8; 4] = [0x11; 4];
         cipher.apply_keystream(&mut data);
-        assert_eq!(
-            "c49d4467",
-            encode(&data)
-        );
+        assert_eq!("c49d4467", encode(&data));
     }
 }
