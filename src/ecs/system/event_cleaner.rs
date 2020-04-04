@@ -36,20 +36,21 @@ mod tests {
     use crate::ecs::component::SingleEvent;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
-    use crate::ecs::world::Multiverse;
+    use legion::systems::schedule::Schedule;
+    use legion::query::Read;
 
-    fn setup_world() -> (Multiverse, Schedule) {
-        let multiverse = Multiverse::new();
+    fn setup() -> (World, Schedule, Resources) {
+        let world = World::new();
         let schedule = Schedule::builder()
-            .add_system(init(multiverse.global_world_handle.world.id().index()))
+            .add_system(init(world.id().index()))
             .build();
-        (multiverse, schedule)
+        let mut resources = Resources::default();
+        (world, schedule, resources)
     }
 
     #[test]
     fn test_event_cleaner_single_event() {
-        let (mut multiverse, mut schedule) = setup_world();
-        let mut world = &mut multiverse.global_world_handle.world;
+        let (mut world, mut schedule, mut resources) = setup();
 
         world.insert(
             (EventKind(event::EventKind::Request),),
@@ -61,7 +62,7 @@ mod tests {
         let old_count = query.iter(&mut world).count();
         assert_eq!(10, old_count);
 
-        schedule.execute(&mut world, &mut multiverse.resources);
+        schedule.execute(&mut world, &mut resources);
 
         let new_count = query.iter(&mut world).count();
         assert_eq!(0, new_count);
@@ -69,8 +70,7 @@ mod tests {
 
     #[test]
     fn test_event_cleaner_batch_event() {
-        let (mut multiverse, mut schedule) = setup_world();
-        let mut world = &mut multiverse.global_world_handle.world;
+        let (mut world, mut schedule, mut resources) = setup();
 
         world.insert(
             (EventKind(event::EventKind::Request),),
@@ -87,7 +87,7 @@ mod tests {
         let old_count = query.iter(&mut world).count();
         assert_eq!(10, old_count);
 
-        schedule.execute(&mut world, &mut multiverse.resources);
+        schedule.execute(&mut world, &mut resources);
 
         let new_count = query.iter(&mut world).count();
         assert_eq!(0, new_count);
