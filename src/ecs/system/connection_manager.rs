@@ -1,8 +1,9 @@
+/// Connection handler handles the connection components.
 use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use crate::ecs::component::Connection;
+use crate::ecs::component::{Connection, SingleEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
@@ -17,12 +18,11 @@ use legion::systems::{SubWorld, SystemBuilder};
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, trace};
 
-/// Connection handler handles the connection components.
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("ConnectionManager")
         .write_resource::<ConnectionMapping>()
-        .with_query(<Read<Arc<Event>>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
-        .write_component::<Arc<Event>>()
+        .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
+        .write_component::<SingleEvent>()
         .write_component::<Connection>()
         .build(move |mut command_buffer, mut world, connection_mapping, queries| {
             let span = info_span!("world", world_id);
@@ -58,8 +58,8 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 }
 
 fn handle_connection_registration(
-    connection_mapping: &mut HashMap<Entity, Sender<Arc<Event>>>,
-    response_channel: &Sender<Arc<Event>>,
+    connection_mapping: &mut HashMap<Entity, Sender<SingleEvent>>,
+    response_channel: &Sender<SingleEvent>,
     mut command_buffer: &mut CommandBuffer,
 ) {
     debug!("Registration event incoming");
@@ -194,7 +194,7 @@ fn handle_post_initialization(
     Ok(())
 }
 
-fn assemble_loading_screen_info(connection: Entity) -> Arc<Event> {
+fn assemble_loading_screen_info(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseLoadingScreenControlInfo {
         connection: Some(connection),
         packet: SLoadingScreenControlInfo {
@@ -203,7 +203,7 @@ fn assemble_loading_screen_info(connection: Entity) -> Arc<Event> {
     })
 }
 
-fn assemble_remain_play_time(connection: Entity) -> Arc<Event> {
+fn assemble_remain_play_time(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseRemainPlayTime {
         connection: Some(connection),
         packet: SRemainPlayTime {
@@ -213,7 +213,7 @@ fn assemble_remain_play_time(connection: Entity) -> Arc<Event> {
     })
 }
 
-fn assemble_login_account_info(connection: Entity, server_name: String, account_id: u64) -> Arc<Event> {
+fn assemble_login_account_info(connection: Entity, server_name: String, account_id: u64) -> SingleEvent {
     Arc::new(Event::ResponseLoginAccountInfo {
         connection: Some(connection),
         packet: SLoginAccountInfo {
@@ -223,7 +223,7 @@ fn assemble_login_account_info(connection: Entity, server_name: String, account_
     })
 }
 
-fn send_event(event: Arc<Event>, command_buffer: &mut CommandBuffer) {
+fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
     debug!("Created {} event", event);
     trace!("Event data: {}", event);
     command_buffer
@@ -233,20 +233,20 @@ fn send_event(event: Arc<Event>, command_buffer: &mut CommandBuffer) {
         .build();
 }
 
-fn accept_connection_registration(connection: Entity) -> Arc<Event> {
+fn accept_connection_registration(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseRegisterConnection {
         connection: Some(connection),
     })
 }
 
-fn accept_check_version(connection: Entity) -> Arc<Event> {
+fn accept_check_version(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseCheckVersion {
         connection: Some(connection),
         packet: SCheckVersion { ok: true },
     })
 }
 
-fn reject_check_version(connection: Entity) -> Arc<Event> {
+fn reject_check_version(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseCheckVersion {
         connection: Some(connection),
         packet: SCheckVersion { ok: false },
@@ -254,7 +254,7 @@ fn reject_check_version(connection: Entity) -> Arc<Event> {
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection: Entity, region: Region) -> Arc<Event> {
+fn accept_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),
         packet: SLoginArbiter {
@@ -271,7 +271,7 @@ fn accept_login_arbiter(connection: Entity, region: Region) -> Arc<Event> {
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection: Entity, region: Region) -> Arc<Event> {
+fn reject_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
     Arc::new(Event::ResponseLoginArbiter {
         connection: Some(connection),
         packet: SLoginArbiter {

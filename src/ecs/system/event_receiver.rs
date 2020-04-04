@@ -1,3 +1,4 @@
+/// Event receiver dispatches the events from the Request channel into the ECS.
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::EventRxChannel;
 use crate::ecs::tag;
@@ -7,7 +8,6 @@ use legion::systems::SystemBuilder;
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info_span};
 
-/// Event receiver dispatches the events from the Request channel into the ECS.
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventReceiver")
         .write_resource::<EventRxChannel>()

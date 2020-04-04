@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::crypt::CryptSession;
+use crate::ecs::component::SingleEvent;
 use crate::ecs::event::{Event, EventTarget};
 use crate::*;
 use opcode::Opcode;
@@ -29,20 +30,20 @@ pub struct GameSession<'a> {
     opcode_table: Arc<Vec<Opcode>>,
     reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     // Sending channel TO the global world
-    global_request_channel: Sender<Arc<Event>>,
+    global_request_channel: Sender<SingleEvent>,
     // Receiving channel FROM the global world
-    global_response_channel: Receiver<Arc<Event>>,
+    global_response_channel: Receiver<SingleEvent>,
     // Sending channel TO the instance world
-    _instance_request_channel: Option<Sender<Arc<Event>>>,
+    _instance_request_channel: Option<Sender<SingleEvent>>,
     // Receiving channel FROM the instance world
-    _instance_response_channel: Option<Receiver<Arc<Event>>>,
+    _instance_response_channel: Option<Receiver<SingleEvent>>,
 }
 
 impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
     pub async fn new(
         stream: &'a mut TcpStream,
-        mut global_request_channel: Sender<Arc<Event>>,
+        mut global_request_channel: Sender<SingleEvent>,
         opcode_table: Arc<Vec<Opcode>>,
         reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     ) -> Result<GameSession<'a>> {
@@ -121,7 +122,7 @@ impl<'a> GameSession<'a> {
     }
 
     /// Reads the message from the global world message and returns the connection.
-    async fn parse_connection(message: Option<Arc<Event>>) -> Result<Entity> {
+    async fn parse_connection(message: Option<SingleEvent>) -> Result<Entity> {
         match message {
             Some(event) => match &*event {
                 Event::ResponseRegisterConnection { connection } => {
@@ -189,7 +190,7 @@ impl<'a> GameSession<'a> {
     }
 
     /// Handles the incoming messages that could contain Response events or normal events.
-    async fn handle_message(&mut self, message: Option<Arc<Event>>) -> Result<()> {
+    async fn handle_message(&mut self, message: Option<SingleEvent>) -> Result<()> {
         match message {
             Some(event) => {
                 if let Event::ResponseDropConnection { .. } = &*event {

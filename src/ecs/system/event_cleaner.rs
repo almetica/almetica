@@ -1,14 +1,13 @@
-use std::sync::Arc;
+/// The event cleaner cleans up all Events in the current ECS.
+use crate::ecs::component::SingleEvent;
 
-use crate::ecs::event::Event;
 use legion::prelude::*;
 use legion::systems::SystemBuilder;
 use tracing::{info_span, trace};
 
-/// The event cleaner cleans up all Events in the current ECS.
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventCleaner")
-        .with_query(<Write<Arc<Event>>>::query())
+        .with_query(<Write<SingleEvent>>::query())
         .build(move |command_buffer, world, _resources, queries| {
             let span = info_span!("world", world_id);
             let _enter = span.enter();

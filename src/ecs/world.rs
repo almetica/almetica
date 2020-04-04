@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 /// Module that handles the world generation and handling
-use std::sync::Arc;
 use std::{thread, time};
 
-use crate::ecs::event::Event;
+use crate::ecs::component::SingleEvent;
 use crate::ecs::resource::*;
 use crate::ecs::system::*;
 
@@ -52,7 +51,7 @@ impl Multiverse {
     }
 
     /// Get the Input Event Channel of the global world
-    pub fn get_global_input_event_channel(&self) -> Sender<Arc<Event>> {
+    pub fn get_global_input_event_channel(&self) -> Sender<SingleEvent> {
         self.global_world_handle.tx_channel.clone()
     }
 }
@@ -85,13 +84,16 @@ impl Default for Multiverse {
 /// Handle for a world.
 /// Connections can register their connection by using the `Èvent::RegisterConnection` event.
 pub struct WorldHandle {
-    pub tx_channel: Sender<Arc<Event>>,
+    pub tx_channel: Sender<SingleEvent>,
     pub world: World,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Arc;
+
     use crate::ecs::event::Event;
     use crate::Result;
     use tokio::sync::mpsc::channel;

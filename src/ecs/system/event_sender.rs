@@ -1,6 +1,6 @@
-use std::sync::Arc;
-
-use crate::ecs::event::{Event, EventKind};
+/// Event sender sends all outgoing events to the connection / local worlds.
+use crate::ecs::component::SingleEvent;
+use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
 use crate::ecs::tag;
 
@@ -10,13 +10,10 @@ use legion::systems::SystemBuilder;
 use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, error, info_span};
 
-/// Event sender sends all outgoing events to the connection / local worlds.
-/// TODO if sending order is critical, we need to move the functionality of this
-/// system into the other systems.
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventSender")
         .write_resource::<ConnectionMapping>()
-        .with_query(<Read<Arc<Event>>>::query().filter(tag_value(&tag::EventKind(EventKind::Response))))
+        .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Response))))
         .build(move |_command_buffer, world, connection_mapping, queries| {
             let span = info_span!("world", world_id);
             let _enter = span.enter();
