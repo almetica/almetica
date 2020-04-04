@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use crate::ecs::component::{Connection, SingleEvent};
+use crate::ecs::component::{Connection, SingleEvent, BatchEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
@@ -23,6 +23,7 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
         .write_resource::<ConnectionMapping>()
         .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
         .write_component::<SingleEvent>()
+        .write_component::<BatchEvent>()
         .write_component::<Connection>()
         .build(move |mut command_buffer, mut world, connection_mapping, queries| {
             let span = info_span!("world", world_id);
@@ -180,18 +181,37 @@ fn handle_post_initialization(
     region: Region,
     mut command_buffer: &mut CommandBuffer,
 ) -> Result<()> {
-    // TODO: Currently we don't gurante an ORDER of packets that we queue. 
-    send_event(accept_check_version(connection), &mut command_buffer);
-    send_event(assemble_loading_screen_info(connection), &mut command_buffer);
-    send_event(assemble_remain_play_time(connection), &mut command_buffer);
-    send_event(accept_login_arbiter(connection, region), &mut command_buffer);
-    
+    debug!("Sending connection post initialization commands.");
+
     // TODO get from configuration and database
-    send_event(
+    let batch = vec![
+        accept_check_version(connection),
+        assemble_loading_screen_info(connection),
+        assemble_remain_play_time(connection),
+        accept_login_arbiter(connection, region),
         assemble_login_account_info(connection, "Almetica".to_string(), 456_456),
-        &mut command_buffer,
-    );
+    ];
+    send_batch_event(batch, &mut command_buffer);
     Ok(())
+}
+
+fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
+    debug!("Created {} event", event);
+    trace!("Event data: {}", event);
+    command_buffer
+        .start_entity()
+        .with_tag((tag::EventKind(EventKind::Response),))
+        .with_component((event,))
+        .build();
+}
+
+fn send_batch_event(batch: BatchEvent, command_buffer: &mut CommandBuffer) {
+    debug!("Created batch event with {} events", batch.len());
+    command_buffer
+        .start_entity()
+        .with_tag((tag::EventKind(EventKind::Response),))
+        .with_component((batch,))
+        .build();
 }
 
 fn assemble_loading_screen_info(connection: Entity) -> SingleEvent {
@@ -221,16 +241,6 @@ fn assemble_login_account_info(connection: Entity, server_name: String, account_
             account_id,
         },
     })
-}
-
-fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
-    debug!("Created {} event", event);
-    trace!("Event data: {}", event);
-    command_buffer
-        .start_entity()
-        .with_tag((tag::EventKind(EventKind::Response),))
-        .with_component((event,))
-        .build();
 }
 
 fn accept_connection_registration(connection: Entity) -> SingleEvent {
