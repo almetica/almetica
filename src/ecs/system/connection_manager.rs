@@ -112,16 +112,7 @@ fn handle_request_check_version(
 
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.version_checked = true;
-
-            // TODO refactor me
-            if component.verified && component.version_checked {
-                if let Some(region) = component.region {
-                    // Now that the client is vetted, we will send it some additional information
-                    handle_post_initialization(connection, region, &mut command_buffer)?;
-                } else {
-                    error!("Region was not set in connection component");
-                }
-            }
+            check_and_handle_post_initialization(connection, &component, &mut command_buffer);
         } else {
             error!("Could not find connection component for entity");
             send_event(reject_check_version(connection), &mut command_buffer);
@@ -155,18 +146,9 @@ fn handle_request_login_arbiter(
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.verified = true;
             component.region = Some(packet.region);
-
-            // TODO refactor me
-            if component.verified && component.version_checked {
-                if let Some(region) = component.region {
-                    // Now that the client is vetted, we will send it some additional information
-                    handle_post_initialization(connection, region, &mut command_buffer)?;
-                } else {
-                    error!("Region was not set in connection component");
-                }
-            }
+            check_and_handle_post_initialization(connection, &component, &mut command_buffer);
         } else {
-            error!("Could not find connection component for entity. Rejecting.");
+            error!("Could not find connection component for entity. Rejecting");
             send_event(reject_login_arbiter(connection, packet.region), &mut command_buffer);
         }
         Ok(())
@@ -176,23 +158,30 @@ fn handle_request_login_arbiter(
     }
 }
 
-fn handle_post_initialization(
+fn check_and_handle_post_initialization(
     connection: Entity,
-    region: Region,
+    component: &Connection,
     mut command_buffer: &mut CommandBuffer,
-) -> Result<()> {
-    debug!("Sending connection post initialization commands.");
+) {
+    if component.verified && component.version_checked {
+        if let Some(region) = component.region {
+            // Now that the client is vetted, we need to send him some specific
+            // packets in order for him to progress.
+            debug!("Sending connection post initialization commands");
 
-    // TODO get from configuration and database
-    let batch = vec![
-        accept_check_version(connection),
-        assemble_loading_screen_info(connection),
-        assemble_remain_play_time(connection),
-        accept_login_arbiter(connection, region),
-        assemble_login_account_info(connection, "Almetica".to_string(), 456_456),
-    ];
-    send_batch_event(batch, &mut command_buffer);
-    Ok(())
+            // TODO get from configuration and database
+            let batch = vec![
+                accept_check_version(connection),
+                assemble_loading_screen_info(connection),
+                assemble_remain_play_time(connection),
+                accept_login_arbiter(connection, region),
+                assemble_login_account_info(connection, "Almetica".to_string(), 456_456),
+            ];
+            send_batch_event(batch, &mut command_buffer);
+        } else {
+            error!("Region was not set in connection component");
+        }
+    }
 }
 
 fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
