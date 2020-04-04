@@ -10,3 +10,4 @@ Cargo.lock
 config.yaml
 *.log
 .idea
+test*.txt
