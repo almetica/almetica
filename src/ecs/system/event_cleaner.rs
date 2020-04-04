@@ -36,15 +36,13 @@ mod tests {
     use crate::ecs::component::SingleEvent;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
-    use legion::systems::schedule::Schedule;
     use legion::query::Read;
+    use legion::systems::schedule::Schedule;
 
     fn setup() -> (World, Schedule, Resources) {
         let world = World::new();
-        let schedule = Schedule::builder()
-            .add_system(init(world.id().index()))
-            .build();
-        let mut resources = Resources::default();
+        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
+        let resources = Resources::default();
         (world, schedule, resources)
     }
 
@@ -74,12 +72,14 @@ mod tests {
 
         world.insert(
             (EventKind(event::EventKind::Request),),
-            (0..10).map(|_| (vec![
-                Arc::new(Event::ResponseRegisterConnection { connection: None }),
-                Arc::new(Event::ResponseDropConnection { connection: None }),
-                Arc::new(Event::ResponseRegisterConnection { connection: None }),
-                Arc::new(Event::ResponseDropConnection { connection: None }),
-            ],)),
+            (0..10).map(|_| {
+                (vec![
+                    Arc::new(Event::ResponseRegisterConnection { connection: None }),
+                    Arc::new(Event::ResponseDropConnection { connection: None }),
+                    Arc::new(Event::ResponseRegisterConnection { connection: None }),
+                    Arc::new(Event::ResponseDropConnection { connection: None }),
+                ],)
+            }),
         );
 
         let query = <(Read<BatchEvent>,)>::query();

@@ -48,34 +48,41 @@ mod tests {
     use std::sync::Arc;
 
     use crate::ecs::component::SingleEvent;
-    use crate::ecs::event::{self, Event};
-    use crate::ecs::tag::EventKind;
+    use crate::ecs::event::Event;
     use crate::ecs::resource::EventRxChannel;
+    use crate::protocol::packet::CCheckVersion;
 
-    use legion::systems::schedule::Schedule;
-    use legion::query::Read;
     use legion::prelude::*;
+    use legion::query::Read;
+    use legion::systems::schedule::Schedule;
     use tokio::sync::mpsc::channel;
 
-    fn setup() -> (World, Schedule, Resources) {
+    fn setup() -> (World, Schedule) {
         let world = World::new();
-        let schedule = Schedule::builder()
-            .add_system(init(world.id().index()))
-            .build();
-        let mut resources = Resources::default();
-        (world, schedule, resources)
+        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
+        (world, schedule)
     }
 
     #[test]
     fn test_event_receiver() {
-        let (mut world, mut schedule, mut resources) = setup();
+        let (mut world, mut schedule) = setup();
 
         let (mut tx_channel, rx_channel) = channel(10);
         let mut resources = Resources::default();
         resources.insert(EventRxChannel { channel: rx_channel });
 
-        tx_channel.try_send(Arc::new(Event::ResponseRegisterConnection { connection: None })).unwrap();
-        tx_channel.try_send(Arc::new(Event::ResponseDropConnection { connection: None })).unwrap();
+        tx_channel
+            .try_send(Arc::new(Event::RequestCheckVersion {
+                connection: None,
+                packet: CCheckVersion { version: vec![] },
+            }))
+            .unwrap();
+        tx_channel
+            .try_send(Arc::new(Event::RequestCheckVersion {
+                connection: None,
+                packet: CCheckVersion { version: vec![] },
+            }))
+            .unwrap();
 
         schedule.execute(&mut world, &mut resources);
 

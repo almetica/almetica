@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use crate::ecs::component::{Connection, SingleEvent, BatchEvent};
+use crate::ecs::component::{BatchEvent, Connection, SingleEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
