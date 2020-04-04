@@ -2,6 +2,8 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+
+use tracing_log::LogTracer;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
@@ -95,4 +97,5 @@ fn init_logging() {
     let filter_layer = EnvFilter::from_default_env();
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
+    LogTracer::init().unwrap();
 }
