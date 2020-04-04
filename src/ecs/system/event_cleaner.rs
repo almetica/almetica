@@ -1,5 +1,5 @@
 /// The event cleaner cleans up all Events in the current ECS.
-use crate::ecs::component::{SingleEvent, BatchEvent};
+use crate::ecs::component::{BatchEvent, SingleEvent};
 
 use legion::prelude::*;
 use legion::systems::SystemBuilder;
@@ -27,4 +27,69 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
         })
 }
 
-// TODO cleaner test
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::Arc;
+
+    use crate::ecs::component::SingleEvent;
+    use crate::ecs::event::{self, Event};
+    use crate::ecs::tag::EventKind;
+    use crate::ecs::world::Multiverse;
+
+    fn setup_world() -> (Multiverse, Schedule) {
+        let multiverse = Multiverse::new();
+        let schedule = Schedule::builder()
+            .add_system(init(multiverse.global_world_handle.world.id().index()))
+            .build();
+        (multiverse, schedule)
+    }
+
+    #[test]
+    fn test_event_cleaner_single_event() {
+        let (mut multiverse, mut schedule) = setup_world();
+        let mut world = &mut multiverse.global_world_handle.world;
+
+        world.insert(
+            (EventKind(event::EventKind::Request),),
+            (0..10).map(|_| (Arc::new(Event::ResponseRegisterConnection { connection: None }),)),
+        );
+
+        let query = <(Read<SingleEvent>,)>::query();
+
+        let old_count = query.iter(&mut world).count();
+        assert_eq!(10, old_count);
+
+        schedule.execute(&mut world, &mut multiverse.resources);
+
+        let new_count = query.iter(&mut world).count();
+        assert_eq!(0, new_count);
+    }
+
+    #[test]
+    fn test_event_cleaner_batch_event() {
+        let (mut multiverse, mut schedule) = setup_world();
+        let mut world = &mut multiverse.global_world_handle.world;
+
+        world.insert(
+            (EventKind(event::EventKind::Request),),
+            (0..10).map(|_| (vec![
+                Arc::new(Event::ResponseRegisterConnection { connection: None }),
+                Arc::new(Event::ResponseDropConnection { connection: None }),
+                Arc::new(Event::ResponseRegisterConnection { connection: None }),
+                Arc::new(Event::ResponseDropConnection { connection: None }),
+            ],)),
+        );
+
+        let query = <(Read<BatchEvent>,)>::query();
+
+        let old_count = query.iter(&mut world).count();
+        assert_eq!(10, old_count);
+
+        schedule.execute(&mut world, &mut multiverse.resources);
+
+        let new_count = query.iter(&mut world).count();
+        assert_eq!(0, new_count);
+    }
+}

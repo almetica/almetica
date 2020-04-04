@@ -13,9 +13,9 @@ use tracing::debug;
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
     _universe: Universe,
-    global_world_handle: WorldHandle,
-    _instanced_world_handles: HashMap<String, World>,
-    resources: Resources,
+    pub(crate) global_world_handle: WorldHandle,
+    pub(crate) _instanced_world_handles: HashMap<String, World>,
+    pub(crate) resources: Resources,
 }
 
 impl Multiverse {
