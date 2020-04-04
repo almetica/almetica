@@ -66,7 +66,6 @@ impl StreamCipher {
             self.change_len -= pre;
         }
 
-        // TODO doesn't work with exactly 4 bytes?
         for i in (pre..size - 3).step_by(4) {
             self.clock_keys();
             for k in self.generators.iter() {
