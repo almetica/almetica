@@ -32,6 +32,11 @@ pub struct CLoginArbiter {
     pub patch_version: i32,
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CSetVisibleRange {
+    pub range: u32,
+}
+
 #[cfg(test)]
 #[macro_use]
 mod tests {

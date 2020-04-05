@@ -16,3 +16,8 @@ pub struct Connection {
     pub version_checked: bool,
     pub region: Option<Region>,
 }
+
+// Holds the configuration settings of a user that are needed at runtime
+pub struct Settings {
+    pub visibility_range: u32,
+}

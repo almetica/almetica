@@ -296,10 +296,10 @@ mod tests {
 
     use std::sync::Arc;
 
-    use crate::model::Region;
     use crate::ecs::component::{BatchEvent, SingleEvent};
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
+    use crate::model::Region;
     use crate::protocol::packet::CCheckVersion;
 
     use legion::query::Read;
@@ -309,7 +309,7 @@ mod tests {
     fn setup() -> (World, Schedule, Resources) {
         let world = World::new();
         let schedule = Schedule::builder().add_system(init(world.id().index())).build();
-      
+
         let mut resources = Resources::default();
         let map = HashMap::new();
         resources.insert(ConnectionMapping { map });
@@ -320,7 +320,7 @@ mod tests {
     fn setup_with_connection() -> (World, Schedule, Entity, Resources) {
         let mut world = World::new();
         let schedule = Schedule::builder().add_system(init(world.id().index())).build();
-      
+
         // FIXME There currently isn't a good insert method for one entity.
         let entities = world.insert(
             (),
@@ -330,7 +330,7 @@ mod tests {
                     version_checked: false,
                     region: None,
                 },)
-            })
+            }),
         );
         let connection = entities[0];
 
@@ -359,23 +359,21 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<SingleEvent>>::query();
-        let count = query.iter(&mut world)
-            .filter(|event| { 
-                match ***event {
-                    Event::ResponseRegisterConnection{connection: _} => 
-                        true,
-                    _ => false
-                }
+        let count = query
+            .iter(&mut world)
+            .filter(|event| match ***event {
+                Event::ResponseRegisterConnection { connection: _ } => true,
+                _ => false,
             })
             .count();
-        
+
         assert_eq!(5, count);
     }
 
     #[test]
     fn test_check_version_valid() {
         let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
-        
+
         world.insert(
             (EventKind(event::EventKind::Request),),
             (0..1).map(|_| {
@@ -398,12 +396,12 @@ mod tests {
         );
 
         schedule.execute(&mut world, &mut resources);
-        
+
         let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&mut world) .filter(|component| { 
-            component.version_checked == true
-        })
-        .count();
+        let valid_component_count = query
+            .iter(&mut world)
+            .filter(|component| component.version_checked == true)
+            .count();
 
         assert_eq!(1, valid_component_count);
     }
@@ -411,19 +409,17 @@ mod tests {
     #[test]
     fn test_check_version_invalid() {
         let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
-        
+
         world.insert(
             (EventKind(event::EventKind::Request),),
             (0..1).map(|_| {
                 (Arc::new(Event::RequestCheckVersion {
                     connection: Some(connection),
                     packet: CCheckVersion {
-                        version: vec![
-                            CCheckVersionEntry {
-                                index: 0,
-                                value: 366222,
-                            },
-                        ],
+                        version: vec![CCheckVersionEntry {
+                            index: 0,
+                            value: 366222,
+                        }],
                     },
                 }),)
             }),
@@ -432,23 +428,21 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<SingleEvent>>::query();
-        let count = query.iter(&mut world)
-            .filter(|event| { 
-                match &***event {
-                    Event::ResponseCheckVersion{connection: _, packet} => 
-                    packet.ok == false,
-                    _ => false
-                }
+        let count = query
+            .iter(&mut world)
+            .filter(|event| match &***event {
+                Event::ResponseCheckVersion { connection: _, packet } => packet.ok == false,
+                _ => false,
             })
             .count();
-        
+
         assert_eq!(1, count);
 
         let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&mut world).filter(|component| { 
-            component.version_checked == false
-        })
-        .count();
+        let valid_component_count = query
+            .iter(&mut world)
+            .filter(|component| component.version_checked == false)
+            .count();
 
         assert_eq!(1, valid_component_count);
     }
@@ -456,7 +450,7 @@ mod tests {
     #[test]
     fn test_login_arbiter_valid() {
         let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
-        
+
         world.insert(
             (EventKind(event::EventKind::Request),),
             (0..1).map(|_| {
@@ -465,9 +459,9 @@ mod tests {
                     packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![
-                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56, 114, 70, 110,
-                            72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56, 48, 106, 118, 101, 90,
-                            116, 67, 101, 71, 55, 84, 55, 112, 88, 118, 55, 72,
+                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56, 114, 70, 110, 72, 69,
+                            68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56, 48, 106, 118, 101, 90, 116, 67, 101, 71,
+                            55, 84, 55, 112, 88, 118, 55, 72,
                         ],
                         unk1: 0,
                         unk2: 0,
@@ -479,12 +473,9 @@ mod tests {
         );
 
         schedule.execute(&mut world, &mut resources);
-        
+
         let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&mut world) .filter(|component| { 
-            component.verified
-        })
-        .count();
+        let valid_component_count = query.iter(&mut world).filter(|component| component.verified).count();
 
         assert_eq!(1, valid_component_count);
     }
@@ -492,13 +483,13 @@ mod tests {
     #[test]
     fn test_login_arbiter_invalid() {
         let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
-        
+
         world.insert(
             (EventKind(event::EventKind::Request),),
             (0..1).map(|_| {
                 (Arc::new(Event::RequestLoginArbiter {
                     connection: Some(connection),
-                    packet: CLoginArbiter{
+                    packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![],
                         unk1: 0,
@@ -513,28 +504,24 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<SingleEvent>>::query();
-        let count = query.iter(&mut world)
-            .filter(|event| { 
-                match &***event {
-                    Event::ResponseLoginArbiter{connection: _, packet} => 
-                    packet.success == false,
-                    _ => false
-                }
+        let count = query
+            .iter(&mut world)
+            .filter(|event| match &***event {
+                Event::ResponseLoginArbiter { connection: _, packet } => packet.success == false,
+                _ => false,
             })
             .count();
 
         assert_eq!(1, count);
 
         let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&mut world).filter(|component| { 
-            component.version_checked == false
-        })
-        .count();
+        let valid_component_count = query
+            .iter(&mut world)
+            .filter(|component| component.version_checked == false)
+            .count();
 
         assert_eq!(1, valid_component_count);
     }
-
-
 
     #[test]
     fn test_login_sequence() {
@@ -557,9 +544,8 @@ mod tests {
         let mut con: Option<Entity> = None;
         for e in query.iter(&mut world) {
             match **e {
-                Event::ResponseRegisterConnection{connection} => 
-                    con = connection,
-            _ => { con = None },
+                Event::ResponseRegisterConnection { connection } => con = connection,
+                _ => con = None,
             }
         }
         assert_ne!(None, con);
@@ -590,7 +576,7 @@ mod tests {
             (0..1).map(|_| {
                 (Arc::new(Event::RequestLoginArbiter {
                     connection: con,
-                    packet: CLoginArbiter{
+                    packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![],
                         unk1: 0,
@@ -605,39 +591,39 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<BatchEvent>>::query();
-        
+
         let count = query.iter(&mut world).count();
         assert_eq!(1, count);
 
         for batch in query.iter(&mut world) {
             assert_eq!(5, batch.len());
 
-            if let Event::ResponseCheckVersion{connection, packet} = &*batch[0] {
+            if let Event::ResponseCheckVersion { connection, packet } = &*batch[0] {
                 assert_eq!(con, *connection);
                 assert_eq!(true, packet.ok);
             } else {
                 panic!("received packets in from order");
             }
-            if let Event::ResponseLoadingScreenControlInfo{connection, packet} = &*batch[1] {
+            if let Event::ResponseLoadingScreenControlInfo { connection, packet } = &*batch[1] {
                 assert_eq!(con, *connection);
                 assert_eq!(false, packet.custom_screen_enabled);
             } else {
                 panic!("received packets in from order");
             }
-            if let Event::ResponseRemainPlayTime{connection, packet} = &*batch[2] {
+            if let Event::ResponseRemainPlayTime { connection, packet } = &*batch[2] {
                 assert_eq!(con, *connection);
                 assert_eq!(6, packet.account_type);
             } else {
                 panic!("received packets in from order");
             }
-            if let Event::ResponseLoginArbiter{connection, packet} = &*batch[3] {
+            if let Event::ResponseLoginArbiter { connection, packet } = &*batch[3] {
                 assert_eq!(con, *connection);
                 assert_eq!(true, packet.success);
                 assert_eq!(65538, packet.status);
             } else {
                 panic!("received packets in from order");
             }
-            if let Event::ResponseLoginAccountInfo{connection, packet} = &*batch[4] {
+            if let Event::ResponseLoginAccountInfo { connection, packet } = &*batch[4] {
                 assert_eq!(con, *connection);
                 assert_ne!(true, packet.server_name.trim().is_empty());
             } else {
