@@ -29,6 +29,7 @@ warp = "0.2"
 criterion = "0.3"
 criterion-cycles-per-byte = "0.1"
 tokio = { version = "0.2", features = ["full"] }
+tokio-test = "0.2"
 
 [[bench]]
 name = "crypt"

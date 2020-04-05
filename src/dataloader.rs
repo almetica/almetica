@@ -20,7 +20,7 @@ pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<(Vec<Opcode>, HashMap<
 }
 
 /// Read the opcode mapping file and returns the opcode table.
-fn read_opcode_table<T: ?Sized>(reader: &mut T) -> Result<Vec<Opcode>>
+pub fn read_opcode_table<T: ?Sized>(reader: &mut T) -> Result<Vec<Opcode>>
 where
     T: Read,
 {
@@ -32,7 +32,7 @@ where
     Ok(opcode_table)
 }
 
-fn calculate_reverse_map(opcode_mapping: &[Opcode]) -> HashMap<Opcode, u16> {
+pub fn calculate_reverse_map(opcode_mapping: &[Opcode]) -> HashMap<Opcode, u16> {
     let mut c: i32 = -1;
     let mut reverse_opcode_mapping = opcode_mapping
         .iter()

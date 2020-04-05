@@ -280,13 +280,154 @@ impl<'a> GameSession<'a> {
     }
 }
 
-// TODO I think we can only write an integration test for the above code and we
-// would need to actually open a TcpStream for this.
-// Look at the integration tests that tokio have:
-// https://github.com/tokio-rs/tokio/blob/master/tokio/tests/tcp_echo.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataloader::*;
+    use crate::ecs::component::Connection;
+    use crate::ecs::event::Event::{RequestRegisterConnection, ResponseRegisterConnection};
+    use crate::protocol::opcode::Opcode;
+    use crate::protocol::protocol::GameSession;
+    use crate::Result;
 
-// Write test for connection
+    use std::net::SocketAddr;
+    use std::time::Duration;
 
-// Write test for RX
+    use byteorder::{ByteOrder, LittleEndian};
+    use legion::prelude::{Entity, World};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::mpsc::channel;
+    use tokio::task;
+    use tokio::task::JoinHandle;
+    use tokio::time::timeout;
+    use tokio_test::assert_ok;
 
-// Write test for TX
+    async fn get_opcode_tables() -> Result<(Vec<Opcode>, HashMap<Opcode, u16>)> {
+        let mut file = Vec::new();
+        file.write_all(
+            "
+        C_CHECK_VERSION: 1
+        S_CHECK_VERSION: 2
+        "
+            .as_bytes(),
+        )
+        .await?;
+
+        let table = read_opcode_table(&mut file.as_slice())?;
+        let reverse_map = calculate_reverse_map(table.as_slice());
+
+        Ok((table, reverse_map))
+    }
+
+    fn get_new_entity_with_connection_component() -> Entity {
+        let mut world = World::new();
+
+        // FIXME There currently isn't a good insert method for one entity.
+        let entities = world.insert(
+            (),
+            vec![(Connection {
+                verified: false,
+                version_checked: false,
+                region: None,
+            },)],
+        );
+        let connection = entities[0];
+        return connection;
+    }
+
+    async fn spawn_dummy_server() -> Result<(SocketAddr, JoinHandle<()>, JoinHandle<()>)> {
+        let mut srv = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = srv.local_addr()?;
+        let (opcode_mapping, reverse_opcode_mapping) = get_opcode_tables().await?;
+        let (tx_channel, mut rx_channel) = channel(1024);
+
+        // TCP server
+        let tcp_join = tokio::spawn(async move {
+            let (mut socket, _) = assert_ok!(srv.accept().await);
+            let _session = assert_ok!(
+                GameSession::new(
+                    &mut socket,
+                    tx_channel,
+                    Arc::new(opcode_mapping),
+                    Arc::new(reverse_opcode_mapping)
+                )
+                .await
+            );
+        });
+
+        // World loop mock
+        let world_join = tokio::spawn(async move {
+            let connection = Some(get_new_entity_with_connection_component());
+            loop {
+                task::yield_now().await;
+                if let Some(event) = rx_channel.recv().await {
+                    match &*event {
+                        RequestRegisterConnection {
+                            connection: _,
+                            response_channel,
+                        } => {
+                            let mut tx = response_channel.clone();
+                            assert_ok!(tx.send(Arc::new(ResponseRegisterConnection { connection })).await);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        });
+
+        Ok((addr, tcp_join, world_join))
+    }
+
+    #[tokio::test]
+    async fn test_gamesession_creation() -> Result<()> {
+        let (addr, tcp_join, world_join) = spawn_dummy_server().await?;
+        let mut stream = assert_ok!(TcpStream::connect(&addr).await);
+
+        // hello stage
+        let mut hello_buffer = vec![0u8; 4];
+        stream.read_exact(hello_buffer.as_mut_slice()).await?;
+
+        let hello = LittleEndian::read_u16(&hello_buffer[0..4]) as u32;
+        assert_eq!(1, hello);
+
+        // key exchange stage
+        let mut client_key1 = vec![0u8; 128];
+        let mut client_key2 = vec![0u8; 128];
+        let mut server_key1 = vec![0u8; 128];
+        let mut server_key2 = vec![0u8; 128];
+
+        OsRng.fill_bytes(&mut client_key1);
+        OsRng.fill_bytes(&mut client_key2);
+
+        if let Err(e) = timeout(Duration::from_millis(100), stream.write_all(client_key1.as_mut_slice())).await {
+            panic!("{}", e);
+        }
+
+        if let Err(e) = timeout(
+            Duration::from_millis(100),
+            stream.read_exact(server_key1.as_mut_slice()),
+        )
+        .await
+        {
+            panic!("{}", e);
+        }
+
+        if let Err(e) = timeout(Duration::from_millis(100), stream.write_all(client_key2.as_mut_slice())).await {
+            panic!("{}", e);
+        }
+
+        if let Err(e) = timeout(
+            Duration::from_millis(100),
+            stream.read_exact(server_key2.as_mut_slice()),
+        )
+        .await
+        {
+            panic!("{}", e);
+        }
+
+        tcp_join.await?;
+        world_join.await?;
+        Ok(())
+    }
+}

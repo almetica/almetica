@@ -48,6 +48,12 @@ pub enum Error {
     #[error("mpsc send event error: {0}")]
     MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
 
+    #[error("tokio timeout error: {0}")]
+    TokioTimeOut(#[from] tokio::time::Elapsed),
+
+    #[error("tokio join error: {0}")]
+    TokioJoinError(#[from] tokio::task::JoinError),
+
     #[error("utf8 error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
 
