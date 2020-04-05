@@ -34,18 +34,12 @@ impl<'de> Deserializer {
         }
     }
 
-    fn abs_offset(&self, offset: usize, depth: usize) -> usize {
-        // Depth 0, the header is absolute.
-        if depth == 0 {
-            // The array we have doesn't include the leading opcode / length u16, so -4 bytes
-            if offset == 0 {
-                offset
-            } else {
-                offset - 4
-            }
+    fn abs_offset(&self, offset: usize) -> usize {
+        // The array we have doesn't include the leading opcode / length u16, so -4 bytes
+        if offset == 0 {
+            offset
         } else {
-            // Everything deeper (inside an array) is relative
-            self.pos + offset
+            offset - 4
         }
     }
 }
@@ -136,7 +130,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         V: serde::de::Visitor<'de>,
     {
         let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let abs_pos = self.abs_offset(tmp_offset as usize, self.depth);
+        let abs_pos = self.abs_offset(tmp_offset as usize);
         self.pos += 2;
 
         if abs_pos >= self.data.len() {
@@ -184,7 +178,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         V: serde::de::Visitor<'de>,
     {
         let tmp_offset = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let abs_offset = self.abs_offset(tmp_offset as usize, self.depth);
+        let abs_offset = self.abs_offset(tmp_offset as usize);
         self.pos += 2;
 
         let len = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
@@ -300,7 +294,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     let tmp_offset: usize = LittleEndian::read_u16(
                         &self.deserializer.data[self.deserializer.pos..self.deserializer.pos + 2],
                     ) as usize;
-                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset, self.depth);
+                    // TODO array offsets seems to be ALWAYS absolute!
+                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset);
                     self.deserializer.pos += 2;
 
                     if abs_offset != self.next_offset {
@@ -310,7 +305,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     let tmp_offset: usize = LittleEndian::read_u16(
                         &self.deserializer.data[self.deserializer.pos..self.deserializer.pos + 2],
                     ) as usize;
-                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset, self.depth);
+                    let abs_offset: usize = self.deserializer.abs_offset(tmp_offset);
                     self.next_offset = abs_offset;
                     self.deserializer.pos += 2;
 
@@ -332,7 +327,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         let count: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
         self.pos += 2;
         let tmp_offset: usize = LittleEndian::read_u16(&self.data[self.pos..self.pos + 2]) as usize;
-        let next_offset: usize = self.abs_offset(tmp_offset, self.depth);
+        let next_offset: usize = self.abs_offset(tmp_offset);
         self.pos += 2;
 
         let old_pos = self.pos;

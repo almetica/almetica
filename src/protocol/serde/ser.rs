@@ -30,17 +30,8 @@ enum DataNodeType {
 }
 
 impl Serializer {
-    /// Calculates the offset value (it's either abs or relative based on the current node depth)
-    fn calculate_offset(&self, depth: usize, pos: usize, total_data_length: usize, node_data_length: usize) -> usize {
-        if depth == 0 {
-            total_data_length
-        } else {
-            node_data_length - pos
-        }
-    }
-
     /// Recursively assemble to data nodes into one packet
-    fn assemble_node(&mut self, num_node: usize, depth: usize, parent_length: usize) -> Vec<u8> {
+    fn assemble_node(&mut self, num_node: usize, parent_length: usize) -> Vec<u8> {
         let mut node = self.nodes.remove(&num_node).unwrap();
 
         // Write all child offsets inside the current node
@@ -48,22 +39,14 @@ impl Serializer {
             let current_length = node.data.len() + parent_length;
             let child = self.nodes.get(child_num).unwrap().clone();
 
-            // Arrays increase the depth by one
-            let next_depth = if child.node_type == DataNodeType::Array {
-                depth + 1
-            } else {
-                depth
-            };
-
             // Write the offset and append the child data
-            let offset = self.calculate_offset(depth, child.parent_offset, current_length, node.data.len());
             LittleEndian::write_u16(
                 &mut node.data[child.parent_offset..child.parent_offset + 2],
-                offset as u16,
+                current_length as u16,
             );
             let start_pos = node.data.len();
 
-            let mut child_data = self.assemble_node(*child_num, next_depth, current_length);
+            let mut child_data = self.assemble_node(*child_num, current_length);
             node.data.append(&mut child_data);
 
             // Write all elements offsets of an array
@@ -116,7 +99,7 @@ where
     value.serialize(&mut serializer)?;
 
     // Recursively assemble the data
-    Ok(serializer.assemble_node(0, 0, 4)) // 4 bytes packet header
+    Ok(serializer.assemble_node(0, 4)) // 4 bytes packet header
 }
 
 macro_rules! impl_nums {
