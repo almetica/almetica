@@ -1,5 +1,6 @@
 /// Module holds the components that the ECS use.
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::ecs::event::Event;
 use crate::model::Region;
@@ -15,6 +16,7 @@ pub struct Connection {
     pub verified: bool,
     pub version_checked: bool,
     pub region: Option<Region>,
+    pub last_pong: Instant,
 }
 
 // Holds the configuration settings of a user that are needed at runtime

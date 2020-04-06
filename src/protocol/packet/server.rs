@@ -74,7 +74,7 @@ pub struct SGetUserListCharacter {
     pub is_banned: bool,
     pub ban_end_time: i64,
     pub ban_remain_sec: i32, // -1 = Permanent
-    pub can_use_status: i32, // TODO research what it does
+    pub rename_needed: i32,  // 0 = no, 1 = yes. Client will ask the player to rename the character once selected.
     pub weapon_model: i32,
     pub unk_model2: i32,
     pub unk_model3: i32,
@@ -344,7 +344,7 @@ mod tests {
                 is_banned: false,
                 ban_end_time: 0,
                 ban_remain_sec: -1_585_989_011,
-                can_use_status: 0,
+                rename_needed: 0,
                 weapon_model: 0,
                 unk_model2: 0,
                 unk_model3: 0,

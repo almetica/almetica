@@ -2,11 +2,13 @@
 use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::ecs::component::{BatchEvent, Connection, SingleEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
+use crate::ecs::system::send_event;
 use crate::ecs::tag;
 use crate::model::Region;
 use crate::protocol::packet::*;
@@ -22,6 +24,7 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("ConnectionManager")
         .write_resource::<ConnectionMapping>()
         .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
+        .with_query(<Read<Connection>>::query())
         .write_component::<SingleEvent>()
         .write_component::<BatchEvent>()
         .write_component::<Connection>()
@@ -29,7 +32,8 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
             let span = info_span!("world", world_id);
             let _enter = span.enter();
 
-            for event in queries.iter_mut(&mut *world) {
+            // SingleEvents
+            for event in queries.0.iter_mut(&mut *world) {
                 match &**event {
                     Event::RequestRegisterConnection { response_channel, .. } => {
                         handle_connection_registration(
@@ -52,7 +56,18 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
                             debug!("Can't handle RequestLoginArbiter event: {:?}", e);
                         }
                     }
+                    // TODO handle PONG
                     _ => { /* Ignore all other events */ }
+                }
+            }
+
+            // Connections
+            let now = Instant::now();
+            for connection in queries.1.iter_mut(&mut *world) {
+                if now.duration_since(connection.last_pong).as_secs() >= 90 {
+                    // TODO disconnect client if they don't response to a ping
+                } else if now.duration_since(connection.last_pong).as_secs() >= 60 {
+                    // TODO send ping
                 }
             }
         })
@@ -70,6 +85,7 @@ fn handle_connection_registration(
         verified: false,
         version_checked: false,
         region: None,
+        last_pong: Instant::now(),
     };
     let connection_entity = command_buffer.start_entity().with_component((connection,)).build();
 
@@ -186,16 +202,6 @@ fn check_and_handle_post_initialization(
             error!("Region was not set in connection component");
         }
     }
-}
-
-fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
-    debug!("Created {} event", event);
-    trace!("Event data: {}", event);
-    command_buffer
-        .start_entity()
-        .with_tag((tag::EventKind(EventKind::Response),))
-        .with_component((event,))
-        .build();
 }
 
 fn send_batch_event(batch: BatchEvent, command_buffer: &mut CommandBuffer) {
@@ -329,6 +335,7 @@ mod tests {
                     verified: false,
                     version_checked: false,
                     region: None,
+                    last_pong: Instant::now(),
                 },)
             }),
         );
@@ -360,9 +367,9 @@ mod tests {
 
         let query = <Read<SingleEvent>>::query();
         let count = query
-            .iter(&mut world)
+            .iter(&world)
             .filter(|event| match ***event {
-                Event::ResponseRegisterConnection { connection: _ } => true,
+                Event::ResponseRegisterConnection { .. } => true,
                 _ => false,
             })
             .count();
@@ -383,11 +390,11 @@ mod tests {
                         version: vec![
                             CCheckVersionEntry {
                                 index: 0,
-                                value: 366222,
+                                value: 366_222,
                             },
                             CCheckVersionEntry {
                                 index: 1,
-                                value: 365535,
+                                value: 365_535,
                             },
                         ],
                     },
@@ -398,10 +405,7 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<Connection>>::query();
-        let valid_component_count = query
-            .iter(&mut world)
-            .filter(|component| component.version_checked == true)
-            .count();
+        let valid_component_count = query.iter(&world).filter(|component| component.version_checked).count();
 
         assert_eq!(1, valid_component_count);
     }
@@ -418,7 +422,7 @@ mod tests {
                     packet: CCheckVersion {
                         version: vec![CCheckVersionEntry {
                             index: 0,
-                            value: 366222,
+                            value: 366_222,
                         }],
                     },
                 }),)
@@ -429,9 +433,9 @@ mod tests {
 
         let query = <Read<SingleEvent>>::query();
         let count = query
-            .iter(&mut world)
+            .iter(&world)
             .filter(|event| match &***event {
-                Event::ResponseCheckVersion { connection: _, packet } => packet.ok == false,
+                Event::ResponseCheckVersion { packet, .. } => !packet.ok,
                 _ => false,
             })
             .count();
@@ -440,8 +444,8 @@ mod tests {
 
         let query = <Read<Connection>>::query();
         let valid_component_count = query
-            .iter(&mut world)
-            .filter(|component| component.version_checked == false)
+            .iter(&world)
+            .filter(|component| !component.version_checked)
             .count();
 
         assert_eq!(1, valid_component_count);
@@ -475,7 +479,7 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&mut world).filter(|component| component.verified).count();
+        let valid_component_count = query.iter(&world).filter(|component| component.verified).count();
 
         assert_eq!(1, valid_component_count);
     }
@@ -505,9 +509,9 @@ mod tests {
 
         let query = <Read<SingleEvent>>::query();
         let count = query
-            .iter(&mut world)
+            .iter(&world)
             .filter(|event| match &***event {
-                Event::ResponseLoginArbiter { connection: _, packet } => packet.success == false,
+                Event::ResponseLoginArbiter { packet, .. } => !packet.success,
                 _ => false,
             })
             .count();
@@ -516,8 +520,8 @@ mod tests {
 
         let query = <Read<Connection>>::query();
         let valid_component_count = query
-            .iter(&mut world)
-            .filter(|component| component.version_checked == false)
+            .iter(&world)
+            .filter(|component| !component.version_checked)
             .count();
 
         assert_eq!(1, valid_component_count);
@@ -542,7 +546,7 @@ mod tests {
 
         let query = <Read<SingleEvent>>::query();
         let mut con: Option<Entity> = None;
-        for e in query.iter(&mut world) {
+        for e in query.iter(&world) {
             match **e {
                 Event::ResponseRegisterConnection { connection } => con = connection,
                 _ => con = None,
@@ -559,11 +563,11 @@ mod tests {
                         version: vec![
                             CCheckVersionEntry {
                                 index: 0,
-                                value: 366222,
+                                value: 366_222,
                             },
                             CCheckVersionEntry {
                                 index: 1,
-                                value: 365535,
+                                value: 365_535,
                             },
                         ],
                     },
@@ -592,10 +596,10 @@ mod tests {
 
         let query = <Read<BatchEvent>>::query();
 
-        let count = query.iter(&mut world).count();
+        let count = query.iter(&world).count();
         assert_eq!(1, count);
 
-        for batch in query.iter(&mut world) {
+        for batch in query.iter(&world) {
             assert_eq!(5, batch.len());
 
             if let Event::ResponseCheckVersion { connection, packet } = &*batch[0] {

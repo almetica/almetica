@@ -291,7 +291,7 @@ mod tests {
     use crate::Result;
 
     use std::net::SocketAddr;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use byteorder::{ByteOrder, LittleEndian};
     use legion::prelude::{Entity, World};
@@ -329,6 +329,7 @@ mod tests {
                 verified: false,
                 version_checked: false,
                 region: None,
+                last_pong: Instant::now(),
             },)],
         );
 

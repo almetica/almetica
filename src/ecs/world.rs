@@ -32,6 +32,10 @@ impl Multiverse {
             .flush()
             .add_system(connection_manager::init(world_id))
             .flush()
+            // General system start here
+            .add_system(settings_manager::init(world_id))
+            .add_system(user_manager::init(world_id))
+            .flush()
             .add_system(event_sender::init(world_id))
             .flush()
             .add_system(event_cleaner::init(world_id))

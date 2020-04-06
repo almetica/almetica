@@ -60,6 +60,7 @@ mod tests {
     use super::*;
 
     use std::sync::Arc;
+    use std::time::Instant;
 
     use crate::ecs::component::Connection;
     use crate::ecs::event::{self, Event};
@@ -81,6 +82,7 @@ mod tests {
                     verified: false,
                     version_checked: false,
                     region: None,
+                    last_pong: Instant::now(),
                 },)
             }),
         );
@@ -108,7 +110,7 @@ mod tests {
 
         let query = <Read<Settings>>::query();
         let valid_component_count = query
-            .iter(&mut world)
+            .iter(&world)
             .filter(|component| component.visibility_range > 0)
             .count();
 
