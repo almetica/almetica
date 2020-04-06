@@ -110,7 +110,7 @@ mod tests {
                 connection: None,
                 response_channel: tx,
             })) {
-            Ok(()) => return Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => panic!(e),
         }
     }

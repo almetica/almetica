@@ -87,7 +87,7 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let query = <(Read<SingleEvent>,)>::query();
-        let count = query.iter(&mut world).count();
+        let count = query.iter(&world).count();
         assert_eq!(2, count);
     }
 }

@@ -11,8 +11,9 @@ use serde::{self, Deserialize};
 pub struct Deserializer {
     data: Vec<u8>,
     pos: usize,
-    depth: usize,
 }
+
+// TODO we are currently too trustworthy with the client data and need to fet it more (we sometimes can get out of a slice boundary!)
 
 /// Parses the given `Vec<u8>`
 pub fn from_vec<'a, T>(v: Vec<u8>) -> Result<T>
@@ -27,11 +28,7 @@ where
 impl<'de> Deserializer {
     /// Creates a new Deserializer with a given `Vec<u8>`.
     pub fn from_vec(r: Vec<u8>) -> Self {
-        Deserializer {
-            data: r,
-            pos: 0,
-            depth: 0,
-        }
+        Deserializer { data: r, pos: 0 }
     }
 
     fn abs_offset(&self, offset: usize) -> usize {
@@ -272,7 +269,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             data_len: usize,
             next_offset: usize,
             old_pos: usize,
-            depth: usize,
         }
 
         impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
@@ -314,7 +310,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                 } else {
                     // Return to the end of the array header
                     self.deserializer.pos = self.old_pos;
-                    self.deserializer.depth -= 1;
                     Ok(None)
                 }
             }
@@ -331,10 +326,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         self.pos += 2;
 
         let old_pos = self.pos;
-        let current_depth = self.depth;
         let data_len = self.data.len();
-
-        self.depth += 1;
 
         visitor.visit_seq(Access {
             deserializer: self,
@@ -342,7 +334,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             data_len,
             next_offset,
             old_pos,
-            depth: current_depth,
         })
     }
 

@@ -145,7 +145,7 @@ mod tests {
 
     fn setup_cipher() -> StreamCipher {
         let key: [u8; 128] = [0x12; 128];
-        return StreamCipher::new(&key);
+        StreamCipher::new(&key)
     }
 
     #[test]

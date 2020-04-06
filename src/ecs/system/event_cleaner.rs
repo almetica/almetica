@@ -57,12 +57,12 @@ mod tests {
 
         let query = <(Read<SingleEvent>,)>::query();
 
-        let old_count = query.iter(&mut world).count();
+        let old_count = query.iter(&world).count();
         assert_eq!(10, old_count);
 
         schedule.execute(&mut world, &mut resources);
 
-        let new_count = query.iter(&mut world).count();
+        let new_count = query.iter(&world).count();
         assert_eq!(0, new_count);
     }
 
@@ -84,12 +84,12 @@ mod tests {
 
         let query = <(Read<BatchEvent>,)>::query();
 
-        let old_count = query.iter(&mut world).count();
+        let old_count = query.iter(&world).count();
         assert_eq!(10, old_count);
 
         schedule.execute(&mut world, &mut resources);
 
-        let new_count = query.iter(&mut world).count();
+        let new_count = query.iter(&world).count();
         assert_eq!(0, new_count);
     }
 }

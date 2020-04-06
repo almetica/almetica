@@ -69,10 +69,12 @@ mod tests {
     use super::*;
 
     use std::sync::Arc;
+    use std::time::Instant;
 
     use crate::ecs::component::Connection;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
+
     use legion::systems::schedule::Schedule;
     use tokio::sync::mpsc::{channel, Receiver};
 
@@ -87,6 +89,7 @@ mod tests {
                 verified: false,
                 version_checked: false,
                 region: None,
+                last_pong: Instant::now(),
             },)],
         );
         let connection = entities[0];
@@ -117,11 +120,8 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let mut count: u64 = 0;
-        loop {
-            match channel.try_recv() {
-                Ok(_) => count += 1,
-                Err(_) => break,
-            }
+        while let Ok(_) = channel.try_recv() {
+            count += 1;
         }
         assert_eq!(10, count);
     }
@@ -153,11 +153,8 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let mut count: u64 = 0;
-        loop {
-            match channel.try_recv() {
-                Ok(_) => count += 1,
-                Err(_) => break,
-            }
+        while let Ok(_) = channel.try_recv() {
+            count += 1;
         }
         assert_eq!(16, count);
     }

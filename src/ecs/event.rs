@@ -131,6 +131,8 @@ assemble_event! {
         ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Response, Connection;
         ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Response, Connection;
         RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Request, Global;
+        RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Request, Global;
+        ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Request, Global;
     }
     System Events {
         // Registers the response channel of a connection at a world.
@@ -168,9 +170,9 @@ mod tests {
         } = event
         {
             assert_eq!(0, packet.version[0].index);
-            assert_eq!(363037, packet.version[0].value);
+            assert_eq!(363_037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
-            assert_eq!(359374, packet.version[1].value);
+            assert_eq!(359_374, packet.version[1].value);
         } else {
             panic!("New didn't returned the right event.");
         }

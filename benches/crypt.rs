@@ -5,13 +5,13 @@ use criterion_cycles_per_byte::CyclesPerByte;
 fn setup() -> CryptSession {
     let c1 = vec![0x11; 128];
     let c2 = vec![0x22; 128];
-    let s1 = vec![0xFE; 128];
-    let s2 = vec![0xFF; 128];
+    let s1 = vec![0xfe; 128];
+    let s2 = vec![0xff; 128];
 
-    return CryptSession::new([c1, c2], [s1, s2]);
+    CryptSession::new([c1, c2], [s1, s2])
 }
 
-// Tests the crypto performance. Data in the tera network procotoll is at least 4 bytes in size (u16 length, u16 opcode).
+// Tests the crypto performance. Data in the TERA network procotol is at least 4 bytes in size (u16 length, u16 opcode).
 fn crypt_benchmark(c: &mut Criterion<CyclesPerByte>) {
     let mut session = setup();
 

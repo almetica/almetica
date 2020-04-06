@@ -1,6 +1,6 @@
 /// This module provides the network packet definitions.
 
-// Used in unit tests for de- and serialization.
+/// Used in unit tests for de- and serialization.
 #[allow(unused_macros)]
 #[macro_export]
 macro_rules! packet_test {
@@ -16,6 +16,25 @@ macro_rules! packet_test {
             let expected = $struct;
             assert_eq!(expected, from_vec(data)?);
             assert_eq!(org, to_vec(expected)?);
+            Ok(())
+        }
+    };
+}
+
+/// For debugging only.
+#[allow(unused_macros)]
+#[macro_export]
+macro_rules! print_packet_data_test {
+    (
+        name: $name:ident,
+        struct: $struct:expr
+    ) => {
+        #[test]
+        fn $name() -> Result<(), Error> {
+            let structure = $struct;
+            let data = to_vec(structure)?;
+            println!("{}", format!("{:#x?}", data));
+            assert_eq!(true, false);
             Ok(())
         }
     };

@@ -97,7 +97,7 @@ mod tests {
         let s1: Vec<u8> = vec![0x56; 128];
         let s2: Vec<u8> = vec![0x78; 128];
 
-        return CryptSession::new([c1, c2], [s1, s2]);
+        CryptSession::new([c1, c2], [s1, s2])
     }
 
     #[test]

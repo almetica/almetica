@@ -15,6 +15,9 @@ pub struct CCheckVersionEntry {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CGetUserList {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CGetUserGuildLogo {
     pub player_id: i32,
     pub guild_id: i32,
@@ -45,15 +48,6 @@ mod tests {
     use crate::protocol::serde::{from_vec, to_vec, Error};
 
     packet_test!(
-        name: test_get_user_guild_logo,
-        data: vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0],
-        expected: CGetUserGuildLogo {
-            player_id: 20000513,
-            guild_id: 3701,
-        }
-    );
-
-    packet_test!(
         name: test_c_check_version,
         data: vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8e, 0x96, 0x5, 0x0, 0x14, 0x0, 0x0, 0x0,
@@ -63,14 +57,29 @@ mod tests {
             version: vec![
                 CCheckVersionEntry {
                     index: 0,
-                    value: 366222,
+                    value: 366_222,
                 },
                 CCheckVersionEntry {
                     index: 1,
-                    value: 365535,
+                    value: 365_535,
                 },
             ],
         }
+    );
+
+    packet_test!(
+        name: test_c_get_user_guild_logo,
+        data: vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0],
+        expected: CGetUserGuildLogo {
+            player_id: 20_000_513,
+            guild_id: 3701,
+        }
+    );
+
+    packet_test!(
+        name: test_c_get_user_list,
+        data: vec![],
+        expected: CGetUserList {}
     );
 
     packet_test!(
@@ -95,6 +104,14 @@ mod tests {
             unk2: 0,
             region: Region::Europe,
             patch_version: 9002,
+        }
+    );
+
+    packet_test!(
+        name: test_c_set_visible_range,
+        data: vec![0xd0, 0x7, 0x0, 0x0],
+        expected: CSetVisibleRange {
+            range: 2000,
         }
     );
 }

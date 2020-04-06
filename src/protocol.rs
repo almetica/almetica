@@ -331,8 +331,8 @@ mod tests {
                 region: None,
             },)],
         );
-        let connection = entities[0];
-        return connection;
+
+        entities[0]
     }
 
     async fn spawn_dummy_server() -> Result<(SocketAddr, JoinHandle<()>, JoinHandle<()>)> {
@@ -362,10 +362,7 @@ mod tests {
                 task::yield_now().await;
                 if let Some(event) = rx_channel.recv().await {
                     match &*event {
-                        RequestRegisterConnection {
-                            connection: _,
-                            response_channel,
-                        } => {
+                        RequestRegisterConnection { response_channel, .. } => {
                             let mut tx = response_channel.clone();
                             assert_ok!(tx.send(Arc::new(ResponseRegisterConnection { connection })).await);
                             break;
