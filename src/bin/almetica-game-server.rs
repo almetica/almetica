@@ -1,7 +1,19 @@
 #![warn(clippy::all)]
+
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
+
+use clap::Clap;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc::Sender;
+use tokio::task;
+use tracing::{error, info, info_span, warn};
+use tracing_futures::Instrument;
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
 
 use almetica::config::read_configuration;
 use almetica::dataloader::load_opcode_mapping;
@@ -9,18 +21,7 @@ use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
 use almetica::protocol::opcode::Opcode;
 use almetica::protocol::GameSession;
-
 use almetica::Result;
-use clap::Clap;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc::Sender;
-use tokio::task;
-use tracing::{error, info, info_span};
-use tracing_futures::Instrument;
-use tracing_subscriber::filter::EnvFilter;
-use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::registry::Registry;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -107,7 +108,7 @@ async fn run() -> Result<()> {
                                 .await
                             {
                                 Ok(_) => info!("Closed connection"),
-                                Err(e) => error!("Error while handling game session: {:?}", e),
+                                Err(e) => warn!("Error while handling game session: {:?}", e),
                             }
                         }
                         Err(e) => error!("Failed create game session: {:?}", e),

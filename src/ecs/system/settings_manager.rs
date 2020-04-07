@@ -40,8 +40,7 @@ fn handle_set_visible_range(
 
         debug!("Set visible range event incoming");
 
-        // TODO most likely the local world need to know of this values. Send this value once
-        // the user enters the local world.
+        // TODO most likely the local world need to know of this values. Send this value once the user enters the local world.
         if let Some(mut component) = world.get_component_mut::<Settings>(connection) {
             component.visibility_range = packet.range;
         } else {

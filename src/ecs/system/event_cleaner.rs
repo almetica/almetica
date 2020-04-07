@@ -1,9 +1,9 @@
-/// The event cleaner cleans up all Events in the current ECS.
-use crate::ecs::component::{BatchEvent, SingleEvent};
-
 use legion::prelude::*;
 use legion::systems::SystemBuilder;
 use tracing::{info_span, trace};
+
+/// The event cleaner cleans up all Events in the current ECS.
+use crate::ecs::component::{BatchEvent, SingleEvent};
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventCleaner")
@@ -29,15 +29,16 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::sync::Arc;
+
+    use legion::query::Read;
+    use legion::systems::schedule::Schedule;
 
     use crate::ecs::component::SingleEvent;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
+
+    use super::*;
 
     fn setup() -> (World, Schedule, Resources) {
         let world = World::new();
@@ -67,7 +68,7 @@ mod tests {
     }
 
     #[test]
-    fn test_event_cleaner_batch_event() {
+    fn test_clean_batch_event() {
         let (mut world, mut schedule, mut resources) = setup();
 
         world.insert(

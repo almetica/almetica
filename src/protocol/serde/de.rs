@@ -1,10 +1,11 @@
 /// Implements the de-serialization of the TERA network protocol using serde.
 use std::str;
 
-use super::error::{Error, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use serde::de::IntoDeserializer;
 use serde::{self, Deserialize};
+
+use super::error::{Error, Result};
 
 /// A Deserializer that reads bytes from a vector.
 #[derive(Clone, Debug)]
@@ -290,7 +291,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     let tmp_offset: usize = LittleEndian::read_u16(
                         &self.deserializer.data[self.deserializer.pos..self.deserializer.pos + 2],
                     ) as usize;
-                    // TODO array offsets seems to be ALWAYS absolute!
                     let abs_offset: usize = self.deserializer.abs_offset(tmp_offset);
                     self.deserializer.pos += 2;
 
@@ -419,8 +419,9 @@ impl<'de, 'a> serde::de::VariantAccess<'de> for &'a mut Deserializer {
 // The serializer and deserializer are tested in the packet definition with real world data.
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde::Deserialize;
+
+    use super::*;
 
     #[test]
     fn test_primitive_struct() -> Result<(), Error> {

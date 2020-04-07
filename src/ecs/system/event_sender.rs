@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn test_event_sender_single_event() {
+    fn test_send_single_event() {
         let (mut world, mut schedule, connection, mut resources, mut channel) = setup();
 
         world.insert(
@@ -126,14 +126,17 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let mut count: u64 = 0;
-        while let Ok(_) = channel.try_recv() {
-            count += 1;
+        while let Ok(event) = channel.try_recv() {
+            match *event {
+                Event::ResponseRegisterConnection { .. } => count += 1,
+                _ => panic!("Couldn't find register connection event"),
+            }
         }
         assert_eq!(10, count);
     }
 
     #[test]
-    fn test_event_sender_batch_event() {
+    fn test_send_batch_event() {
         let (mut world, mut schedule, connection, mut resources, mut channel) = setup();
 
         world.insert(
@@ -159,11 +162,42 @@ mod tests {
         schedule.execute(&mut world, &mut resources);
 
         let mut count: u64 = 0;
-        while let Ok(_) = channel.try_recv() {
-            count += 1;
+        while let Ok(event) = channel.try_recv() {
+            match *event {
+                Event::ResponseRegisterConnection { .. } => count += 1,
+                _ => panic!("Couldn't find register connection event"),
+            }
         }
         assert_eq!(16, count);
     }
-}
 
-// TODO test drop connection event handling
+    #[test]
+    fn test_drop_connection_event() {
+        let (mut world, mut schedule, connection, mut resources, mut channel) = setup();
+
+        world.insert(
+            (EventKind(event::EventKind::Response),),
+            (0..1).map(|_| {
+                (Arc::new(Event::ResponseDropConnection {
+                    connection: Some(connection),
+                }),)
+            }),
+        );
+
+        schedule.execute(&mut world, &mut resources);
+
+        // Connection was dropped
+        let map = resources.get::<ConnectionMapping>().unwrap();
+        assert_eq!(0, map.map.len());
+
+        // ResponseDropConnection event was send
+        let mut count: u64 = 0;
+        while let Ok(event) = channel.try_recv() {
+            match *event {
+                Event::ResponseDropConnection { .. } => count += 1,
+                _ => panic!("Couldn't find drop connection event"),
+            }
+        }
+        assert_eq!(1, count);
+    }
+}

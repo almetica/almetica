@@ -1,12 +1,12 @@
-/// Event receiver dispatches the events from the Request channel into the ECS.
-use crate::ecs::event::EventKind;
-use crate::ecs::resource::EventRxChannel;
-use crate::ecs::tag;
-
 use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info_span};
+
+/// Event receiver dispatches the events from the Request channel into the ECS.
+use crate::ecs::event::EventKind;
+use crate::ecs::resource::EventRxChannel;
+use crate::ecs::tag;
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventReceiver")
@@ -43,19 +43,19 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::sync::Arc;
+
+    use legion::prelude::*;
+    use legion::query::Read;
+    use legion::systems::schedule::Schedule;
+    use tokio::sync::mpsc::channel;
 
     use crate::ecs::component::SingleEvent;
     use crate::ecs::event::Event;
     use crate::ecs::resource::EventRxChannel;
     use crate::protocol::packet::CCheckVersion;
 
-    use legion::prelude::*;
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
-    use tokio::sync::mpsc::channel;
+    use super::*;
 
     fn setup() -> (World, Schedule) {
         let world = World::new();
@@ -64,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn test_event_receiver() {
+    fn test_event_receiving() {
         let (mut world, mut schedule) = setup();
 
         let (mut tx_channel, rx_channel) = channel(10);
