@@ -680,10 +680,9 @@ mod tests {
     fn test_ping_pong_success() {
         let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
 
+        // Set last pong 61 seconds ago.
         let now = Instant::now();
         let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
-
-        // Set last pong 61 seconds ago.
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.last_pong = old_pong;
         } else {
@@ -733,5 +732,42 @@ mod tests {
         // Check if last_pong is updated
         let component = world.get_component::<Connection>(connection).unwrap();
         assert_eq!(true, component.last_pong > old_pong);
+    }
+
+    #[test]
+    fn test_ping_pong_failure() {
+        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+
+        // Set last pong 91 seconds ago.
+        let now = Instant::now();
+        let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
+        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
+            component.last_pong = old_pong;
+        } else {
+            panic!("Couldn't find connection component");
+        }
+
+        schedule.execute(&mut world, &mut resources);
+
+        let query = <Read<SingleEvent>>::query();
+        let count = query.iter(&mut world).count();
+        assert_eq!(1, count);
+
+        // Check if drop connection event is present
+        let mut to_delete: Option<Entity> = None;
+        if let Some((entity, event)) = query.iter_entities_mut(&mut world).next() {
+            match &**event {
+                Event::ResponseDropConnection { .. } => {
+                    to_delete = Some(entity);
+                }
+                _ => panic!("Could not find drop connection event"),
+            }
+        }
+        world.delete(to_delete.unwrap());
+
+        // Check if connection component was deleted
+        if let Some(_component) = world.get_component::<Connection>(connection) {
+            panic!("Found the connection component even though it should have been deleted");
+        };
     }
 }
