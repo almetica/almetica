@@ -4,8 +4,42 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
 
+use aes::Aes128;
+use byteorder::{ByteOrder, LittleEndian};
+use cfb_mode::stream_cipher::{NewStreamCipher, StreamCipher};
+use cfb_mode::Cfb;
+use flate2::{Decompress, FlushDecompress};
+use tracing::error;
+
 use crate::protocol::opcode::Opcode;
 use crate::*;
+
+/// Read the encrypted data of a data center file and decrypt/decompress it.
+pub fn read_datacenter_file(key: &[u8], iv: &[u8], mut data: Vec<u8>) -> Result<Vec<u8>> {
+    if key.len() != 16 && iv.len() != 16 {
+        error!("KEY or IV are not 128 bits long (16 bytes)");
+        return Err(Error::KeyOrIvWrongSize);
+    }
+
+    let mut cipher = Cfb::<Aes128>::new_var(key, iv).unwrap();
+    let mut decompressor = Decompress::new(true);
+
+    // Decrypt
+    for chunk in data.chunks_mut(1024) {
+        cipher.decrypt(chunk);
+    }
+
+    // Read final size
+    let size = LittleEndian::read_u32(&data[0..4]) as usize;
+
+    // Deflate
+    let mut buffer = Vec::with_capacity(size);
+    decompressor.decompress_vec(&data[4..], &mut buffer, FlushDecompress::None)?;
+    if decompressor.total_out() != size as u64 {
+        return Err(Error::DecompressionNotFinished);
+    }
+    Ok(buffer)
+}
 
 /// Load opcode mapping from a file (normal and reverse lookup)
 pub fn load_opcode_mapping(data_path: &PathBuf) -> Result<(Vec<Opcode>, HashMap<Opcode, u16>)> {
@@ -47,10 +81,19 @@ pub fn calculate_reverse_map(opcode_mapping: &[Opcode]) -> HashMap<Opcode, u16> 
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use aes::Aes128;
+    use byteorder::{LittleEndian, WriteBytesExt};
+    use cfb_mode::stream_cipher::{NewStreamCipher, StreamCipher};
+    use cfb_mode::Cfb;
+    use flate2::{Compress, Compression, FlushCompress};
+    use rand::rngs::OsRng;
+    use rand_core::RngCore;
+
     use super::super::protocol::opcode::Opcode;
     use super::super::*;
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn test_opcode_table_creation() -> Result<()> {
@@ -76,5 +119,55 @@ mod tests {
         assert_eq!(1, reverse_map[&Opcode::C_UNEQUIP_ITEM]);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_read_datacenter_file() -> Result<()> {
+        let size = 1024 * 1024 * 1;
+        let key = hex::decode("1A8ED266690CCF664A741C4CA9D4944E")?;
+        let iv = hex::decode("527DE56BB0A2C60DA879A01B8194DC12")?;
+
+        let test_data = create_test_data(key.as_slice(), iv.as_slice(), size)?;
+        let data = read_datacenter_file(key.as_slice(), iv.as_slice(), test_data)?;
+
+        assert_eq!(size, data.len());
+        Ok(())
+    }
+
+    // Creates some testdata in the same structure as the TERA datacenter files.
+    //
+    // Write down the size of the original data as u32. Then use zlib deflate to compress the
+    // data (with the zlib header) and append the data to the u32 size bytes.
+    //
+    // Then use AES CFB with the KEY and IV in the TERA client (changes every patch)
+    // and crypt the data (CFB is a stream cipher).
+    fn create_test_data(key: &[u8], iv: &[u8], size: usize) -> Result<Vec<u8>> {
+        let mut original_data = vec![0u8; size];
+        OsRng.fill_bytes(original_data.as_mut_slice());
+
+        let mut cipher = Cfb::<Aes128>::new_var(key, iv).unwrap();
+        let mut compressor = Compress::new(Compression::best(), true);
+
+        let mut buffer = Vec::with_capacity(size + 2048);
+        buffer.write_u32::<LittleEndian>(size as u32)?;
+
+        compressor
+            .compress_vec(original_data.as_slice(), &mut buffer, FlushCompress::Full)
+            .unwrap();
+        if compressor.total_in() != size as u64 {
+            panic!("compression did not read all the data");
+        }
+
+        let compressed_size = buffer.len();
+        if compressed_size <= 4 {
+            panic!("didn't compress any data");
+        }
+
+        for chunk in buffer.chunks_mut(1024) {
+            cipher.encrypt(chunk);
+        }
+
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 }

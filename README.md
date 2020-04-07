@@ -11,9 +11,26 @@ A stable rust installation (version 1.42+).
 
 ## Building
 
+Developer build:
+
 ```bash
 cargo build
 ```
+
+For hardware accelerated AES you will need to use a compatible CPU and this build command:
+
+```bash
+RUSTFLAGS="-C target-feature=+aes,+ssse3" cargo build
+```
+
+For the best performance (including AES speed improvements) compile the server with the full native instruction set
+of your CPU:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo build
+```
+
+Remember to use the ```--release``` flag if you want to activate all compiler optimizations.
 
 ## Running
 

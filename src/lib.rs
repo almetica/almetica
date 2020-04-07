@@ -1,15 +1,17 @@
 #![warn(clippy::all)]
+
+use std::sync::Arc;
+
+use thiserror::Error;
+
+use ecs::event::Event;
+
 pub mod config;
 pub mod crypt;
 pub mod dataloader;
 pub mod ecs;
 pub mod model;
 pub mod protocol;
-
-use std::sync::Arc;
-
-use ecs::event::Event;
-use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -32,6 +34,12 @@ pub enum Error {
 
     #[error("entity was not set")]
     EntityNotSet,
+
+    #[error("KEY or IV have the wrong size. Needs to be 128 bit")]
+    KeyOrIvWrongSize,
+
+    #[error("decompression was successful, but data was missing to finish it")]
+    DecompressionNotFinished,
 
     #[error("wrong event received")]
     WrongEventReceived,
@@ -56,6 +64,12 @@ pub enum Error {
 
     #[error("utf8 error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
+
+    #[error("hex error: {0}")]
+    FromHex(#[from] hex::FromHexError),
+
+    #[error("flate2 decompress error: {0}")]
+    Flate2Decompress(#[from] flate2::DecompressError),
 
     #[error("unknown error")]
     Unknown,
