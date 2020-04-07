@@ -1,6 +1,11 @@
 /// Handles the users of an account. Users in TERA terminology are the player characters of an account.
 use std::sync::Arc;
 
+use legion::prelude::*;
+use legion::systems::schedule::Schedulable;
+use legion::systems::SystemBuilder;
+use tracing::{debug, info_span};
+
 use crate::ecs::component::SingleEvent;
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
@@ -8,11 +13,6 @@ use crate::ecs::system::send_event;
 use crate::ecs::tag;
 use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
 use crate::protocol::packet::*;
-
-use legion::prelude::*;
-use legion::systems::schedule::Schedulable;
-use legion::systems::SystemBuilder;
-use tracing::{debug, info_span};
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("UserManager")
@@ -22,6 +22,7 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
             let span = info_span!("world", world_id);
             let _enter = span.enter();
 
+            // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
             for event in queries.iter(&*world) {
                 match &**event {
                     Event::RequestGetUserList { connection, .. } => {

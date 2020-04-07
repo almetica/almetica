@@ -17,9 +17,10 @@ pub struct Connection {
     pub version_checked: bool,
     pub region: Option<Region>,
     pub last_pong: Instant,
+    pub waiting_for_pong: bool,
 }
 
-// Holds the configuration settings of a user that are needed at runtime
+/// Holds the configuration settings of a user that are needed at runtime
 pub struct Settings {
     pub visibility_range: u32,
 }

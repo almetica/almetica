@@ -4,6 +4,12 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
+use legion::prelude::*;
+use legion::systems::schedule::Schedulable;
+use legion::systems::{SubWorld, SystemBuilder};
+use tokio::sync::mpsc::Sender;
+use tracing::{debug, error, info_span, trace};
+
 use crate::ecs::component::{BatchEvent, Connection, SingleEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
@@ -14,17 +20,11 @@ use crate::model::Region;
 use crate::protocol::packet::*;
 use crate::*;
 
-use legion::prelude::*;
-use legion::systems::schedule::Schedulable;
-use legion::systems::{SubWorld, SystemBuilder};
-use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, info_span, trace, warn};
-
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("ConnectionManager")
         .write_resource::<ConnectionMapping>()
         .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
-        .with_query(<Read<Connection>>::query())
+        .with_query(<Write<Connection>>::query())
         .write_component::<SingleEvent>()
         .write_component::<BatchEvent>()
         .write_component::<Connection>()
@@ -63,8 +63,8 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
 
             // Connections
             let now = Instant::now();
-            for (entity, connection) in queries.1.iter_entities_mut(&mut *world) {
-                handle_ping(&now, entity, &connection, &mut command_buffer);
+            for (entity, mut connection) in queries.1.iter_entities_mut(&mut *world) {
+                handle_ping(&now, entity, &mut connection, &mut command_buffer);
             }
         })
 }
@@ -82,6 +82,7 @@ fn handle_connection_registration(
         version_checked: false,
         region: None,
         last_pong: Instant::now(),
+        waiting_for_pong: false,
     };
     let connection_entity = command_buffer.start_entity().with_component((connection,)).build();
 
@@ -174,17 +175,19 @@ fn handle_request_login_arbiter(
     }
 }
 
-fn handle_ping(now: &Instant, connection: Entity, component: &Connection, command_buffer: &mut CommandBuffer) {
+fn handle_ping(now: &Instant, connection: Entity, component: &mut Connection, command_buffer: &mut CommandBuffer) {
     let span = info_span!("connection", %connection);
     let _enter = span.enter();
 
     let last_pong_duration = now.duration_since(component.last_pong).as_secs();
     if last_pong_duration >= 90 {
-        warn!("Didn't received pong in 30 seconds. Dropping connection");
+        debug!("Didn't received pong in 30 seconds. Dropping connection");
         send_event(assemble_drop_connection(connection), command_buffer);
-    } else if last_pong_duration >= 60 {
+        command_buffer.remove_component::<Connection>(connection);
+    } else if !component.waiting_for_pong && last_pong_duration >= 60 {
         debug!("Sending ping");
         send_event(assemble_ping(connection), command_buffer);
+        component.waiting_for_pong = true;
     }
 }
 
@@ -200,6 +203,7 @@ fn handle_pong(connection: Option<Entity>, world: &mut SubWorld) {
 
         if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
             component.last_pong = Instant::now();
+            component.waiting_for_pong = false;
         } else {
             error!("Could not find connection component for entity");
         }
@@ -332,9 +336,12 @@ fn reject_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::sync::Arc;
+    use std::time::Duration;
+
+    use legion::query::Read;
+    use legion::systems::schedule::Schedule;
+    use tokio::sync::mpsc::channel;
 
     use crate::ecs::component::{BatchEvent, SingleEvent};
     use crate::ecs::event::{self, Event};
@@ -342,9 +349,7 @@ mod tests {
     use crate::model::Region;
     use crate::protocol::packet::CCheckVersion;
 
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
-    use tokio::sync::mpsc::channel;
+    use super::*;
 
     fn setup() -> (World, Schedule, Resources) {
         let world = World::new();
@@ -370,6 +375,7 @@ mod tests {
                     version_checked: false,
                     region: None,
                     last_pong: Instant::now(),
+                    waiting_for_pong: false,
                 },)
             }),
         );
@@ -670,5 +676,62 @@ mod tests {
         }
     }
 
-    // TODO write PING/PONG test
+    #[test]
+    fn test_ping_pong_success() {
+        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+
+        let now = Instant::now();
+        let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
+
+        // Set last pong 61 seconds ago.
+        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
+            component.last_pong = old_pong;
+        } else {
+            panic!("Couldn't find connection component");
+        }
+
+        schedule.execute(&mut world, &mut resources);
+
+        let query = <Write<SingleEvent>>::query();
+        let count = query.iter_mut(&mut world).count();
+        assert_eq!(1, count);
+
+        // Check if ping is present
+        let mut to_delete: Option<Entity> = None;
+        if let Some((entity, event)) = query.iter_entities_mut(&mut world).next() {
+            match &**event {
+                Event::ResponsePing { .. } => {
+                    to_delete = Some(entity);
+                }
+                _ => panic!("Couldn't find ping event"),
+            }
+        }
+        world.delete(to_delete.unwrap());
+
+        // Check if waiting_for_pong is updated
+        if let Some(component) = world.get_component::<Connection>(connection) {
+            if !component.waiting_for_pong {
+                panic!("waiting_for_pong was not set after ping");
+            }
+        } else {
+            panic!("Couldn't find connection component");
+        }
+
+        // Send pong
+        world.insert(
+            (EventKind(event::EventKind::Request),),
+            (0..1).map(|_| {
+                (Arc::new(Event::RequestPong {
+                    connection: Some(connection),
+                    packet: CPong {},
+                }),)
+            }),
+        );
+
+        schedule.execute(&mut world, &mut resources);
+
+        // Check if last_pong is updated
+        let component = world.get_component::<Connection>(connection).unwrap();
+        assert_eq!(true, component.last_pong > old_pong);
+    }
 }

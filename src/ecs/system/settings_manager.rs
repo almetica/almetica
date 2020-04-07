@@ -1,13 +1,13 @@
+use legion::prelude::{tag_value, CommandBuffer, Entity, IntoQuery, Read};
+use legion::systems::schedule::Schedulable;
+use legion::systems::{SubWorld, SystemBuilder};
+use tracing::{debug, error, info_span};
+
 /// The settings manager handles the settings of an account (UI/Chat/Visibility etc.).
 use crate::ecs::component::{Settings, SingleEvent};
 use crate::ecs::event::{Event, EventKind};
 use crate::ecs::tag;
 use crate::protocol::packet::CSetVisibleRange;
-
-use legion::prelude::{tag_value, CommandBuffer, Entity, IntoQuery, Read};
-use legion::systems::schedule::Schedulable;
-use legion::systems::{SubWorld, SystemBuilder};
-use tracing::{debug, error, info_span};
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("ConnectionManager")
@@ -57,18 +57,18 @@ fn handle_set_visible_range(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::sync::Arc;
     use std::time::Instant;
+
+    use legion::prelude::{Resources, World};
+    use legion::query::Read;
+    use legion::systems::schedule::Schedule;
 
     use crate::ecs::component::Connection;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
 
-    use legion::prelude::{Resources, World};
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
+    use super::*;
 
     fn setup() -> (World, Schedule, Entity, Resources) {
         let mut world = World::new();
@@ -83,6 +83,7 @@ mod tests {
                     version_checked: false,
                     region: None,
                     last_pong: Instant::now(),
+                    waiting_for_pong: false,
                 },)
             }),
         );

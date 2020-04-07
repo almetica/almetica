@@ -1,16 +1,5 @@
-/// Module that implements the network protocol used by TERA.
-pub mod opcode;
-pub mod packet;
-pub mod serde;
-
 use std::collections::HashMap;
 use std::time::Duration;
-
-use crate::crypt::CryptSession;
-use crate::ecs::component::SingleEvent;
-use crate::ecs::event::{Event, EventTarget};
-use crate::*;
-use opcode::Opcode;
 
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use legion::entity::Entity;
@@ -21,6 +10,18 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::delay_for;
 use tracing::{debug, error, info, trace, warn};
+
+use opcode::Opcode;
+
+use crate::crypt::CryptSession;
+use crate::ecs::component::SingleEvent;
+use crate::ecs::event::{Event, EventTarget};
+use crate::*;
+
+/// Module that implements the network protocol used by TERA.
+pub mod opcode;
+pub mod packet;
+pub mod serde;
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
@@ -282,14 +283,6 @@ impl<'a> GameSession<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::dataloader::*;
-    use crate::ecs::component::Connection;
-    use crate::ecs::event::Event::{RequestRegisterConnection, ResponseRegisterConnection};
-    use crate::protocol::opcode::Opcode;
-    use crate::protocol::protocol::GameSession;
-    use crate::Result;
-
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
 
@@ -301,6 +294,15 @@ mod tests {
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
     use tokio_test::assert_ok;
+
+    use crate::dataloader::*;
+    use crate::ecs::component::Connection;
+    use crate::ecs::event::Event::{RequestRegisterConnection, ResponseRegisterConnection};
+    use crate::protocol::opcode::Opcode;
+    use crate::protocol::protocol::GameSession;
+    use crate::Result;
+
+    use super::*;
 
     async fn get_opcode_tables() -> Result<(Vec<Opcode>, HashMap<Opcode, u16>)> {
         let mut file = Vec::new();
@@ -330,6 +332,7 @@ mod tests {
                 version_checked: false,
                 region: None,
                 last_pong: Instant::now(),
+                waiting_for_pong: false,
             },)],
         );
 

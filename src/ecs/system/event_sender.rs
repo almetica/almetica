@@ -1,17 +1,17 @@
 /// Event sender sends all outgoing events to the connection / local worlds.
 use std::collections::HashMap;
 
-use crate::ecs::component::{BatchEvent, SingleEvent};
-use crate::ecs::event::{Event, EventKind};
-use crate::ecs::resource::ConnectionMapping;
-use crate::ecs::tag;
-
 use legion::prelude::*;
 use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, warn};
+
+use crate::ecs::component::{BatchEvent, SingleEvent};
+use crate::ecs::event::{Event, EventKind};
+use crate::ecs::resource::ConnectionMapping;
+use crate::ecs::tag;
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventSender")
@@ -52,18 +52,17 @@ fn send_event(event: &SingleEvent, connection_mapping: &mut HashMap<Entity, Send
                         error!("Dropping event for connection because channel is full");
                     }
                     TrySendError::Closed(..) => {
-                        error!("Couldn't send event for connection because channel is closed");
+                        warn!("Couldn't send event for connection because channel is closed");
                         connection_mapping.remove(&connection);
                         return;
                     }
                 }
             }
-
             if let Event::ResponseDropConnection { connection } = **event {
                 connection_mapping.remove(&connection.unwrap());
             }
         } else {
-            warn!("Couldn't find a channel mapping for the connection");
+            debug!("Couldn't find a channel mapping for the connection");
         }
     } else {
         error!("Event didn't had an connection attached");
@@ -72,17 +71,17 @@ fn send_event(event: &SingleEvent, connection_mapping: &mut HashMap<Entity, Send
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::sync::Arc;
     use std::time::Instant;
+
+    use legion::systems::schedule::Schedule;
+    use tokio::sync::mpsc::{channel, Receiver};
 
     use crate::ecs::component::Connection;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
 
-    use legion::systems::schedule::Schedule;
-    use tokio::sync::mpsc::{channel, Receiver};
+    use super::*;
 
     fn setup() -> (World, Schedule, Entity, Resources, Receiver<Arc<Event>>) {
         let mut world = World::new();
@@ -96,6 +95,7 @@ mod tests {
                 version_checked: false,
                 region: None,
                 last_pong: Instant::now(),
+                waiting_for_pong: false,
             },)],
         );
         let connection = entities[0];
