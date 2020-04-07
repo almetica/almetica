@@ -51,7 +51,7 @@ fn handle_set_visible_range(
             command_buffer.start_entity().with_component((settings,)).build();
         }
     } else {
-        error!("Entity of the connection for event SetVisibleRange was not set");
+        error!("Entity of the connection for set visible range event was not set");
     }
 }
 

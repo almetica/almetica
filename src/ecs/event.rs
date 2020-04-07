@@ -133,6 +133,8 @@ assemble_event! {
         RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Request, Global;
         RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Request, Global;
         ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Request, Global;
+        RequestPong{packet: CPong}, C_PONG, Request, Global;
+        ResponsePing{packet: SPing}, S_PING, Response, Connection;
     }
     System Events {
         // Registers the response channel of a connection at a world.

@@ -8,7 +8,7 @@ use crate::ecs::component::{BatchEvent, Connection, SingleEvent};
 use crate::ecs::event::Event;
 use crate::ecs::event::EventKind;
 use crate::ecs::resource::ConnectionMapping;
-use crate::ecs::system::send_event;
+use crate::ecs::system::{send_batch_event, send_event};
 use crate::ecs::tag;
 use crate::model::Region;
 use crate::protocol::packet::*;
@@ -18,7 +18,7 @@ use legion::prelude::*;
 use legion::systems::schedule::Schedulable;
 use legion::systems::{SubWorld, SystemBuilder};
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, info_span, trace};
+use tracing::{debug, error, info_span, trace, warn};
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("ConnectionManager")
@@ -56,19 +56,15 @@ pub fn init(world_id: usize) -> Box<dyn Schedulable> {
                             debug!("Can't handle RequestLoginArbiter event: {:?}", e);
                         }
                     }
-                    // TODO handle PONG
+                    Event::RequestPong { connection, .. } => handle_pong(*connection, &mut world),
                     _ => { /* Ignore all other events */ }
                 }
             }
 
             // Connections
             let now = Instant::now();
-            for connection in queries.1.iter_mut(&mut *world) {
-                if now.duration_since(connection.last_pong).as_secs() >= 90 {
-                    // TODO disconnect client if they don't response to a ping
-                } else if now.duration_since(connection.last_pong).as_secs() >= 60 {
-                    // TODO send ping
-                }
+            for (entity, connection) in queries.1.iter_entities_mut(&mut *world) {
+                handle_ping(&now, entity, &connection, &mut command_buffer);
             }
         })
 }
@@ -135,7 +131,7 @@ fn handle_request_check_version(
         }
         Ok(())
     } else {
-        error!("Entity of the connection for event RequestCheckVersion was not set");
+        error!("Entity of the connection for check version event was not set");
         Err(Error::EntityNotSet)
     }
 }
@@ -173,8 +169,42 @@ fn handle_request_login_arbiter(
         }
         Ok(())
     } else {
-        error!("Entity of the connection for event RequestCheckVersion was not set");
+        error!("Entity of the connection for login arbiter event was not set");
         Err(Error::EntityNotSet)
+    }
+}
+
+fn handle_ping(now: &Instant, connection: Entity, component: &Connection, command_buffer: &mut CommandBuffer) {
+    let span = info_span!("connection", %connection);
+    let _enter = span.enter();
+
+    let last_pong_duration = now.duration_since(component.last_pong).as_secs();
+    if last_pong_duration >= 90 {
+        warn!("Didn't received pong in 30 seconds. Dropping connection");
+        send_event(assemble_drop_connection(connection), command_buffer);
+    } else if last_pong_duration >= 60 {
+        debug!("Sending ping");
+        send_event(assemble_ping(connection), command_buffer);
+    }
+}
+
+fn handle_pong(connection: Option<Entity>, world: &mut SubWorld) {
+    if let Some(connection) = connection {
+        let span = info_span!("connection", %connection);
+        let _enter = span.enter();
+
+        debug!("Pong event incoming");
+
+        let span = info_span!("connection", %connection);
+        let _enter = span.enter();
+
+        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
+            component.last_pong = Instant::now();
+        } else {
+            error!("Could not find connection component for entity");
+        }
+    } else {
+        error!("Entity of the connection for pong event was not set");
     }
 }
 
@@ -204,15 +234,6 @@ fn check_and_handle_post_initialization(
     }
 }
 
-fn send_batch_event(batch: BatchEvent, command_buffer: &mut CommandBuffer) {
-    debug!("Created batch event with {} events", batch.len());
-    command_buffer
-        .start_entity()
-        .with_tag((tag::EventKind(EventKind::Response),))
-        .with_component((batch,))
-        .build();
-}
-
 fn assemble_loading_screen_info(connection: Entity) -> SingleEvent {
     Arc::new(Event::ResponseLoadingScreenControlInfo {
         connection: Some(connection),
@@ -239,6 +260,19 @@ fn assemble_login_account_info(connection: Entity, server_name: String, account_
             server_name,
             account_id,
         },
+    })
+}
+
+fn assemble_ping(connection: Entity) -> SingleEvent {
+    Arc::new(Event::ResponsePing {
+        connection: Some(connection),
+        packet: SPing {},
+    })
+}
+
+fn assemble_drop_connection(connection: Entity) -> SingleEvent {
+    Arc::new(Event::ResponseDropConnection {
+        connection: Some(connection),
     })
 }
 
@@ -635,4 +669,6 @@ mod tests {
             }
         }
     }
+
+    // TODO write PING/PONG test
 }

@@ -193,6 +193,9 @@ pub struct SLoginArbiter {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SPing {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SRemainPlayTime {
     // 1 = P2P (active subscription)
     // 2 = P2P (no active subscription),
@@ -477,6 +480,12 @@ mod tests {
             unk2: 0,
             unk3: 0,
         }
+    );
+
+    packet_test!(
+        name: test_s_ping,
+        data: vec![],
+        expected: SPing {}
     );
 
     packet_test!(

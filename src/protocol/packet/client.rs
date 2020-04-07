@@ -36,6 +36,9 @@ pub struct CLoginArbiter {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CPong {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CSetVisibleRange {
     pub range: u32,
 }
@@ -105,6 +108,12 @@ mod tests {
             region: Region::Europe,
             patch_version: 9002,
         }
+    );
+
+    packet_test!(
+        name: test_c_pong,
+        data: vec![],
+        expected: CPong {}
     );
 
     packet_test!(

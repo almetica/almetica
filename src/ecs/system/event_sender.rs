@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 use crate::ecs::component::{BatchEvent, SingleEvent};
-use crate::ecs::event::EventKind;
+use crate::ecs::event::{Event, EventKind};
 use crate::ecs::resource::ConnectionMapping;
 use crate::ecs::tag;
 
@@ -11,7 +11,7 @@ use legion::systems::schedule::Schedulable;
 use legion::systems::SystemBuilder;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, info_span};
+use tracing::{debug, error, info_span, warn};
 
 pub fn init(world_id: usize) -> Box<dyn Schedulable> {
     SystemBuilder::new("EventSender")
@@ -45,6 +45,7 @@ fn send_event(event: &SingleEvent, connection_mapping: &mut HashMap<Entity, Send
 
         if let Some(channel) = connection_mapping.get_mut(&connection) {
             debug!("Sending event {}", *event);
+
             if let Err(err) = channel.try_send(event.clone()) {
                 match err {
                     TrySendError::Full(..) => {
@@ -53,11 +54,16 @@ fn send_event(event: &SingleEvent, connection_mapping: &mut HashMap<Entity, Send
                     TrySendError::Closed(..) => {
                         error!("Couldn't send event for connection because channel is closed");
                         connection_mapping.remove(&connection);
+                        return;
                     }
                 }
             }
+
+            if let Event::ResponseDropConnection { connection } = **event {
+                connection_mapping.remove(&connection.unwrap());
+            }
         } else {
-            error!("Couldn't find a channel mapping for the connection");
+            warn!("Couldn't find a channel mapping for the connection");
         }
     } else {
         error!("Event didn't had an connection attached");
@@ -137,13 +143,13 @@ mod tests {
                     Arc::new(Event::ResponseRegisterConnection {
                         connection: Some(connection),
                     }),
-                    Arc::new(Event::ResponseDropConnection {
+                    Arc::new(Event::ResponseRegisterConnection {
                         connection: Some(connection),
                     }),
                     Arc::new(Event::ResponseRegisterConnection {
                         connection: Some(connection),
                     }),
-                    Arc::new(Event::ResponseDropConnection {
+                    Arc::new(Event::ResponseRegisterConnection {
                         connection: Some(connection),
                     }),
                 ],)
@@ -159,3 +165,5 @@ mod tests {
         assert_eq!(16, count);
     }
 }
+
+// TODO test drop connection event handling

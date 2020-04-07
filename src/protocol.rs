@@ -144,7 +144,7 @@ impl<'a> GameSession<'a> {
         loop {
             tokio::select! {
                 // Timeout
-                _ = delay_for(Duration::from_secs(300)) => {
+                _ = delay_for(Duration::from_secs(180)) => {
                     info!("Connection timed out");
                     return Ok(());
                 }
