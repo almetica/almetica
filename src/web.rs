@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 
-use tracing::info;
 use warp::{Filter, Rejection, Reply};
 
 /// This modules implements the web interface..

@@ -1,9 +1,11 @@
-login-server:
-    listen: 127.0.0.1:8080
-game-server:
-    listen: 127.0.0.1:10001
+server:
+    hostname: 127.0.0.1:8080
+    web-port: 8080
+    game-port: 10001
 data:
     version: $VERSION
     path: $PATH_TO_DATAFOLDER
     key: $DATAPACK_KEY_IN_HEX
     iv: $DATAPACK_IV_IN_HEX
+game:
+    pvp: true
