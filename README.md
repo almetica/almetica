@@ -48,11 +48,10 @@ are targeting.
 
 We will provide tools / instructions how to do so in the future.
 
-You can run the servers with the following commands:
+You can run the server with the following commands:
 
 ```bash
-RUST_LOG=info cargo run --bin almetica-login-server
-RUST_LOG=info cargo run --bin almetica-game-server
+RUST_LOG=info cargo run --bin almetica
 ```
 
 ## Contributing
