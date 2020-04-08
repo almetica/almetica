@@ -8,6 +8,7 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
     pub server: ServerConfiguration,
+    pub database: DatabaseConfiguration,
     pub data: DataConfiguration,
     pub game: GameConfiguration
 }
@@ -17,6 +18,15 @@ pub struct ServerConfiguration {
     pub hostname: String,
     pub web_port: u16,
     pub game_port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DatabaseConfiguration {
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub database: String,
 }
 
 #[derive(Debug, Deserialize)]
