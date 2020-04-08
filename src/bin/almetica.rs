@@ -1,15 +1,14 @@
 #![warn(clippy::all)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
 use clap::Clap;
-use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
-use tokio::task;
-use tracing::{error, info, info_span, warn};
-use tracing_futures::Instrument;
+use tokio::task::{self, JoinHandle};
+use tracing::{error, info, warn};
 use tracing_log::LogTracer;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
@@ -20,10 +19,10 @@ use almetica::config::read_configuration;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
+use almetica::gameserver;
 use almetica::protocol::opcode::Opcode;
-use almetica::protocol::GameSession;
-use almetica::web;
-use almetica::Result;
+use almetica::webserver;
+use almetica::{Error, Result};
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -40,14 +39,6 @@ async fn main() {
         error!("Error while executing program: {:?}", e);
         process::exit(1);
     }
-}
-
-fn init_logging() {
-    let fmt_layer = Layer::builder().with_target(false).finish();
-    let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
-    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-    LogTracer::init().unwrap();
 }
 
 async fn run() -> Result<()> {
@@ -69,7 +60,7 @@ async fn run() -> Result<()> {
                 "Loaded opcode mapping table with {} entries",
                 opcode_mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
             );
-            (Arc::new(opcode_mapping), Arc::new(reverse_opcode_mapping))
+            (opcode_mapping, reverse_opcode_mapping)
         }
         Err(e) => {
             error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
@@ -78,69 +69,53 @@ async fn run() -> Result<()> {
     };
 
     info!("Starting the ECS multiverse");
-    let global_tx_channel = start_multiverse();
+    let (multiverse_handle, global_tx_channel) = start_multiverse();
 
     info!("Starting the web server");
-    start_web_server();
+    let web_handle = start_web_server();
 
-    info!("Starting the network server on 127.0.0.1:10001");
-    let mut listener = TcpListener::bind("127.0.0.1:10001").await?;
+    info!("Starting the game server");
+    let game_handle = start_game_server(global_tx_channel, opcode_mapping, reverse_opcode_mapping);
 
-    loop {
-        match listener.accept().await {
-            Ok((mut socket, addr)) => {
-                let thread_channel = global_tx_channel.clone();
-                let thread_opcode_mapping = opcode_mapping.clone();
-                let thread_reverse_opcode_mapping = reverse_opcode_mapping.clone();
-
-                tokio::spawn(async move {
-                    let span = info_span!("socket", %addr);
-                    let _enter = span.enter();
-
-                    info!("Incoming connection");
-                    match GameSession::new(
-                        &mut socket,
-                        thread_channel,
-                        thread_opcode_mapping,
-                        thread_reverse_opcode_mapping,
-                    )
-                    .await
-                    {
-                        Ok(mut session) => {
-                            let connection = session.connection;
-                            match session
-                                .handle_connection()
-                                .instrument(info_span!("connection", connection = %connection))
-                                .await
-                            {
-                                Ok(_) => info!("Closed connection"),
-                                Err(e) => warn!("Error while handling game session: {:?}", e),
-                            }
-                        }
-                        Err(e) => error!("Failed create game session: {:?}", e),
-                    }
-                });
-            }
-            Err(e) => error!("Failed to open connection: {:?}", e),
-        }
+    if let Err(e) = tokio::try_join!(multiverse_handle, web_handle, game_handle) {
+        return Err(Error::TokioJoinError(e));
     }
+
+    Ok(())
 }
 
-// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse() -> Sender<Arc<Event>> {
+fn init_logging() {
+    let fmt_layer = Layer::builder().with_target(false).finish();
+    let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
+    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    LogTracer::init().unwrap();
+}
+
+/// Starts the multiverse on a new thread and returns a channel into the global world.
+fn start_multiverse() -> (JoinHandle<()>, Sender<Arc<Event>>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
-    task::spawn_blocking(move || {
+    let join_handle = task::spawn_blocking(move || {
         multiverse.run();
     });
 
-    rx
+    (join_handle, rx)
 }
 
-// Starts the web server handling all HTTP/S requests.
-fn start_web_server() {
+/// Starts the web server handling all HTTP requests.
+fn start_web_server() -> JoinHandle<()> {
     task::spawn(async {
-        web::run().await;
-    });
+        webserver::run().await;
+    })
+}
+
+/// Starts the game server.
+fn start_game_server(
+    global_channel: Sender<Arc<Event>>,
+    map: Vec<Opcode>,
+    reverse_map: HashMap<Opcode, u16>,
+) -> JoinHandle<Result<()>> {
+    task::spawn(async { gameserver::run(global_channel, map, reverse_map).await })
 }

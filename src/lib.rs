@@ -10,9 +10,10 @@ pub mod config;
 pub mod crypt;
 pub mod dataloader;
 pub mod ecs;
+pub mod gameserver;
 pub mod model;
 pub mod protocol;
-pub mod web;
+pub mod webserver;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

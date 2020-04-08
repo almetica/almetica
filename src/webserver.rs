@@ -1,8 +1,8 @@
+/// This modules implements the web server interface.
 use std::net::SocketAddr;
 
 use warp::{Filter, Rejection, Reply};
 
-/// This modules implements the web interface..
 pub mod request;
 pub mod response;
 
@@ -10,10 +10,12 @@ pub mod response;
 pub async fn run() {
     let db = "test".to_string();
     let api = auth_filter(db.clone()).or(server_list_filter(db));
-    let routes = api.with(warp::log("almetica::web"));
+    let routes = api.with(warp::log("almetica::webserver"));
 
     let listen_addr_string = "127.0.0.1:8080";
     let listen_addr: SocketAddr = listen_addr_string.parse().expect("Unable to parse listen address");
+
+    // Sadly, warp doesn't have a method to start with a `Result` return type. It loves to panic.
     warp::serve(routes).run(listen_addr).await;
 }
 

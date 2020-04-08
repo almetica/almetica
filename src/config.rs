@@ -2,21 +2,24 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use crate::*;
 use serde::Deserialize;
+
+use crate::*;
 
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
     pub server: ServerConfiguration,
     pub database: DatabaseConfiguration,
     pub data: DataConfiguration,
-    pub game: GameConfiguration
+    pub game: GameConfiguration,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ServerConfiguration {
     pub hostname: String,
+    #[serde(alias = "web-port")]
     pub web_port: u16,
+    #[serde(alias = "game-port")]
     pub game_port: u16,
 }
 
