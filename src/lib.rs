@@ -12,6 +12,7 @@ pub mod dataloader;
 pub mod ecs;
 pub mod model;
 pub mod protocol;
+pub mod web;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

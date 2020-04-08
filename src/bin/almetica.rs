@@ -10,6 +10,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::task;
 use tracing::{error, info, info_span, warn};
 use tracing_futures::Instrument;
+use tracing_log::LogTracer;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
@@ -21,6 +22,7 @@ use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
 use almetica::protocol::opcode::Opcode;
 use almetica::protocol::GameSession;
+use almetica::web;
 use almetica::Result;
 
 #[derive(Clap)]
@@ -41,10 +43,11 @@ async fn main() {
 }
 
 fn init_logging() {
-    let fmt_layer = Layer::builder().with_target(true).finish();
+    let fmt_layer = Layer::builder().with_target(false).finish();
     let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
+    LogTracer::init().unwrap();
 }
 
 async fn run() -> Result<()> {
@@ -76,6 +79,9 @@ async fn run() -> Result<()> {
 
     info!("Starting the ECS multiverse");
     let global_tx_channel = start_multiverse();
+
+    info!("Starting the web server");
+    start_web_server();
 
     info!("Starting the network server on 127.0.0.1:10001");
     let mut listener = TcpListener::bind("127.0.0.1:10001").await?;
@@ -130,4 +136,11 @@ fn start_multiverse() -> Sender<Arc<Event>> {
     });
 
     rx
+}
+
+// Starts the web server handling all HTTP/S requests.
+fn start_web_server() {
+    task::spawn(async {
+        web::run().await;
+    });
 }
