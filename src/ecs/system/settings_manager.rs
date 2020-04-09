@@ -1,9 +1,9 @@
+/// The settings manager handles the settings of an account (UI/Chat/Visibility etc.).
 use legion::prelude::{tag_value, CommandBuffer, Entity, IntoQuery, Read};
 use legion::systems::schedule::Schedulable;
 use legion::systems::{SubWorld, SystemBuilder};
 use tracing::{debug, error, info_span};
 
-/// The settings manager handles the settings of an account (UI/Chat/Visibility etc.).
 use crate::ecs::component::{Settings, SingleEvent};
 use crate::ecs::event::{Event, EventKind};
 use crate::ecs::tag;
@@ -62,15 +62,16 @@ mod tests {
     use legion::prelude::{Resources, World};
     use legion::query::Read;
     use legion::systems::schedule::Schedule;
+    use serial_test::serial;
 
+    use super::*;
     use crate::ecs::component::Connection;
     use crate::ecs::event::{self, Event};
     use crate::ecs::tag::EventKind;
 
-    use super::*;
-
     fn setup() -> (World, Schedule, Entity, Resources) {
         let mut world = World::new();
+
         let schedule = Schedule::builder().add_system(init(world.id().index())).build();
 
         // FIXME There currently isn't a good insert method for one entity.
@@ -93,6 +94,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_set_visible_range() {
         let (mut world, mut schedule, connection, mut resources) = setup();
 

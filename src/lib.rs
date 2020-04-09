@@ -58,6 +58,9 @@ pub enum Error {
     #[error("mpsc send event error: {0}")]
     MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
 
+    #[error("mysql error: {0}")]
+    MysqlError(#[from] mysql::error::Error),
+
     #[error("tokio timeout error: {0}")]
     TokioTimeOut(#[from] tokio::time::Elapsed),
 

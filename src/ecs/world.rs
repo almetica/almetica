@@ -2,11 +2,13 @@ use std::collections::HashMap;
 /// Module that handles the world generation and handling
 use std::{thread, time};
 
+use crate::config::Configuration;
 use crate::ecs::component::SingleEvent;
 use crate::ecs::resource::*;
 use crate::ecs::system::*;
 
 use legion::prelude::*;
+use mysql::Pool;
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::debug;
 
@@ -25,7 +27,7 @@ impl Multiverse {
     }
 
     /// Starts the main loop of the global world.
-    pub fn run(&mut self) {
+    pub fn run(&mut self, pool: Pool, config: Configuration) {
         let world_id = self.global_world_handle.world.id().index();
         let mut schedule = Schedule::builder()
             .add_system(event_receiver::init(world_id))
@@ -40,6 +42,10 @@ impl Multiverse {
             .flush()
             .add_system(event_cleaner::init(world_id))
             .build();
+
+        // Copy configuration and db pool into the global resources so that systems can access them.
+        self.resources.insert(config);
+        self.resources.insert(pool);
 
         // Global tick rate is at best 50ms (20 Hz)
         let min_duration = time::Duration::from_millis(50);

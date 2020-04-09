@@ -9,9 +9,11 @@ aes = "0.3"
 byteorder = "1.3"
 cfb-mode = "0.3"
 clap = { version = "3.0.0-beta.1", features = ["yaml"], git = "https://github.com/clap-rs/clap/" }
+dotenv = "0.15"
 flate2 = "1.0"
 hex = "0.4"
 legion = { git = "https://github.com/TomGillen/legion/", branch = "master" }
+mysql = "*"
 rand = "0.7"
 rand_core = "0.5"
 serde = { version = "1.0", features = ["derive"] }
@@ -31,6 +33,7 @@ warp = "0.2"
 [dev-dependencies]
 criterion = "0.3"
 criterion-cycles-per-byte = "0.1"
+serial_test = "0.4"
 tokio = { version = "0.2", features = ["full"] }
 tokio-test = "0.2"
 

@@ -14,3 +14,4 @@ config.yaml
 *.log
 .idea
 test*.txt
+.env

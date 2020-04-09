@@ -7,6 +7,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, info_span, warn};
 use tracing_futures::Instrument;
 
+use crate::config::Configuration;
 use crate::ecs::event::Event;
 use crate::protocol::opcode::Opcode;
 use crate::protocol::GameSession;
@@ -17,9 +18,11 @@ pub async fn run(
     global_channel: Sender<Arc<Event>>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
+    config: Configuration,
 ) -> Result<()> {
-    info!("listening on tcp://127.0.0.1:10001");
-    let mut listener = TcpListener::bind("127.0.0.1:10001").await?;
+    let listen_string = format!("{}:{}", config.server.hostname, config.server.game_port);
+    info!("listening on tcp://{}", listen_string);
+    let mut listener = TcpListener::bind(listen_string).await?;
 
     let arc_map = Arc::new(map);
     let arc_reverse_map = Arc::new(reverse_map);

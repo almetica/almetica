@@ -2,6 +2,8 @@
 ///
 /// Only the simple enums and data structures should be shared with the
 /// client.
+pub mod repository;
+
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -117,10 +119,33 @@ impl<'de> Visitor<'de> for U64Visitor {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::protocol::serde::{from_vec, to_vec};
     use crate::Result;
+    use mysql::prelude::*;
+    use mysql::*;
+
+    /// Re-creates the test database. Configure the DATABASE_URL in your .env file.
+    pub fn prepare_test_database_pool() -> Result<Pool> {
+        let _ = dotenv::dotenv();
+
+        let pool = Pool::new(&dotenv::var("DATABASE_URL").unwrap())?;
+        let mut conn = pool.get_conn()?;
+
+        // Drop database content
+        conn.query_drop(
+            r"SET FOREIGN_KEY_CHECKS = 0;
+            SELECT concat('DROP TABLE IF EXISTS `', table_name, '`;')
+            FROM information_schema.tables
+            WHERE table_schema = 'almetica_test';
+            SET FOREIGN_KEY_CHECKS = 1;"
+        )?;
+
+        // Run migration scripts
+
+        Ok(pool)
+    }
 
     #[test]
     fn test_customization_serialization() -> Result<()> {
