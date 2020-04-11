@@ -334,19 +334,20 @@ mod tests {
     fn get_new_entity_with_connection_component() -> EntityId {
         let world = World::new();
 
-        let (mut entities, mut connections) = world.borrow::<(EntitiesMut, &mut Connection)>();
-        let connection_id = entities.add_entity(
-            &mut connections,
-            Connection {
-                verified: false,
-                version_checked: false,
-                region: None,
-                last_pong: Instant::now(),
-                waiting_for_pong: false,
+        world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
+            |(mut entities, mut connections)| {
+                entities.add_entity(
+                    &mut connections,
+                    Connection {
+                        verified: false,
+                        version_checked: false,
+                        region: None,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
             },
-        );
-
-        connection_id
+        )
     }
 
     async fn spawn_dummy_server() -> Result<(SocketAddr, JoinHandle<()>, JoinHandle<()>)> {

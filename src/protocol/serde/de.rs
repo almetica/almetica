@@ -235,7 +235,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
             {
                 if self.count > 0 {
                     self.count -= 1;
-                    let value = serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    let value =
+                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
                 } else {
                     Ok(None)
@@ -284,7 +285,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
 
                     // The array is a linked list
                     if self.next_offset >= self.data_len {
-                        return Err(Error::OffsetOutsideData(self.deserializer.pos, self.next_offset));
+                        return Err(Error::OffsetOutsideData(
+                            self.deserializer.pos,
+                            self.next_offset,
+                        ));
                     }
                     self.deserializer.pos = self.next_offset;
 
@@ -305,7 +309,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
                     self.next_offset = abs_offset;
                     self.deserializer.pos += 2;
 
-                    let value = serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    let value =
+                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
                     Ok(Some(value))
                 } else {
                     // Return to the end of the array header
@@ -344,7 +349,12 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         Err(Error::DeserializeMapNotSupported(self.pos))
     }
 
-    fn deserialize_struct<V>(self, _name: &str, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    fn deserialize_struct<V>(
+        self,
+        _name: &str,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -372,7 +382,12 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_unit()
     }
 
-    fn deserialize_tuple_struct<V>(self, _name: &'static str, len: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {

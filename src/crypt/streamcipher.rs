@@ -1,6 +1,7 @@
 // Module that implements the Pike streamcipher used in TERA.
-use crate::crypt::sha1::Sha1;
 use byteorder::{ByteOrder, LittleEndian};
+
+use crate::crypt::sha1::Sha1;
 
 // Provides a struct for the stream cipher used by TERA.
 // Direct port the the JS implementation of tera-toolbox to rust (MIT).
@@ -56,7 +57,11 @@ impl StreamCipher {
     #[inline]
     pub fn apply_keystream(&mut self, data: &mut [u8]) {
         let size = data.len();
-        let pre = if size < self.change_len { size } else { self.change_len };
+        let pre = if size < self.change_len {
+            size
+        } else {
+            self.change_len
+        };
 
         if pre != 0 {
             for (i, el) in data.iter_mut().take(pre).enumerate() {
@@ -140,8 +145,9 @@ impl KeyGenerator {
 
 #[cfg(test)]
 mod tests {
-    use super::StreamCipher;
     use hex::encode;
+
+    use super::StreamCipher;
 
     fn setup_cipher() -> StreamCipher {
         let key: [u8; 128] = [0x12; 128];

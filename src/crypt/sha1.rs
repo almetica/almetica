@@ -143,15 +143,22 @@ fn left_rotate(word: u32, shift: u32) -> u32 {
 }
 
 mod consts {
-    pub const H: [u32; 5] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476, 0xc3d2_e1f0];
+    pub const H: [u32; 5] = [
+        0x6745_2301,
+        0xefcd_ab89,
+        0x98ba_dcfe,
+        0x1032_5476,
+        0xc3d2_e1f0,
+    ];
     pub const K: [u32; 4] = [0x5a82_7999, 0x6ed9_eba1, 0x8f1b_bcdc, 0xca62_c1d6];
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use byteorder::{ByteOrder, LittleEndian};
     use hex::encode;
+
+    use super::*;
 
     // Helper function
     fn digest_to_hex(msg: &str) -> String {
@@ -167,12 +174,18 @@ mod tests {
 
     #[test]
     fn test_sha1_empty() {
-        assert_eq!("19ea6cf956ddd18a4a08ac1710c6923defc00877", digest_to_hex(""));
+        assert_eq!(
+            "19ea6cf956ddd18a4a08ac1710c6923defc00877",
+            digest_to_hex("")
+        );
     }
 
     #[test]
     fn test_sha1_hello_world() {
-        assert_eq!("c382ce9f95c18748a2b3403b85183e88a6a84f0c", digest_to_hex("hello world"));
+        assert_eq!(
+            "c382ce9f95c18748a2b3403b85183e88a6a84f0c",
+            digest_to_hex("hello world")
+        );
         assert_eq!(
             "cd4df1db2c067776df20233f305e1c8bb9101d94",
             digest_to_hex("hello, world")

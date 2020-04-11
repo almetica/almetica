@@ -23,7 +23,7 @@ pub fn run(
                 connection_id,
                 packet,
             } => {
-                handle_set_visible_range(&connection_id, &packet, &mut settings, &mut entities);
+                handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
             }
             _ => { /* Ignore all other events */ }
         }
@@ -31,12 +31,12 @@ pub fn run(
 }
 
 fn handle_set_visible_range(
-    connection_id: &Option<EntityId>,
+    connection_id: Option<EntityId>,
     packet: &CSetVisibleRange,
     mut settings: &mut ViewMut<Settings>,
     entities: &mut Entities,
 ) {
-    if let Some(connection_id) = *connection_id {
+    if let Some(connection_id) = connection_id {
         let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 

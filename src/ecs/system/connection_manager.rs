@@ -688,7 +688,7 @@ mod tests {
             entities.add_entity(
                 &mut events,
                 IncomingEvent(Arc::new(Event::RequestCheckVersion {
-                    connection_id: con.clone(),
+                    connection_id: con,
                     packet: CCheckVersion {
                         version: vec![
                             CCheckVersionEntry {
@@ -706,7 +706,7 @@ mod tests {
             entities.add_entity(
                 &mut events,
                 IncomingEvent(Arc::new(Event::RequestLoginArbiter {
-                    connection_id: con.clone(),
+                    connection_id: con,
                     packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![

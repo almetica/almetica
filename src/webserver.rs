@@ -15,13 +15,17 @@ pub async fn run(pool: Pool, config: Configuration) {
     let routes = api.with(warp::log("almetica::webserver"));
 
     let listen_string = format!("{}:{}", config.server.hostname, config.server.web_port);
-    let listen_addr: SocketAddr = listen_string.parse().expect("Unable to parse listen address");
+    let listen_addr: SocketAddr = listen_string
+        .parse()
+        .expect("Unable to parse listen address");
 
     // Sadly, warp doesn't have a method to start with a `Result` return type. It loves to panic.
     warp::serve(routes).run(listen_addr).await;
 }
 
-fn with_db_pool(pool: Pool) -> impl Filter<Extract = (Pool,), Error = std::convert::Infallible> + Clone {
+fn with_db_pool(
+    pool: Pool,
+) -> impl Filter<Extract = (Pool,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || pool.clone())
 }
 

@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_read_datacenter_file() -> Result<()> {
-        let size = 1024 * 1024 * 1;
+        let size = 1024 * 1024;
         let key = hex::decode("1A8ED266690CCF664A741C4CA9D4944E")?;
         let iv = hex::decode("527DE56BB0A2C60DA879A01B8194DC12")?;
 
