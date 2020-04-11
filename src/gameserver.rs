@@ -8,14 +8,14 @@ use tracing::{error, info, info_span, warn};
 use tracing_futures::Instrument;
 
 use crate::config::Configuration;
-use crate::ecs::event::Event;
+use crate::ecs::event::EcsEvent;
 use crate::protocol::opcode::Opcode;
 use crate::protocol::GameSession;
 use crate::Result;
 
 /// Main loop for the game server
 pub async fn run(
-    global_channel: Sender<Arc<Event>>,
+    global_channel: Sender<EcsEvent>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,
@@ -39,12 +39,19 @@ pub async fn run(
                     let _enter = span.enter();
 
                     info!("Incoming connection");
-                    match GameSession::new(&mut socket, thread_channel, thread_opcode_map, thread_reverse_map).await {
+                    match GameSession::new(
+                        &mut socket,
+                        thread_channel,
+                        thread_opcode_map,
+                        thread_reverse_map,
+                    )
+                    .await
+                    {
                         Ok(mut session) => {
-                            let connection = session.connection;
+                            let connection_id = session.connection_id;
                             match session
                                 .handle_connection()
-                                .instrument(info_span!("connection", connection = %connection))
+                                .instrument(info_span!("connection", connection = ?connection_id))
                                 .await
                             {
                                 Ok(_) => info!("Closed connection"),

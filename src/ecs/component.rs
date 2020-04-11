@@ -1,15 +1,16 @@
 /// Module holds the components that the ECS use.
-use std::sync::Arc;
 use std::time::Instant;
 
-use crate::ecs::event::Event;
+use shipyard::prelude::EntityId;
+
+use crate::ecs::event::EcsEvent;
 use crate::model::Region;
 
-/// A single event emitted inside the ECS.
-pub type SingleEvent = Arc<Event>;
+/// Incoming event.
+pub struct IncomingEvent(pub EcsEvent);
 
-/// A batch event. Mainly used to send packets in a special order to the client.
-pub type BatchEvent = Vec<Arc<Event>>;
+/// Outgoing event.
+pub struct OutgoingEvent(pub EcsEvent);
 
 /// Tracks the connection and login information of an user.
 pub struct Connection {
@@ -20,7 +21,10 @@ pub struct Connection {
     pub waiting_for_pong: bool,
 }
 
-/// Holds the configuration settings of a user that are needed at runtime
+/// Holds the connection entity id from the global world for using in a local world.
+pub struct ConnectionID(pub EntityId);
+
+/// Holds the configuration settings of a user that are needed at runtime.
 pub struct Settings {
     pub visibility_range: u32,
 }

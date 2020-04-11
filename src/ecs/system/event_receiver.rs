@@ -1,93 +1,88 @@
-use legion::systems::schedule::Schedulable;
-use legion::systems::SystemBuilder;
-use tokio::sync::mpsc::error::TryRecvError;
-use tracing::{debug, error, info_span};
-
 /// Event receiver dispatches the events from the Request channel into the ECS.
-use crate::ecs::event::EventKind;
-use crate::ecs::resource::EventRxChannel;
-use crate::ecs::tag;
+use shipyard::prelude::*;
+use tokio::sync::mpsc::error::TryRecvError;
+use tracing::{debug, error, info_span, trace};
 
-pub fn init(world_id: usize) -> Box<dyn Schedulable> {
-    SystemBuilder::new("EventReceiver")
-        .write_resource::<EventRxChannel>()
-        .build(move |command_buffer, _world, event_channel, _queries| {
-            let span = info_span!("world", world_id);
-            let _enter = span.enter();
+use crate::ecs::component::OutgoingEvent;
+use crate::ecs::resource::{EventRxChannel, WorldId};
 
-            loop {
-                match event_channel.channel.try_recv() {
-                    Ok(event) => {
-                        debug!("Received event {}", event);
-                        command_buffer
-                            .start_entity()
-                            .with_tag((tag::EventKind(EventKind::Request),))
-                            .with_component((event,))
-                            .build();
+#[system(EventReceiver)]
+pub fn run(
+    mut outgoing_events: &mut OutgoingEvent,
+    mut entities: &mut Entities,
+    mut event_channel: Unique<&mut EventRxChannel>,
+    world_id: Unique<&WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
+
+    loop {
+        match event_channel.channel.try_recv() {
+            Ok(event) => {
+                debug!("Created incoming event {}", event);
+                trace!("Event data: {:?}", event);
+                entities.add_entity(&mut outgoing_events, OutgoingEvent(event));
+            }
+            Err(e) => {
+                match e {
+                    TryRecvError::Empty => {
+                        /* Nothing to do */
+                        return;
                     }
-                    Err(e) => {
-                        match e {
-                            TryRecvError::Empty => {
-                                /* Nothing to do */
-                                return;
-                            }
-                            TryRecvError::Closed => {
-                                error!("Request channel was closed");
-                            }
-                        }
+                    TryRecvError::Closed => {
+                        error!("Request channel was closed");
                     }
                 }
             }
-        })
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use legion::prelude::*;
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
+    use shipyard::prelude::*;
     use tokio::sync::mpsc::channel;
 
-    use crate::ecs::component::SingleEvent;
     use crate::ecs::event::Event;
     use crate::ecs::resource::EventRxChannel;
     use crate::protocol::packet::CCheckVersion;
 
     use super::*;
 
-    fn setup() -> (World, Schedule) {
+    fn setup() -> World {
         let world = World::new();
-        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
-        (world, schedule)
+        world.add_unique(WorldId(0));
+        world
     }
 
     #[test]
     fn test_event_receiving() {
-        let (mut world, mut schedule) = setup();
+        let world = setup();
 
         let (mut tx_channel, rx_channel) = channel(10);
-        let mut resources = Resources::default();
-        resources.insert(EventRxChannel { channel: rx_channel });
+
+        world.add_unique(EventRxChannel {
+            channel: rx_channel,
+        });
 
         tx_channel
             .try_send(Arc::new(Event::RequestCheckVersion {
-                connection: None,
+                connection_id: None,
                 packet: CCheckVersion { version: vec![] },
             }))
             .unwrap();
         tx_channel
             .try_send(Arc::new(Event::RequestCheckVersion {
-                connection: None,
+                connection_id: None,
                 packet: CCheckVersion { version: vec![] },
             }))
             .unwrap();
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<EventReceiver>();
 
-        let query = <(Read<SingleEvent>,)>::query();
-        let count = query.iter(&world).count();
+        let count = world.borrow::<&OutgoingEvent>().iter().count();
         assert_eq!(2, count);
     }
 }

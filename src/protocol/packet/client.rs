@@ -1,7 +1,7 @@
 /// Module for client network packages.
-use crate::model::Region;
-
 use serde::{Deserialize, Serialize};
+
+use crate::model::Region;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {
@@ -46,9 +46,10 @@ pub struct CSetVisibleRange {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use super::*;
     use crate::model::Region;
     use crate::protocol::serde::{from_vec, to_vec, Error};
+
+    use super::*;
 
     packet_test!(
         name: test_c_check_version,

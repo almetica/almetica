@@ -2,20 +2,18 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
-use legion::entity::Entity;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
+use shipyard::EntityId;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::delay_for;
 use tracing::{debug, error, info, trace, warn};
 
-use opcode::Opcode;
-
 use crate::crypt::CryptSession;
-use crate::ecs::component::SingleEvent;
-use crate::ecs::event::{Event, EventTarget};
+use crate::ecs::event::{EcsEvent, Event, EventTarget};
+use crate::protocol::opcode::Opcode;
 use crate::*;
 
 /// Module that implements the network protocol used by TERA.
@@ -25,26 +23,26 @@ pub mod serde;
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
-    pub connection: Entity,
+    pub connection_id: EntityId,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
     opcode_table: Arc<Vec<Opcode>>,
     reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     // Sending channel TO the global world
-    global_request_channel: Sender<SingleEvent>,
+    global_request_channel: Sender<EcsEvent>,
     // Receiving channel FROM the global world
-    global_response_channel: Receiver<SingleEvent>,
+    global_response_channel: Receiver<EcsEvent>,
     // Sending channel TO the instance world
-    _instance_request_channel: Option<Sender<SingleEvent>>,
+    _instance_request_channel: Option<Sender<EcsEvent>>,
     // Receiving channel FROM the instance world
-    _instance_response_channel: Option<Receiver<SingleEvent>>,
+    _instance_response_channel: Option<Receiver<EcsEvent>>,
 }
 
 impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
     pub async fn new(
         stream: &'a mut TcpStream,
-        mut global_request_channel: Sender<SingleEvent>,
+        mut global_request_channel: Sender<EcsEvent>,
         opcode_table: Arc<Vec<Opcode>>,
         reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     ) -> Result<GameSession<'a>> {
@@ -55,18 +53,21 @@ impl<'a> GameSession<'a> {
         let (tx_response_channel, mut rx_response_channel) = channel(128);
         global_request_channel
             .send(Arc::new(Event::RequestRegisterConnection {
-                connection: None,
+                connection_id: None,
                 response_channel: tx_response_channel,
             }))
             .await?;
         // Wait for the global ECS to return an uid for the connection.
         let message = rx_response_channel.recv().await;
-        let connection = GameSession::parse_connection(message).await?;
+        let connection_id = GameSession::parse_connection(message).await?;
 
-        info!("Game session initialized under entity ID {}", connection);
+        info!(
+            "Game session initialized under entity ID {:?}",
+            connection_id
+        );
 
         Ok(GameSession {
-            connection,
+            connection_id,
             stream,
             cipher,
             opcode_table,
@@ -123,11 +124,11 @@ impl<'a> GameSession<'a> {
     }
 
     /// Reads the message from the global world message and returns the connection.
-    async fn parse_connection(message: Option<SingleEvent>) -> Result<Entity> {
+    async fn parse_connection(message: Option<EcsEvent>) -> Result<EntityId> {
         match message {
             Some(event) => match &*event {
-                Event::ResponseRegisterConnection { connection } => {
-                    if let Some(entity) = connection {
+                Event::ResponseRegisterConnection { connection_id } => {
+                    if let Some(entity) = connection_id {
                         Ok(*entity)
                     } else {
                         Err(Error::EntityNotSet)
@@ -191,7 +192,7 @@ impl<'a> GameSession<'a> {
     }
 
     /// Handles the incoming messages that could contain Response events or normal events.
-    async fn handle_message(&mut self, message: Option<SingleEvent>) -> Result<()> {
+    async fn handle_message(&mut self, message: Option<EcsEvent>) -> Result<()> {
         match message {
             Some(event) => {
                 if let Event::ResponseDropConnection { .. } = &*event {
@@ -241,7 +242,10 @@ impl<'a> GameSession<'a> {
                 }
             }
             None => {
-                error!("Can't find opcode {:?} in reverse mapping. Dropping packet.", opcode);
+                error!(
+                    "Can't find opcode {:?} in reverse mapping. Dropping packet.",
+                    opcode
+                );
             }
         }
         Ok(())
@@ -254,7 +258,7 @@ impl<'a> GameSession<'a> {
             Opcode::UNKNOWN => {
                 warn!("Unmapped and unhandled packet with opcode value {}", opcode);
             }
-            _ => match Event::new_from_packet(self.connection, opcode_type, packet_data) {
+            _ => match Event::new_from_packet(self.connection_id, opcode_type, packet_data) {
                 Ok(event) => {
                     debug!("Received valid packet {:?}", opcode_type);
                     match event.target() {
@@ -265,7 +269,10 @@ impl<'a> GameSession<'a> {
                             // TODO send to the local world
                         }
                         EventTarget::Connection => {
-                            error!("Can't send event {} with target Connection from a connection", event);
+                            error!(
+                                "Can't send event {} with target Connection from a connection",
+                                event
+                            );
                         }
                     }
                 }
@@ -273,7 +280,10 @@ impl<'a> GameSession<'a> {
                     Error::NoEventMappingForPacket => {
                         warn!("No mapping found for packet {:?}", opcode_type);
                     }
-                    _ => error!("Can't create event from valid packet {:?}: {:?}", opcode_type, e),
+                    _ => error!(
+                        "Can't create event from valid packet {:?}: {:?}",
+                        opcode_type, e
+                    ),
                 },
             },
         }
@@ -287,7 +297,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use byteorder::{ByteOrder, LittleEndian};
-    use legion::prelude::{Entity, World};
+    use shipyard::prelude::*;
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::mpsc::channel;
     use tokio::task;
@@ -321,22 +331,22 @@ mod tests {
         Ok((table, reverse_map))
     }
 
-    fn get_new_entity_with_connection_component() -> Entity {
-        let mut world = World::new();
+    fn get_new_entity_with_connection_component() -> EntityId {
+        let world = World::new();
 
-        // FIXME There currently isn't a good insert method for one entity.
-        let entities = world.insert(
-            (),
-            vec![(Connection {
+        let (mut entities, mut connections) = world.borrow::<(EntitiesMut, &mut Connection)>();
+        let connection_id = entities.add_entity(
+            &mut connections,
+            Connection {
                 verified: false,
                 version_checked: false,
                 region: None,
                 last_pong: Instant::now(),
                 waiting_for_pong: false,
-            },)],
+            },
         );
 
-        entities[0]
+        connection_id
     }
 
     async fn spawn_dummy_server() -> Result<(SocketAddr, JoinHandle<()>, JoinHandle<()>)> {
@@ -361,14 +371,19 @@ mod tests {
 
         // World loop mock
         let world_join = tokio::spawn(async move {
-            let connection = Some(get_new_entity_with_connection_component());
+            let connection_id = Some(get_new_entity_with_connection_component());
             loop {
                 task::yield_now().await;
                 if let Some(event) = rx_channel.recv().await {
                     match &*event {
-                        RequestRegisterConnection { response_channel, .. } => {
+                        RequestRegisterConnection {
+                            response_channel, ..
+                        } => {
                             let mut tx = response_channel.clone();
-                            assert_ok!(tx.send(Arc::new(ResponseRegisterConnection { connection })).await);
+                            assert_ok!(
+                                tx.send(Arc::new(ResponseRegisterConnection { connection_id }))
+                                    .await
+                            );
                             break;
                         }
                         _ => break,
@@ -401,7 +416,12 @@ mod tests {
         OsRng.fill_bytes(&mut client_key1);
         OsRng.fill_bytes(&mut client_key2);
 
-        if let Err(e) = timeout(Duration::from_millis(100), stream.write_all(client_key1.as_mut_slice())).await {
+        if let Err(e) = timeout(
+            Duration::from_millis(100),
+            stream.write_all(client_key1.as_mut_slice()),
+        )
+        .await
+        {
             panic!("{}", e);
         }
 
@@ -414,7 +434,12 @@ mod tests {
             panic!("{}", e);
         }
 
-        if let Err(e) = timeout(Duration::from_millis(100), stream.write_all(client_key2.as_mut_slice())).await {
+        if let Err(e) = timeout(
+            Duration::from_millis(100),
+            stream.write_all(client_key2.as_mut_slice()),
+        )
+        .await
+        {
             panic!("{}", e);
         }
 

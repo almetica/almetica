@@ -1,9 +1,10 @@
 /// Implements the serialization of the TERA network protocol using serde.
 use std::collections::HashMap;
 
-use super::{Error, Result};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use serde::{ser, Serialize};
+
+use super::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct Serializer {
@@ -136,17 +137,29 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_bool(self, value: bool) -> Result<()> {
         let val: u8 = if value { 0x1 } else { 0x0 };
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(val);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(val);
         Ok(())
     }
 
     fn serialize_u8(self, value: u8) -> Result<()> {
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(value);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(value);
         Ok(())
     }
 
     fn serialize_i8(self, value: i8) -> Result<()> {
-        self.nodes.get_mut(&self.current_node).unwrap().data.push(value as u8);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(value as u8);
         Ok(())
     }
 
@@ -216,7 +229,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
         // Write u16 data length
         let data_length = new_node.data.len() as u16;
-        parent_node.data.write_u16::<LittleEndian>(data_length).unwrap();
+        parent_node
+            .data
+            .write_u16::<LittleEndian>(data_length)
+            .unwrap();
 
         self.nodes.insert(num_node, new_node);
         Ok(())
@@ -238,10 +254,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     // Enum
-    fn serialize_unit_variant(self, _name: &'static str, variant_index: u32, _variant: &'static str) -> Result<()> {
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+    ) -> Result<()> {
         let mut buf = vec![0; 4];
         LittleEndian::write_u32(&mut buf, variant_index);
-        self.nodes.get_mut(&self.current_node).unwrap().data.append(&mut buf);
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .append(&mut buf);
         Ok(())
     }
 
@@ -287,7 +312,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             parent_node.childs.push(num_node);
 
             // Write u16 count in parent data buffer
-            parent_node.data.write_u16::<LittleEndian>(length as u16).unwrap();
+            parent_node
+                .data
+                .write_u16::<LittleEndian>(length as u16)
+                .unwrap();
             // Write u16 offset as dummy in parent data buffer
             parent_node.data.write_u16::<LittleEndian>(0xfefe).unwrap();
 
@@ -307,7 +335,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(self)
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         Ok(self)
     }
 
@@ -479,8 +511,9 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 // The serializer and deserializer are tested in the packet definition with real world data.
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde::Serialize;
+
+    use super::*;
 
     #[test]
     fn test_primitive_struct() -> Result<(), Error> {

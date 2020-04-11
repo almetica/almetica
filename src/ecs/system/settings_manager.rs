@@ -1,53 +1,55 @@
 /// The settings manager handles the settings of an account (UI/Chat/Visibility etc.).
-use legion::prelude::{tag_value, CommandBuffer, Entity, IntoQuery, Read};
-use legion::systems::schedule::Schedulable;
-use legion::systems::{SubWorld, SystemBuilder};
+use shipyard::prelude::*;
 use tracing::{debug, error, info_span};
 
-use crate::ecs::component::{Settings, SingleEvent};
-use crate::ecs::event::{Event, EventKind};
-use crate::ecs::tag;
+use crate::ecs::component::{IncomingEvent, Settings};
+use crate::ecs::event::Event;
+use crate::ecs::resource::WorldId;
 use crate::protocol::packet::CSetVisibleRange;
 
-pub fn init(world_id: usize) -> Box<dyn Schedulable> {
-    SystemBuilder::new("ConnectionManager")
-        .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
-        .write_component::<Settings>()
-        .build(move |mut command_buffer, mut world, _resources, queries| {
-            let span = info_span!("world", world_id);
-            let _enter = span.enter();
+#[system(SettingsManager)]
+pub fn run(
+    events: &IncomingEvent,
+    mut settings: &mut Settings,
+    mut entities: &mut Entities,
+    world_id: Unique<&WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-            for event in queries.iter(&*world) {
-                match &**event {
-                    Event::RequestSetVisibleRange { connection, packet } => {
-                        handle_set_visible_range(*connection, &packet, &mut world, &mut command_buffer);
-                    }
-                    _ => { /* Ignore all other events */ }
-                }
+    (&events).iter().for_each(|event| {
+        match &*event.0 {
+            Event::RequestSetVisibleRange {
+                connection_id,
+                packet,
+            } => {
+                handle_set_visible_range(&connection_id, &packet, &mut settings, &mut entities);
             }
-        })
+            _ => { /* Ignore all other events */ }
+        }
+    });
 }
 
 fn handle_set_visible_range(
-    connection: Option<Entity>,
+    connection_id: &Option<EntityId>,
     packet: &CSetVisibleRange,
-    world: &mut SubWorld,
-    command_buffer: &mut CommandBuffer,
+    mut settings: &mut ViewMut<Settings>,
+    entities: &mut Entities,
 ) {
-    if let Some(connection) = connection {
-        let span = info_span!("connection", %connection);
+    if let Some(connection_id) = *connection_id {
+        let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 
         debug!("Set visible range event incoming");
 
-        // TODO most likely the local world need to know of this values. Send this value once the user enters the local world.
-        if let Some(mut component) = world.get_component_mut::<Settings>(connection) {
-            component.visibility_range = packet.range;
+        // TODO The local world need to know of this values. Send this value once the user enters the local world.
+        if let Ok(mut settings) = (&mut settings).get(connection_id) {
+            settings.visibility_range = packet.range;
         } else {
-            let settings = Settings {
+            let user_settings = Settings {
                 visibility_range: packet.range,
             };
-            command_buffer.start_entity().with_component((settings,)).build();
+            entities.add_entity(settings, user_settings);
         }
     } else {
         error!("Entity of the connection for set visible range event was not set");
@@ -59,60 +61,54 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant;
 
-    use legion::prelude::{Resources, World};
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
-    use serial_test::serial;
+    use shipyard::prelude::*;
+
+    use crate::ecs::component::Connection;
+    use crate::ecs::event::Event;
 
     use super::*;
-    use crate::ecs::component::Connection;
-    use crate::ecs::event::{self, Event};
-    use crate::ecs::tag::EventKind;
 
-    fn setup() -> (World, Schedule, Entity, Resources) {
-        let mut world = World::new();
+    fn setup() -> (World, EntityId) {
+        let world = World::new();
+        world.add_unique(WorldId(0));
 
-        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
-
-        // FIXME There currently isn't a good insert method for one entity.
-        let entities = world.insert(
-            (),
-            (0..1).map(|_| {
-                (Connection {
-                    verified: false,
-                    version_checked: false,
-                    region: None,
-                    last_pong: Instant::now(),
-                    waiting_for_pong: false,
-                },)
-            }),
+        let connection_id = world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
+            |(mut entities, mut connections)| {
+                entities.add_entity(
+                    &mut connections,
+                    Connection {
+                        verified: false,
+                        version_checked: false,
+                        region: None,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
+            },
         );
-        let connection = entities[0];
-        let resources = Resources::default();
 
-        (world, schedule, connection, resources)
+        (world, connection_id)
     }
 
     #[test]
-    #[serial]
     fn test_set_visible_range() {
-        let (mut world, mut schedule, connection, mut resources) = setup();
+        let (world, connection_id) = setup();
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestSetVisibleRange {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestSetVisibleRange {
+                    connection_id: Some(connection_id),
                     packet: CSetVisibleRange { range: 4234 },
-                }),)
-            }),
-        );
+                })),
+            );
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<SettingsManager>();
 
-        let query = <Read<Settings>>::query();
-        let valid_component_count = query
-            .iter(&world)
+        let valid_component_count = world
+            .borrow::<&Settings>()
+            .iter()
             .filter(|component| component.visibility_range > 0)
             .count();
 

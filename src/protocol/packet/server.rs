@@ -1,7 +1,7 @@
 /// Module for server network packages.
-use crate::model::{Class, Customization, Gender, Race, Region, Vec3, Vec3a};
-
 use serde::{Deserialize, Serialize};
+
+use crate::model::{Class, Customization, Gender, Race, Region, Vec3, Vec3a};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageList {
@@ -70,11 +70,14 @@ pub struct SGetUserListCharacter {
     pub face: i32,
     pub appearance: Customization,
     pub is_second_character: bool,
-    pub admin_level: i32, // >0 = [GM] tag added to name
+    pub admin_level: i32,
+    // >0 = [GM] tag added to name
     pub is_banned: bool,
     pub ban_end_time: i64,
-    pub ban_remain_sec: i32, // -1 = Permanent
-    pub rename_needed: i32,  // 0 = no, 1 = yes. Client will ask the player to rename the character once selected.
+    pub ban_remain_sec: i32,
+    // -1 = Permanent
+    pub rename_needed: i32,
+    // 0 = no, 1 = yes. Client will ask the player to rename the character once selected.
     pub weapon_model: i32,
     pub unk_model2: i32,
     pub unk_model3: i32,
@@ -123,12 +126,15 @@ pub struct SGetUserListCharacter {
     pub style_back_translation_debug: Vec3,
     pub used_style_head_transform: bool,
     pub is_new_character: bool,
-    pub tutorial_state: i32, // TODO research what it does
+    pub tutorial_state: i32,
+    // TODO research what it does
     pub show_style: bool,
     pub appearance2: i32,
     pub achievement_points: i32,
-    pub laurel: i32,   // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
-    pub position: i32, // 1..characterCount (position in character selection screen)
+    pub laurel: i32,
+    // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
+    pub position: i32,
+    // 1..characterCount (position in character selection screen)
     pub guild_logo_id: i32,
     pub awakening_level: i32,
     pub has_broker_sales: bool,
@@ -209,8 +215,9 @@ pub struct SRemainPlayTime {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use super::*;
     use crate::protocol::serde::{from_vec, to_vec, Error};
+
+    use super::*;
 
     packet_test!(
         name: test_s_account_package_list,

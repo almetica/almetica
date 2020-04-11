@@ -1,18 +1,21 @@
 /// Module that hold the definitions for Resources used by the ECS.
 use std::collections::HashMap;
 
-use crate::ecs::component::SingleEvent;
-
-use legion::entity::Entity;
+use shipyard::prelude::EntityId;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+use crate::ecs::event::EcsEvent;
+
 /// Holds the Receiver channel of a world.
-// We use an arc to not copy the event data between the threads.
 pub struct EventRxChannel {
-    pub channel: Receiver<SingleEvent>,
+    pub channel: Receiver<EcsEvent>,
 }
 
-/// Holds the uid to response channel mapping
-pub struct ConnectionMapping {
-    pub map: HashMap<Entity, Sender<SingleEvent>>,
-}
+/// Holds the Entity to response channel mapping
+pub struct ConnectionMapping(pub HashMap<EntityId, Sender<EcsEvent>>);
+
+/// Holds a list with EntityIds marked for deletion.
+#[derive(Clone)]
+pub struct DeletionList(pub Vec<EntityId>);
+
+pub struct WorldId(pub u64);

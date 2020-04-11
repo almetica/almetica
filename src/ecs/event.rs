@@ -1,28 +1,32 @@
 /// Events that are handled / emitted by the ECS.
 ///
+/// Events are only to be used for communication between
+/// ECS and connections (and ECS to ECS). They are not to be used for ECS internal communcation.
+/// For this, you should use other components.
+///
 /// There are packet and system events.
+/// System Events are special events that don't send out a packet to the client and are normally
+/// handling the state between the server systems.
 ///
-/// A request can either be for the local or for the global ECS.
+/// A event always has a target: Global ECS, local ECS or a connection.
 ///
-/// We also differentiate if a Event is an request or a response (from the ECS
-/// perspective).
+/// Messages from the connections  to the ECS are always requests.
+/// Messages from the ECS to the Connections are always responses.
+/// Messages between the ECS can be either request or response.
+///
 use std::fmt;
 use std::sync::Arc;
 
-use super::super::protocol::opcode::Opcode;
-use super::super::protocol::packet::*;
-use super::super::protocol::serde::{from_vec, to_vec};
-use super::super::{Error, Result};
-
-use legion::prelude::Entity;
+use shipyard::prelude::*;
 use tokio::sync::mpsc::Sender;
 
-/// The kind of an the event.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum EventKind {
-    Request,
-    Response,
-}
+use crate::protocol::opcode::Opcode;
+use crate::protocol::packet::*;
+use crate::protocol::serde::{from_vec, to_vec};
+use crate::{Error, Result};
+
+/// EcsEvent events. We use `Arc` so that we don't need to copy packet data around.
+pub type EcsEvent = Arc<Event>;
 
 /// The target of the event.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,39 +39,39 @@ pub enum EventTarget {
 macro_rules! assemble_event {
     (
     Packet Events {
-        $($p_ty:ident{packet: $p_packet_type:ty $(, $p_arg_name:ident: $p_arg_type:ty)*}, $p_opcode:ident, $p_kind:ident, $p_target:ident;)*
+        $($p_ty:ident{packet: $p_packet_type:ty $(, $p_arg_name:ident: $p_arg_type:ty)*}, $p_opcode:ident, $p_target:ident;)*
     }
     System Events {
-        $($e_ty:ident{$($e_arg_name:ident: $e_arg_type:ty)*}, $e_kind:ident, $e_target:ident;)*
+        $($e_ty:ident{$($e_arg_name:ident: $e_arg_type:ty)*}, $e_target:ident;)*
     }
     ) => {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
-            $($p_ty {connection: Option<Entity>, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
-            $($e_ty {connection: Option<Entity>, $($e_arg_name: $e_arg_type),*},)*
+            $($p_ty {connection_id: Option<EntityId>, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
+            $($e_ty {connection_id: Option<EntityId>, $($e_arg_name: $e_arg_type),*},)*
         }
 
         impl Event {
             /// Creates a new Request/Response event for the given opcode & packet data.
-            pub fn new_from_packet(connection: Entity, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
+            pub fn new_from_packet(connection_id: EntityId, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
                 match opcode {
                     $(Opcode::$p_opcode => {
                         let packet = from_vec(packet_data)?;
-                        Ok(Event::$p_ty{connection: Some(connection), packet})
+                        Ok(Event::$p_ty{connection_id: Some(connection_id), packet})
                     },)*
                     _ => Err(Error::NoEventMappingForPacket),
                 }
             }
 
-            /// Get the connection of a packet event.
-            pub fn connection(&self) -> Option<Entity> {
+            /// Get the connection id of a packet event.
+            pub fn connection_id(&self) -> Option<EntityId> {
                 match self {
-                    $(Event::$p_ty{connection,..} => {
-                        *connection
+                    $(Event::$p_ty{connection_id,..} => {
+                        *connection_id
                     },)*
-                    $(Event::$e_ty{connection,..} => {
-                        *connection
+                    $(Event::$e_ty{connection_id,..} => {
+                        *connection_id
                     },)*
                 }
             }
@@ -100,14 +104,6 @@ macro_rules! assemble_event {
                     $(Event::$e_ty{..} => EventTarget::$e_target,)*
                 }
             }
-
-            /// Get the kind of the event (Request or Response).
-            pub fn kind(&self) -> EventKind {
-                match self {
-                    $(Event::$p_ty{..} => EventKind::$p_kind,)*
-                    $(Event::$e_ty{..} => EventKind::$e_kind,)*
-                }
-            }
         }
 
         impl fmt::Display for Event {
@@ -123,54 +119,57 @@ macro_rules! assemble_event {
 
 assemble_event! {
     Packet Events {
-        RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Request, Global;
-        ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Response, Connection;
-        RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Request, Global;
-        ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Response, Connection;
-        ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Response, Connection;
-        ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Response, Connection;
-        ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Response, Connection;
-        RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Request, Global;
-        RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Request, Global;
-        ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Request, Global;
-        RequestPong{packet: CPong}, C_PONG, Request, Global;
-        ResponsePing{packet: SPing}, S_PING, Response, Connection;
+        RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Global;
+        ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Connection;
+        RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Global;
+        ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Connection;
+        ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Connection;
+        ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Connection;
+        ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Connection;
+        RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Global;
+        RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Global;
+        ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Global;
+        RequestPong{packet: CPong}, C_PONG, Global;
+        ResponsePing{packet: SPing}, S_PING, Connection;
     }
     System Events {
         // Registers the response channel of a connection at a world.
-        RequestRegisterConnection{response_channel: Sender<Arc<Event>>}, Request, Global;
+        RequestRegisterConnection{response_channel: Sender<Arc<Event>>}, Global;
         // The connection will get it's uid returned with this message after registration.
-        ResponseRegisterConnection{}, Response, Connection;
+        ResponseRegisterConnection{}, Connection;
         // The connection will be dropped after it receive this message.
-        ResponseDropConnection{}, Response, Connection;
+        ResponseDropConnection{}, Connection;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use shipyard::prelude::*;
+    use tokio::sync::mpsc::channel;
+
     use crate::model::Region;
     use crate::protocol::opcode::Opcode;
     use crate::Error;
-    use legion::prelude::World;
-    use tokio::sync::mpsc::channel;
+
+    use super::*;
 
     #[test]
     fn test_opcode_mapping() -> Result<(), Error> {
-        let mut world = World::new();
-        let entities = world.insert((), vec![(1,)]);
-        let entity_id = entities[0];
+        let world = World::new();
+
+        let entity = world.borrow::<EntitiesMut>().add_entity((), ());
 
         let data = vec![
-            0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0, 0x14, 0x0, 0x0, 0x0,
-            0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
+            0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0,
+            0x14, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
-        let event = Event::new_from_packet(entity_id, Opcode::C_CHECK_VERSION, data)?;
+        let event = Event::new_from_packet(entity, Opcode::C_CHECK_VERSION, data)?;
         if let Event::RequestCheckVersion {
-            connection: _entity_id,
+            connection_id: entity_id,
             packet,
         } = event
         {
+            assert_eq!(entity_id, Some(entity));
             assert_eq!(0, packet.version[0].index);
             assert_eq!(363_037, packet.version[0].value);
             assert_eq!(1, packet.version[1].index);
@@ -184,7 +183,7 @@ mod tests {
     #[test]
     fn test_target_global() -> Result<(), Error> {
         let org = Event::RequestLoginArbiter {
-            connection: None,
+            connection_id: None,
             packet: CLoginArbiter {
                 master_account_name: "test".to_string(),
                 ticket: vec![],
@@ -201,7 +200,7 @@ mod tests {
     #[test]
     fn test_target_connection() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
-            connection: None,
+            connection_id: None,
             packet: SCheckVersion { ok: true },
         };
         assert_eq!(EventTarget::Connection, org.target());
@@ -211,7 +210,7 @@ mod tests {
     #[test]
     fn test_event_opcode_some() -> Result<(), Error> {
         let org = Event::ResponseCheckVersion {
-            connection: None,
+            connection_id: None,
             packet: SCheckVersion { ok: true },
         };
         assert_eq!(Some(Opcode::S_CHECK_VERSION), org.opcode());
@@ -222,7 +221,7 @@ mod tests {
     fn test_event_opcode_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
         let org = Event::RequestRegisterConnection {
-            connection: None,
+            connection_id: None,
             response_channel,
         };
 
@@ -231,33 +230,16 @@ mod tests {
     }
 
     #[test]
-    fn test_event_kind() -> Result<(), Error> {
-        let org = Event::RequestLoginArbiter {
-            connection: None,
-            packet: CLoginArbiter {
-                master_account_name: "test".to_string(),
-                ticket: vec![],
-                unk1: 0,
-                unk2: 0,
-                region: Region::Europe,
-                patch_version: 0,
-            },
-        };
-        assert_eq!(EventKind::Request, org.kind());
-        Ok(())
-    }
-
-    #[test]
     fn test_event_connection_some() -> Result<(), Error> {
-        let mut world = World::new();
-        let entities = world.insert((), vec![(1,)]);
-        let entity_id = entities[0];
+        let world = World::new();
+
+        let entity = world.borrow::<EntitiesMut>().add_entity((), ());
 
         let org = Event::ResponseCheckVersion {
-            connection: Some(entity_id),
+            connection_id: Some(entity),
             packet: SCheckVersion { ok: true },
         };
-        assert_eq!(Some(entity_id), org.connection());
+        assert_eq!(Some(entity), org.connection_id());
         Ok(())
     }
 
@@ -265,11 +247,11 @@ mod tests {
     fn test_event_connection_none() -> Result<(), Error> {
         let (response_channel, _) = channel(1);
         let org = Event::RequestRegisterConnection {
-            connection: None,
+            connection_id: None,
             response_channel,
         };
 
-        assert_eq!(None, org.connection());
+        assert_eq!(None, org.connection_id());
         Ok(())
     }
 }

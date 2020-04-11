@@ -1,15 +1,10 @@
 #![warn(clippy::all)]
+
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
-use almetica::config::read_configuration;
-use almetica::crypt::CryptSession;
-use almetica::dataloader::load_opcode_mapping;
-use almetica::protocol::opcode::Opcode;
-use almetica::Error;
-use almetica::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use hex::encode;
@@ -18,6 +13,13 @@ use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::Registry;
+
+use almetica::config::read_configuration;
+use almetica::crypt::CryptSession;
+use almetica::dataloader::load_opcode_mapping;
+use almetica::protocol::opcode::Opcode;
+use almetica::Error;
+use almetica::Result;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -39,7 +41,7 @@ fn main() {
 }
 
 fn init_logging() {
-    let fmt_layer = Layer::builder().with_target(true).finish();
+    let fmt_layer = Layer::default().with_target(false);
     let filter_layer = EnvFilter::from_default_env();
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
@@ -56,7 +58,11 @@ fn run() -> Result<()> {
     let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
-            error!("Can't read configuration file {}: {}", &opts.config.display(), e);
+            error!(
+                "Can't read configuration file {}: {}",
+                &opts.config.display(),
+                e
+            );
             return Err(e);
         }
     };
@@ -64,12 +70,19 @@ fn run() -> Result<()> {
         Ok((opcode_mapping, reverse_opcode_mapping)) => {
             info!(
                 "Loaded opcode mapping table with {} entries",
-                opcode_mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+                opcode_mapping
+                    .iter()
+                    .filter(|&op| *op != Opcode::UNKNOWN)
+                    .count()
             );
             (opcode_mapping, reverse_opcode_mapping)
         }
         Err(e) => {
-            error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
+            error!(
+                "Can't read opcode mapping file {}: {:?}",
+                &opts.config.display(),
+                e
+            );
             return Err(e);
         }
     };

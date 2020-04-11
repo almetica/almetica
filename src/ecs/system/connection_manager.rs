@@ -1,107 +1,129 @@
 /// Connection handler handles the connection components.
-use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
-use legion::prelude::*;
-use legion::systems::schedule::Schedulable;
-use legion::systems::{SubWorld, SystemBuilder};
+use shipyard::prelude::*;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, trace};
 
-use crate::ecs::component::{BatchEvent, Connection, SingleEvent};
-use crate::ecs::event::Event;
-use crate::ecs::event::EventKind;
-use crate::ecs::resource::ConnectionMapping;
-use crate::ecs::system::{send_batch_event, send_event};
-use crate::ecs::tag;
+use crate::ecs::component::{Connection, IncomingEvent, OutgoingEvent};
+use crate::ecs::event::{EcsEvent, Event};
+use crate::ecs::resource::{ConnectionMapping, DeletionList, WorldId};
+use crate::ecs::system::send_event;
 use crate::model::Region;
 use crate::protocol::packet::*;
-use crate::*;
 
-pub fn init(world_id: usize) -> Box<dyn Schedulable> {
-    SystemBuilder::new("ConnectionManager")
-        .write_resource::<ConnectionMapping>()
-        .with_query(<Read<SingleEvent>>::query().filter(tag_value(&tag::EventKind(EventKind::Request))))
-        .with_query(<Write<Connection>>::query())
-        .write_component::<SingleEvent>()
-        .write_component::<BatchEvent>()
-        .write_component::<Connection>()
-        .build(move |mut command_buffer, mut world, connection_mapping, queries| {
-            let span = info_span!("world", world_id);
-            let _enter = span.enter();
+#[system(ConnectionManager)]
+pub fn run(
+    incoming_events: &IncomingEvent,
+    mut outgoing_events: &mut OutgoingEvent,
+    mut connections: &mut Connection,
+    mut entities: &mut Entities,
+    mut connection_map: Unique<&mut ConnectionMapping>,
+    mut deletion_list: Unique<&mut DeletionList>,
+    world_id: Unique<&WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-            // SingleEvents
-            for event in queries.0.iter_mut(&mut *world) {
-                match &**event {
-                    Event::RequestRegisterConnection { response_channel, .. } => {
-                        handle_connection_registration(
-                            &mut connection_mapping.map,
-                            response_channel,
-                            &mut command_buffer,
-                        );
-                    }
-                    Event::RequestCheckVersion { connection, packet } => {
-                        if let Err(e) =
-                            handle_request_check_version(*connection, &packet, &mut world, &mut command_buffer)
-                        {
-                            debug!("Can't handle RequestCheckVersion event: {:?}", e);
-                        }
-                    }
-                    Event::RequestLoginArbiter { connection, packet } => {
-                        if let Err(e) =
-                            handle_request_login_arbiter(*connection, &packet, &mut world, &mut command_buffer)
-                        {
-                            debug!("Can't handle RequestLoginArbiter event: {:?}", e);
-                        }
-                    }
-                    Event::RequestPong { connection, .. } => handle_pong(*connection, &mut world),
-                    _ => { /* Ignore all other events */ }
-                }
+    // Incoming events
+    (&incoming_events).iter().for_each(|event| match &*event.0 {
+        Event::RequestRegisterConnection {
+            response_channel, ..
+        } => handle_connection_registration(
+            &response_channel,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+            &mut connection_map,
+        ),
+        Event::RequestCheckVersion {
+            connection_id,
+            packet,
+        } => handle_request_check_version(
+            *connection_id,
+            &packet,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+        ),
+        Event::RequestLoginArbiter {
+            connection_id,
+            packet,
+        } => handle_request_login_arbiter(
+            *connection_id,
+            &packet,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+        ),
+        Event::RequestPong { connection_id, .. } => handle_pong(*connection_id, &mut connections),
+        _ => { /* Ignore all other packets */ }
+    });
+
+    // Connections
+    let now = Instant::now();
+    (&mut connections)
+        .iter()
+        .with_id()
+        .for_each(|(connection_id, mut connection)| {
+            if handle_ping(
+                &now,
+                connection_id,
+                &mut connection,
+                &mut outgoing_events,
+                &mut entities,
+            ) {
+                deletion_list.0.push(connection_id);
             }
-
-            // Connections
-            let now = Instant::now();
-            for (entity, mut connection) in queries.1.iter_entities_mut(&mut *world) {
-                handle_ping(&now, entity, &mut connection, &mut command_buffer);
-            }
-        })
+        });
 }
 
 fn handle_connection_registration(
-    connection_mapping: &mut HashMap<Entity, Sender<SingleEvent>>,
-    response_channel: &Sender<SingleEvent>,
-    mut command_buffer: &mut CommandBuffer,
+    response_channel: &Sender<EcsEvent>,
+    connections: &mut ViewMut<Connection>,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
+    connection_map: &mut UniqueViewMut<ConnectionMapping>,
 ) {
     debug!("Registration event incoming");
 
     // Create a new connection component to properly handle it's state
-    let connection = Connection {
-        verified: false,
-        version_checked: false,
-        region: None,
-        last_pong: Instant::now(),
-        waiting_for_pong: false,
-    };
-    let connection_entity = command_buffer.start_entity().with_component((connection,)).build();
+    let connection_id = entities.add_entity(
+        connections,
+        Connection {
+            verified: false,
+            version_checked: false,
+            region: None,
+            last_pong: Instant::now(),
+            waiting_for_pong: false,
+        },
+    );
 
-    // Create mapping so that the event dispatcher knows which response channel to use.
-    connection_mapping.insert(connection_entity, response_channel.clone());
+    // Create mapping so that the event sender knows which response channel to use.
+    connection_map
+        .0
+        .insert(connection_id, response_channel.clone());
 
-    debug!("Registered connection with entity id {}", connection_entity.index());
+    debug!("Registered connection as {:?}", connection_id);
 
-    send_event(accept_connection_registration(connection_entity), &mut command_buffer);
+    send_event(
+        accept_connection_registration(connection_id),
+        outgoing_events,
+        entities,
+    );
 }
 
 fn handle_request_check_version(
-    connection: Option<Entity>,
+    connection_id: Option<EntityId>,
     packet: &CCheckVersion,
-    world: &mut SubWorld,
-    mut command_buffer: &mut CommandBuffer,
-) -> Result<()> {
-    if let Some(connection) = connection {
-        let span = info_span!("connection", %connection);
+    mut connections: &mut ViewMut<Connection>,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
+) {
+    if let Some(connection_id) = connection_id {
+        let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 
         debug!("Check version event incoming");
@@ -111,99 +133,138 @@ fn handle_request_check_version(
                 "Expected version array to be of length 2 but is {}",
                 packet.version.len()
             );
-            send_event(reject_check_version(connection), &mut command_buffer);
-            return Ok(());
+            send_event(
+                reject_check_version(connection_id),
+                outgoing_events,
+                entities,
+            );
+            return;
         }
 
         // TODO properly do the version verification
-
         trace!(
             "Version 1: {} version 2: {}",
             packet.version[0].value,
             packet.version[1].value
         );
 
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.version_checked = true;
-            check_and_handle_post_initialization(connection, &component, &mut command_buffer);
+        if let Ok(mut connection) = (&mut connections).get(connection_id) {
+            connection.version_checked = true;
+            check_and_handle_post_initialization(
+                connection_id,
+                connection,
+                outgoing_events,
+                entities,
+            );
         } else {
             error!("Could not find connection component for entity");
-            send_event(reject_check_version(connection), &mut command_buffer);
-        }
-        Ok(())
+            send_event(
+                reject_check_version(connection_id),
+                outgoing_events,
+                entities,
+            );
+        };
     } else {
         error!("Entity of the connection for check version event was not set");
-        Err(Error::EntityNotSet)
     }
 }
 
 fn handle_request_login_arbiter(
-    connection: Option<Entity>,
+    connection_id: Option<EntityId>,
     packet: &CLoginArbiter,
-    world: &mut SubWorld,
-    mut command_buffer: &mut CommandBuffer,
-) -> Result<()> {
-    if let Some(connection) = connection {
-        let span = info_span!("connection", %connection);
+    mut connections: &mut ViewMut<Connection>,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
+) {
+    if let Some(connection_id) = connection_id {
+        let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 
         debug!(
             "Login arbiter event incoming for master account: {}",
             packet.master_account_name
         );
-        let ticket = from_utf8(&packet.ticket)?;
-        trace!("Ticket value: {}", ticket);
 
-        // TODO properly handle the request with DB and token verification
-        if ticket.trim().is_empty() {
-            error!("Ticket was empty. Rejecting");
-            send_event(reject_login_arbiter(connection, packet.region), &mut command_buffer);
-        }
+        if let Ok(ticket) = from_utf8(&packet.ticket) {
+            trace!("Ticket value: {}", ticket);
 
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.verified = true;
-            component.region = Some(packet.region);
-            check_and_handle_post_initialization(connection, &component, &mut command_buffer);
+            // TODO properly handle the request with DB and token verification
+            if ticket.trim().is_empty() {
+                error!("Ticket was empty. Rejecting");
+                send_event(
+                    reject_login_arbiter(connection_id, packet.region),
+                    outgoing_events,
+                    entities,
+                );
+                return;
+            }
+
+            if let Ok(mut connection) = (&mut connections).get(connection_id) {
+                connection.verified = true;
+                connection.region = Some(packet.region);
+                check_and_handle_post_initialization(
+                    connection_id,
+                    connection,
+                    outgoing_events,
+                    entities,
+                )
+            } else {
+                error!("Could not find connection component for entity. Rejecting");
+                send_event(
+                    reject_login_arbiter(connection_id, packet.region),
+                    outgoing_events,
+                    entities,
+                );
+            }
         } else {
-            error!("Could not find connection component for entity. Rejecting");
-            send_event(reject_login_arbiter(connection, packet.region), &mut command_buffer);
-        }
-        Ok(())
+            error!("Ticket is not a valid UTF-8 string");
+        };
     } else {
         error!("Entity of the connection for login arbiter event was not set");
-        Err(Error::EntityNotSet)
     }
 }
 
-fn handle_ping(now: &Instant, connection: Entity, component: &mut Connection, command_buffer: &mut CommandBuffer) {
-    let span = info_span!("connection", %connection);
+// Returns true if connection didn't return a ping in time.
+fn handle_ping(
+    now: &Instant,
+    connection_id: EntityId,
+    mut connection: &mut Connection,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
+) -> bool {
+    let span = info_span!("connection", connection = ?connection_id);
     let _enter = span.enter();
 
-    let last_pong_duration = now.duration_since(component.last_pong).as_secs();
+    let last_pong_duration = now.duration_since(connection.last_pong).as_secs();
+
     if last_pong_duration >= 90 {
         debug!("Didn't received pong in 30 seconds. Dropping connection");
-        send_event(assemble_drop_connection(connection), command_buffer);
-        command_buffer.remove_component::<Connection>(connection);
-    } else if !component.waiting_for_pong && last_pong_duration >= 60 {
+        send_event(
+            assemble_drop_connection(connection_id),
+            outgoing_events,
+            entities,
+        );
+        true
+    } else if !connection.waiting_for_pong && last_pong_duration >= 60 {
         debug!("Sending ping");
-        send_event(assemble_ping(connection), command_buffer);
-        component.waiting_for_pong = true;
+        connection.waiting_for_pong = true;
+        send_event(assemble_ping(connection_id), outgoing_events, entities);
+        false
+    } else {
+        false
     }
 }
 
-fn handle_pong(connection: Option<Entity>, world: &mut SubWorld) {
-    if let Some(connection) = connection {
-        let span = info_span!("connection", %connection);
-        let _enter = span.enter();
-
+fn handle_pong(connection_id: Option<EntityId>, mut connections: &mut ViewMut<Connection>) {
+    if let Some(connection_id) = connection_id {
         debug!("Pong event incoming");
 
-        let span = info_span!("connection", %connection);
+        let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.last_pong = Instant::now();
-            component.waiting_for_pong = false;
+        if let Ok(mut connection) = (&mut connections).get(connection_id) {
+            connection.last_pong = Instant::now();
+            connection.waiting_for_pong = false;
         } else {
             error!("Could not find connection component for entity");
         }
@@ -213,97 +274,118 @@ fn handle_pong(connection: Option<Entity>, world: &mut SubWorld) {
 }
 
 fn check_and_handle_post_initialization(
-    connection: Entity,
-    component: &Connection,
-    mut command_buffer: &mut CommandBuffer,
+    connection_id: EntityId,
+    connection: &Connection,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
 ) {
-    if component.verified && component.version_checked {
-        if let Some(region) = component.region {
-            // Now that the client is vetted, we need to send him some specific
-            // packets in order for him to progress.
+    if connection.verified && connection.version_checked {
+        if let Some(region) = connection.region {
+            // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
             debug!("Sending connection post initialization commands");
 
             // TODO get from configuration and database
-            let batch = vec![
-                accept_check_version(connection),
-                assemble_loading_screen_info(connection),
-                assemble_remain_play_time(connection),
-                accept_login_arbiter(connection, region),
-                assemble_login_account_info(connection, "Almetica".to_string(), 456_456),
-            ];
-            send_batch_event(batch, &mut command_buffer);
+            send_event(
+                accept_check_version(connection_id),
+                outgoing_events,
+                entities,
+            );
+            send_event(
+                assemble_loading_screen_info(connection_id),
+                outgoing_events,
+                entities,
+            );
+            send_event(
+                assemble_remain_play_time(connection_id),
+                outgoing_events,
+                entities,
+            );
+            send_event(
+                accept_login_arbiter(connection_id, region),
+                outgoing_events,
+                entities,
+            );
+            send_event(
+                assemble_login_account_info(connection_id, "Almetica".to_string(), 456_456),
+                outgoing_events,
+                entities,
+            );
         } else {
             error!("Region was not set in connection component");
         }
     }
 }
 
-fn assemble_loading_screen_info(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseLoadingScreenControlInfo {
-        connection: Some(connection),
+fn assemble_loading_screen_info(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseLoadingScreenControlInfo {
+        connection_id: Some(connection_id),
         packet: SLoadingScreenControlInfo {
             custom_screen_enabled: false,
         },
-    })
+    }))
 }
 
-fn assemble_remain_play_time(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseRemainPlayTime {
-        connection: Some(connection),
+fn assemble_remain_play_time(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseRemainPlayTime {
+        connection_id: Some(connection_id),
         packet: SRemainPlayTime {
             account_type: 6,
             minutes_left: 0,
         },
-    })
+    }))
 }
 
-fn assemble_login_account_info(connection: Entity, server_name: String, account_id: u64) -> SingleEvent {
-    Arc::new(Event::ResponseLoginAccountInfo {
-        connection: Some(connection),
+fn assemble_login_account_info(
+    connection_id: EntityId,
+    server_name: String,
+    account_id: u64,
+) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseLoginAccountInfo {
+        connection_id: Some(connection_id),
         packet: SLoginAccountInfo {
             server_name,
             account_id,
         },
-    })
+    }))
 }
 
-fn assemble_ping(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponsePing {
-        connection: Some(connection),
+fn assemble_ping(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponsePing {
+        connection_id: Some(connection_id),
         packet: SPing {},
-    })
+    }))
 }
 
-fn assemble_drop_connection(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseDropConnection {
-        connection: Some(connection),
-    })
+fn assemble_drop_connection(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseDropConnection {
+        connection_id: Some(connection_id),
+    }))
 }
 
-fn accept_connection_registration(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseRegisterConnection {
-        connection: Some(connection),
-    })
+fn accept_connection_registration(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
+        connection_id: Some(connection_id),
+    }))
 }
 
-fn accept_check_version(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseCheckVersion {
-        connection: Some(connection),
+fn accept_check_version(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseCheckVersion {
+        connection_id: Some(connection_id),
         packet: SCheckVersion { ok: true },
-    })
+    }))
 }
 
-fn reject_check_version(connection: Entity) -> SingleEvent {
-    Arc::new(Event::ResponseCheckVersion {
-        connection: Some(connection),
+fn reject_check_version(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseCheckVersion {
+        connection_id: Some(connection_id),
         packet: SCheckVersion { ok: false },
-    })
+    }))
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
-    Arc::new(Event::ResponseLoginArbiter {
-        connection: Some(connection),
+fn accept_login_arbiter(connection_id: EntityId, region: Region) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseLoginArbiter {
+        connection_id: Some(connection_id),
         packet: SLoginArbiter {
             success: true,
             login_queue: false,
@@ -314,13 +396,13 @@ fn accept_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
             unk2: 0,
             unk3: 0,
         },
-    })
+    }))
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
-    Arc::new(Event::ResponseLoginArbiter {
-        connection: Some(connection),
+fn reject_login_arbiter(connection_id: EntityId, region: Region) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseLoginArbiter {
+        connection_id: Some(connection_id),
         packet: SLoginArbiter {
             success: false,
             login_queue: false,
@@ -331,101 +413,103 @@ fn reject_login_arbiter(connection: Entity, region: Region) -> SingleEvent {
             unk2: 0,
             unk3: 0,
         },
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
 
-    use legion::query::Read;
-    use legion::systems::schedule::Schedule;
+    use shipyard::prelude::*;
     use tokio::sync::mpsc::channel;
 
-    use crate::ecs::component::{BatchEvent, SingleEvent};
-    use crate::ecs::event::{self, Event};
-    use crate::ecs::tag::EventKind;
+    use crate::ecs::component::{IncomingEvent, OutgoingEvent};
+    use crate::ecs::event::Event;
+    use crate::ecs::system::Cleaner;
     use crate::model::Region;
     use crate::protocol::packet::CCheckVersion;
 
     use super::*;
 
-    fn setup() -> (World, Schedule, Resources) {
+    fn setup() -> World {
         let world = World::new();
-        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
+        world.add_unique(WorldId(0));
+        world.add_unique(DeletionList(vec![]));
 
-        let mut resources = Resources::default();
         let map = HashMap::new();
-        resources.insert(ConnectionMapping { map });
+        world.add_unique(ConnectionMapping(map));
 
-        (world, schedule, resources)
+        world
     }
 
-    fn setup_with_connection() -> (World, Schedule, Entity, Resources) {
-        let mut world = World::new();
-        let schedule = Schedule::builder().add_system(init(world.id().index())).build();
+    fn setup_with_connection() -> (World, EntityId) {
+        let world = World::new();
+        world.add_unique(WorldId(0));
+        world.add_unique(DeletionList(vec![]));
 
-        // FIXME There currently isn't a good insert method for one entity.
-        let entities = world.insert(
-            (),
-            (0..1).map(|_| {
-                (Connection {
-                    verified: false,
-                    version_checked: false,
-                    region: None,
-                    last_pong: Instant::now(),
-                    waiting_for_pong: false,
-                },)
-            }),
+        let connection_id = world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
+            |(mut entities, mut connections)| {
+                entities.add_entity(
+                    &mut connections,
+                    Connection {
+                        verified: false,
+                        version_checked: false,
+                        region: None,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
+            },
         );
-        let connection = entities[0];
 
-        let mut resources = Resources::default();
         let map = HashMap::new();
-        resources.insert(ConnectionMapping { map });
+        world.add_unique(ConnectionMapping(map));
 
-        (world, schedule, connection, resources)
+        (world, connection_id)
     }
 
     #[test]
     fn test_connection_registration() {
-        let (mut world, mut schedule, mut resources) = setup();
+        let world = setup();
         let (tx_channel, _rx_channel) = channel(10);
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..5).map(|_| {
-                (Arc::new(Event::RequestRegisterConnection {
-                    connection: None,
-                    response_channel: tx_channel.clone(),
-                }),)
-            }),
-        );
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            for _i in 0..5 {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestRegisterConnection {
+                        connection_id: None,
+                        response_channel: tx_channel.clone(),
+                    })),
+                );
+            }
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<SingleEvent>>::query();
-        let count = query
-            .iter(&world)
-            .filter(|event| match ***event {
-                Event::ResponseRegisterConnection { .. } => true,
-                _ => false,
-            })
-            .count();
-
-        assert_eq!(5, count);
+        world.run::<&mut OutgoingEvent, _, _>(|events| {
+            let count = (&events)
+                .iter()
+                .filter(|event| match &*event.0 {
+                    Event::ResponseRegisterConnection { .. } => true,
+                    _ => false,
+                })
+                .count();
+            assert_eq!(count, 5);
+        });
     }
 
     #[test]
     fn test_check_version_valid() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestCheckVersion {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                    connection_id: Some(connection_id),
                     packet: CCheckVersion {
                         version: vec![
                             CCheckVersionEntry {
@@ -438,101 +522,104 @@ mod tests {
                             },
                         ],
                     },
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&world).filter(|component| component.version_checked).count();
-
-        assert_eq!(1, valid_component_count);
+        let valid_count = world
+            .borrow::<&Connection>()
+            .iter()
+            .filter(|connection| connection.version_checked)
+            .count();
+        assert_eq!(valid_count, 1);
     }
 
     #[test]
     fn test_check_version_invalid() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestCheckVersion {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                    connection_id: Some(connection_id),
                     packet: CCheckVersion {
                         version: vec![CCheckVersionEntry {
                             index: 0,
                             value: 366_222,
                         }],
                     },
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<SingleEvent>>::query();
-        let count = query
-            .iter(&world)
-            .filter(|event| match &***event {
+        let count = world
+            .borrow::<&OutgoingEvent>()
+            .iter()
+            .filter(|event| match &*event.0 {
                 Event::ResponseCheckVersion { packet, .. } => !packet.ok,
                 _ => false,
             })
             .count();
+        assert_eq!(count, 1);
 
-        assert_eq!(1, count);
-
-        let query = <Read<Connection>>::query();
-        let valid_component_count = query
-            .iter(&world)
-            .filter(|component| !component.version_checked)
+        let invalid_count = world
+            .borrow::<&Connection>()
+            .iter()
+            .filter(|connection| !connection.version_checked)
             .count();
-
-        assert_eq!(1, valid_component_count);
+        assert_eq!(invalid_count, 1);
     }
 
     #[test]
     fn test_login_arbiter_valid() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestLoginArbiter {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                    connection_id: Some(connection_id),
                     packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![
-                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56, 114, 70, 110, 72, 69,
-                            68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56, 48, 106, 118, 101, 90, 116, 67, 101, 71,
-                            55, 84, 55, 112, 88, 118, 55, 72,
+                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56,
+                            114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56,
+                            48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112, 88, 118, 55,
+                            72,
                         ],
                         unk1: 0,
                         unk2: 0,
                         region: Region::Europe,
                         patch_version: 9002,
                     },
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<Connection>>::query();
-        let valid_component_count = query.iter(&world).filter(|component| component.verified).count();
-
-        assert_eq!(1, valid_component_count);
+        let valid_count = world
+            .borrow::<&Connection>()
+            .iter()
+            .filter(|connection| connection.verified)
+            .count();
+        assert_eq!(valid_count, 1);
     }
 
     #[test]
     fn test_login_arbiter_invalid() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestLoginArbiter {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                    connection_id: Some(connection_id),
                     packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
                         ticket: vec![],
@@ -541,64 +628,67 @@ mod tests {
                         region: Region::Europe,
                         patch_version: 9002,
                     },
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<SingleEvent>>::query();
-        let count = query
-            .iter(&world)
-            .filter(|event| match &***event {
+        let count = world
+            .borrow::<&OutgoingEvent>()
+            .iter()
+            .filter(|event| match &*event.0 {
                 Event::ResponseLoginArbiter { packet, .. } => !packet.success,
                 _ => false,
             })
             .count();
+        assert_eq!(count, 1);
 
-        assert_eq!(1, count);
-
-        let query = <Read<Connection>>::query();
-        let valid_component_count = query
-            .iter(&world)
-            .filter(|component| !component.version_checked)
+        let valid_count = world
+            .borrow::<&Connection>()
+            .iter()
+            .filter(|connection| !connection.verified)
             .count();
-
-        assert_eq!(1, valid_component_count);
+        assert_eq!(valid_count, 1);
     }
 
     #[test]
     fn test_login_sequence() {
-        let (mut world, mut schedule, mut resources) = setup();
+        let world = setup();
         let (tx_channel, _rx_channel) = channel(10);
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestRegisterConnection {
-                    connection: None,
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestRegisterConnection {
+                    connection_id: None,
                     response_channel: tx_channel.clone(),
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<SingleEvent>>::query();
-        let mut con: Option<Entity> = None;
-        for e in query.iter(&world) {
-            match **e {
-                Event::ResponseRegisterConnection { connection } => con = connection,
-                _ => con = None,
+        let con = world.run::<&OutgoingEvent, Option<EntityId>, _>(|events| {
+            if let Some(event) = (&events).iter().next() {
+                match *event.0 {
+                    Event::ResponseRegisterConnection { connection_id } => connection_id,
+                    _ => None,
+                }
+            } else {
+                panic!("couldn't find response register connection event");
             }
-        }
-        assert_ne!(None, con);
+        });
+        assert_ne!(con, None);
 
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestCheckVersion {
-                    connection: con,
+        // Run the cleaner to clean up all events.
+        world.run_system::<Cleaner>();
+
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                    connection_id: con.clone(),
                     packet: CCheckVersion {
                         version: vec![
                             CCheckVersionEntry {
@@ -611,162 +701,189 @@ mod tests {
                             },
                         ],
                     },
-                }),)
-            }),
-        );
-
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestLoginArbiter {
-                    connection: con,
+                })),
+            );
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                    connection_id: con.clone(),
                     packet: CLoginArbiter {
                         master_account_name: "royalBush5915".to_string(),
-                        ticket: vec![],
+                        ticket: vec![
+                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56,
+                            114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56,
+                            48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112, 88, 118, 55,
+                            72,
+                        ],
                         unk1: 0,
                         unk2: 0,
                         region: Region::Europe,
                         patch_version: 9002,
                     },
-                }),)
-            }),
-        );
+                })),
+            );
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<BatchEvent>>::query();
+        world.run::<&OutgoingEvent, _, _>(|events| {
+            let list: Vec<&OutgoingEvent> = (&events).iter().collect();
+            assert_eq!(list.len(), 5);
 
-        let count = query.iter(&world).count();
-        assert_eq!(1, count);
+            if let Event::ResponseCheckVersion {
+                connection_id,
+                packet,
+            } = &*list[0].0
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.ok, true);
+            } else {
+                panic!("received packets in wrong order");
+            }
 
-        for batch in query.iter(&world) {
-            assert_eq!(5, batch.len());
+            if let Event::ResponseLoadingScreenControlInfo {
+                connection_id,
+                packet,
+            } = &*list[1].0
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.custom_screen_enabled, false);
+            } else {
+                panic!("received packets in wrong order");
+            }
 
-            if let Event::ResponseCheckVersion { connection, packet } = &*batch[0] {
-                assert_eq!(con, *connection);
-                assert_eq!(true, packet.ok);
+            if let Event::ResponseRemainPlayTime {
+                connection_id,
+                packet,
+            } = &*list[2].0
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.account_type, 6);
             } else {
-                panic!("received packets in from order");
+                panic!("received packets in wrong order");
             }
-            if let Event::ResponseLoadingScreenControlInfo { connection, packet } = &*batch[1] {
-                assert_eq!(con, *connection);
-                assert_eq!(false, packet.custom_screen_enabled);
+
+            if let Event::ResponseLoginArbiter {
+                connection_id,
+                packet,
+            } = &*list[3].0
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.success, true);
+                assert_eq!(packet.status, 65538);
             } else {
-                panic!("received packets in from order");
+                panic!("received packets in wrong order");
             }
-            if let Event::ResponseRemainPlayTime { connection, packet } = &*batch[2] {
-                assert_eq!(con, *connection);
-                assert_eq!(6, packet.account_type);
+
+            if let Event::ResponseLoginAccountInfo {
+                connection_id,
+                packet,
+            } = &*list[4].0
+            {
+                assert_eq!(*connection_id, con);
+                assert_ne!(packet.server_name.trim().is_empty(), true);
             } else {
-                panic!("received packets in from order");
+                panic!("received packets in wrong order");
             }
-            if let Event::ResponseLoginArbiter { connection, packet } = &*batch[3] {
-                assert_eq!(con, *connection);
-                assert_eq!(true, packet.success);
-                assert_eq!(65538, packet.status);
-            } else {
-                panic!("received packets in from order");
-            }
-            if let Event::ResponseLoginAccountInfo { connection, packet } = &*batch[4] {
-                assert_eq!(con, *connection);
-                assert_ne!(true, packet.server_name.trim().is_empty());
-            } else {
-                panic!("received packets in from order");
-            }
-        }
+        });
     }
 
     #[test]
     fn test_ping_pong_success() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
         // Set last pong 61 seconds ago.
         let now = Instant::now();
         let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.last_pong = old_pong;
-        } else {
-            panic!("Couldn't find connection component");
-        }
 
-        schedule.execute(&mut world, &mut resources);
+        world.run::<&mut Connection, _, _>(|mut connections| {
+            if let Ok(mut connection) = (&mut connections).get(connection_id) {
+                connection.last_pong = old_pong;
+            } else {
+                panic!("Couldn't find connection component");
+            }
+        });
 
-        let query = <Write<SingleEvent>>::query();
-        let count = query.iter_mut(&mut world).count();
-        assert_eq!(1, count);
+        world.run_system::<ConnectionManager>();
+
+        let count = world.borrow::<&OutgoingEvent>().iter().count();
+        assert_eq!(count, 1);
 
         // Check if ping is present
-        let mut to_delete: Option<Entity> = None;
-        if let Some((entity, event)) = query.iter_entities_mut(&mut world).next() {
-            match &**event {
+        let mut to_delete: Option<EntityId> = None;
+
+        if let Some((entity, event)) = world.borrow::<&OutgoingEvent>().iter().with_id().next() {
+            match &*event.0 {
                 Event::ResponsePing { .. } => {
                     to_delete = Some(entity);
                 }
                 _ => panic!("Couldn't find ping event"),
             }
         }
-        world.delete(to_delete.unwrap());
+        world.borrow::<AllStorages>().delete(to_delete.unwrap());
 
         // Check if waiting_for_pong is updated
-        if let Some(component) = world.get_component::<Connection>(connection) {
-            if !component.waiting_for_pong {
-                panic!("waiting_for_pong was not set after ping");
+        world.run::<&Connection, _, _>(|connections| {
+            if let Ok(connection) = (&connections).get(connection_id) {
+                if !connection.waiting_for_pong {
+                    panic!("Waiting_for_pong was not set after ping");
+                }
+            } else {
+                panic!("Couldn't find connection component");
             }
-        } else {
-            panic!("Couldn't find connection component");
-        }
+        });
 
         // Send pong
-        world.insert(
-            (EventKind(event::EventKind::Request),),
-            (0..1).map(|_| {
-                (Arc::new(Event::RequestPong {
-                    connection: Some(connection),
+        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
+            entities.add_entity(
+                &mut events,
+                IncomingEvent(Arc::new(Event::RequestPong {
+                    connection_id: Some(connection_id),
                     packet: CPong {},
-                }),)
-            }),
-        );
+                })),
+            )
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
         // Check if last_pong is updated
-        let component = world.get_component::<Connection>(connection).unwrap();
-        assert_eq!(true, component.last_pong > old_pong);
+        world.run::<&Connection, _, _>(|connections| {
+            let component = &connections[connection_id];
+            assert_eq!(component.last_pong > old_pong, true);
+        });
     }
 
     #[test]
     fn test_ping_pong_failure() {
-        let (mut world, mut schedule, connection, mut resources) = setup_with_connection();
+        let (world, connection_id) = setup_with_connection();
 
         // Set last pong 91 seconds ago.
         let now = Instant::now();
         let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
-        if let Some(mut component) = world.get_component_mut::<Connection>(connection) {
-            component.last_pong = old_pong;
-        } else {
-            panic!("Couldn't find connection component");
-        }
+        world.run::<&mut Connection, _, _>(|mut connections| {
+            connections[connection_id].last_pong = old_pong;
+        });
 
-        schedule.execute(&mut world, &mut resources);
+        world.run_system::<ConnectionManager>();
 
-        let query = <Read<SingleEvent>>::query();
-        let count = query.iter(&mut world).count();
-        assert_eq!(1, count);
+        let count = world.borrow::<&mut OutgoingEvent>().iter().count();
+        assert_eq!(count, 1);
 
         // Check if drop connection event is present
-        let mut to_delete: Option<Entity> = None;
-        if let Some((entity, event)) = query.iter_entities_mut(&mut world).next() {
-            match &**event {
-                Event::ResponseDropConnection { .. } => {
-                    to_delete = Some(entity);
+        world.run::<&OutgoingEvent, _, _>(|events| {
+            if let Some(event) = (&events).iter().next() {
+                match &*event.0 {
+                    Event::ResponseDropConnection { .. } => { /* do nothing */ }
+                    _ => panic!("Couldn't find drop connection event"),
                 }
-                _ => panic!("Could not find drop connection event"),
             }
-        }
-        world.delete(to_delete.unwrap());
+        });
+
+        // Run the cleaner so that the connection is cleaned up.
+        world.run_system::<Cleaner>();
 
         // Check if connection component was deleted
-        if let Some(_component) = world.get_component::<Connection>(connection) {
+        if let Ok(_component) = world.borrow::<&Connection>().get(connection_id) {
             panic!("Found the connection component even though it should have been deleted");
         };
     }

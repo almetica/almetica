@@ -12,17 +12,17 @@ clap = { version = "3.0.0-beta.1", features = ["yaml"], git = "https://github.co
 dotenv = "0.15"
 flate2 = "1.0"
 hex = "0.4"
-legion = { git = "https://github.com/TomGillen/legion/", branch = "master" }
 mysql = "*"
 rand = "0.7"
 rand_core = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 serde_yaml = "0.8"
+shipyard = { version = "0.3", features = ["serde"] }
 strum = "0.18"
 strum_macros = "0.18"
 thiserror = "1.0"
-tokio = { version = "0.2", features = ["blocking", "io-util", "macros", "net", "rt-threaded", "sync", "tcp"] }
+tokio = { version = "0.2", features = ["full"] }
 tracing = { version ="0.1", features = ["max_level_trace", "release_max_level_info"]}
 tracing-log = "0.1"
 tracing-subscriber = "0.2"

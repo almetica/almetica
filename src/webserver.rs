@@ -1,10 +1,10 @@
 /// This modules implements the web server interface.
 use std::net::SocketAddr;
 
-use crate::config::Configuration;
-
 use mysql::Pool;
 use warp::{Filter, Rejection, Reply};
+
+use crate::config::Configuration;
 
 pub mod request;
 pub mod response;

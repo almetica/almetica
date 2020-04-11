@@ -1,14 +1,14 @@
-/// Module that describes the models used for persistence.
-///
-/// Only the simple enums and data structures should be shared with the
-/// client.
-pub mod repository;
-
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+/// Module that describes the models used for persistence.
+///
+/// Only the simple enums and data structures should be shared with the
+/// client.
+pub mod repository;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Region {
@@ -48,10 +48,10 @@ pub enum Class {
     Sorcerer = 4,
     Archer = 5,
     Priest = 6,
-    Mystic = 7,
-    Reaper = 8,
-    Gunner = 9,
-    Brawler = 10,
+    Elementalist = 7,
+    Soulless = 8,
+    Engineer = 9,
+    Fighter = 10,
     Ninja = 11,
     Valkyrie = 12,
 }
@@ -120,11 +120,13 @@ impl<'de> Visitor<'de> for U64Visitor {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::protocol::serde::{from_vec, to_vec};
-    use crate::Result;
     use mysql::prelude::*;
     use mysql::*;
+
+    use crate::protocol::serde::{from_vec, to_vec};
+    use crate::Result;
+
+    use super::*;
 
     /// Re-creates the test database. Configure the DATABASE_URL in your .env file.
     pub fn prepare_test_database_pool() -> Result<Pool> {
@@ -139,7 +141,7 @@ pub mod tests {
             SELECT concat('DROP TABLE IF EXISTS `', table_name, '`;')
             FROM information_schema.tables
             WHERE table_schema = 'almetica_test';
-            SET FOREIGN_KEY_CHECKS = 1;"
+            SET FOREIGN_KEY_CHECKS = 1;",
         )?;
 
         // Run migration scripts

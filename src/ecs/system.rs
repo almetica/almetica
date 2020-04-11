@@ -1,31 +1,29 @@
-pub mod connection_manager;
-pub mod event_cleaner;
-pub mod event_receiver;
-pub mod event_sender;
-pub mod settings_manager;
-pub mod user_manager;
-
-use crate::ecs::component::{BatchEvent, SingleEvent};
-use crate::ecs::event::EventKind;
-use crate::ecs::tag;
-use legion::prelude::*;
+use shipyard::prelude::{Entities, ViewMut};
 use tracing::{debug, trace};
 
-fn send_event(event: SingleEvent, command_buffer: &mut CommandBuffer) {
-    debug!("Created {} event", event);
-    trace!("Event data: {}", event);
-    command_buffer
-        .start_entity()
-        .with_tag((tag::EventKind(EventKind::Response),))
-        .with_component((event,))
-        .build();
-}
+pub use cleaner::*;
+pub use connection_manager::*;
+pub use event_receiver::*;
+pub use event_sender::*;
+pub use settings_manager::*;
+pub use user_manager::*;
 
-fn send_batch_event(batch: BatchEvent, command_buffer: &mut CommandBuffer) {
-    debug!("Created batch event with {} events", batch.len());
-    command_buffer
-        .start_entity()
-        .with_tag((tag::EventKind(EventKind::Response),))
-        .with_component((batch,))
-        .build();
+use crate::ecs::component::OutgoingEvent;
+
+/// Module that holds all systems used by the ECS.
+mod cleaner;
+mod connection_manager;
+mod event_receiver;
+mod event_sender;
+mod settings_manager;
+mod user_manager;
+
+pub fn send_event(
+    event: OutgoingEvent,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut Entities,
+) {
+    debug!("Created outgoing event {}", event.0);
+    trace!("Event data: {:?}", event.0);
+    entities.add_entity(outgoing_events, event);
 }

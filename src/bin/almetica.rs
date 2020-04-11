@@ -49,7 +49,11 @@ async fn run() -> Result<()> {
     let config = match read_configuration(&opts.config) {
         Ok(c) => c,
         Err(e) => {
-            error!("Can't read configuration file {}: {:?}", &opts.config.display(), e);
+            error!(
+                "Can't read configuration file {}: {:?}",
+                &opts.config.display(),
+                e
+            );
             return Err(e);
         }
     };
@@ -59,12 +63,19 @@ async fn run() -> Result<()> {
         Ok((opcode_mapping, reverse_opcode_mapping)) => {
             info!(
                 "Loaded opcode mapping table with {} entries",
-                opcode_mapping.iter().filter(|&op| *op != Opcode::UNKNOWN).count()
+                opcode_mapping
+                    .iter()
+                    .filter(|&op| *op != Opcode::UNKNOWN)
+                    .count()
             );
             (opcode_mapping, reverse_opcode_mapping)
         }
         Err(e) => {
-            error!("Can't read opcode mapping file {}: {:?}", &opts.config.display(), e);
+            error!(
+                "Can't read opcode mapping file {}: {:?}",
+                &opts.config.display(),
+                e
+            );
             return Err(e);
         }
     };
@@ -79,7 +90,12 @@ async fn run() -> Result<()> {
     let web_handle = start_web_server(pool, config.clone());
 
     info!("Starting the game server");
-    let game_handle = start_game_server(global_tx_channel, opcode_mapping, reverse_opcode_mapping, config);
+    let game_handle = start_game_server(
+        global_tx_channel,
+        opcode_mapping,
+        reverse_opcode_mapping,
+        config,
+    );
 
     if let Err(e) = tokio::try_join!(multiverse_handle, web_handle, game_handle) {
         return Err(Error::TokioJoinError(e));
@@ -89,8 +105,9 @@ async fn run() -> Result<()> {
 }
 
 fn init_logging() {
-    let fmt_layer = Layer::builder().with_target(false).finish();
-    let filter_layer = EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
+    let fmt_layer = Layer::default().with_target(false);
+    let filter_layer =
+        EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
     LogTracer::init().unwrap();
