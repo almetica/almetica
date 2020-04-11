@@ -3,12 +3,12 @@ use shipyard::prelude::*;
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info_span, trace};
 
-use crate::ecs::component::OutgoingEvent;
+use crate::ecs::component::IncomingEvent;
 use crate::ecs::resource::{EventRxChannel, WorldId};
 
 #[system(EventReceiver)]
 pub fn run(
-    mut outgoing_events: &mut OutgoingEvent,
+    mut incoming_events: &mut IncomingEvent,
     mut entities: &mut Entities,
     mut event_channel: Unique<&mut EventRxChannel>,
     world_id: Unique<&WorldId>,
@@ -21,7 +21,7 @@ pub fn run(
             Ok(event) => {
                 debug!("Created incoming event {}", event);
                 trace!("Event data: {:?}", event);
-                entities.add_entity(&mut outgoing_events, OutgoingEvent(event));
+                entities.add_entity(&mut incoming_events, IncomingEvent(event));
             }
             Err(e) => {
                 match e {
@@ -82,7 +82,7 @@ mod tests {
 
         world.run_system::<EventReceiver>();
 
-        let count = world.borrow::<&OutgoingEvent>().iter().count();
+        let count = world.borrow::<&IncomingEvent>().iter().count();
         assert_eq!(2, count);
     }
 }
