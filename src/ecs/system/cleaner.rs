@@ -5,41 +5,46 @@ use tracing::{info_span, trace};
 use crate::ecs::component::{IncomingEvent, OutgoingEvent};
 use crate::ecs::resource::{DeletionList, WorldId};
 
-#[system(Cleaner)]
-pub fn run(mut all_storages: &mut AllStorages) {
-    let world_id = all_storages.borrow::<Unique<&WorldId>>().0;
-    let span = info_span!("world", world_id = world_id);
-    let _enter = span.enter();
+pub struct Cleaner;
 
-    let mut deletion_list = all_storages.borrow::<Unique<&mut DeletionList>>().0.clone();
+impl<'sys> System<'sys> for Cleaner {
+    type Data = AllStorages;
 
-    // Incoming event
-    let mut list: Vec<EntityId> = all_storages
-        .borrow::<&IncomingEvent>()
-        .iter()
-        .with_id()
-        .map(|(id, _)| id)
-        .collect();
-    deletion_list.append(&mut list);
+    fn run(mut all_storages: <Self::Data as SystemData<'sys>>::View) {
+        let world_id = all_storages.borrow::<Unique<&WorldId>>().0;
+        let span = info_span!("world", world_id = world_id);
+        let _enter = span.enter();
 
-    // Outgoing event
-    let mut list: Vec<EntityId> = all_storages
-        .borrow::<&OutgoingEvent>()
-        .iter()
-        .with_id()
-        .map(|(id, _)| id)
-        .collect();
-    deletion_list.append(&mut list);
+        let mut deletion_list = all_storages.borrow::<Unique<&mut DeletionList>>().0.clone();
 
-    trace!("Deleting {} entities", deletion_list.len());
+        // Incoming event
+        let mut list: Vec<EntityId> = all_storages
+            .borrow::<&IncomingEvent>()
+            .iter()
+            .with_id()
+            .map(|(id, _)| id)
+            .collect();
+        deletion_list.append(&mut list);
 
-    // Delete entities that the other system marked for deletion.
-    for id in deletion_list {
-        all_storages.delete(id);
+        // Outgoing event
+        let mut list: Vec<EntityId> = all_storages
+            .borrow::<&OutgoingEvent>()
+            .iter()
+            .with_id()
+            .map(|(id, _)| id)
+            .collect();
+        deletion_list.append(&mut list);
+
+        trace!("Deleting {} entities", deletion_list.len());
+
+        // Delete entities that the other system marked for deletion.
+        for id in deletion_list {
+            all_storages.delete(id);
+        }
+
+        // Flush deletion list
+        all_storages.borrow::<Unique<&mut DeletionList>>().0.clear();
     }
-
-    // Flush deletion list
-    all_storages.borrow::<Unique<&mut DeletionList>>().0.clear();
 }
 
 #[cfg(test)]

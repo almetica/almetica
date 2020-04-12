@@ -6,31 +6,40 @@ use tracing::{debug, error, info_span, trace};
 use crate::ecs::component::IncomingEvent;
 use crate::ecs::resource::{EventRxChannel, WorldId};
 
-#[system(EventReceiver)]
-pub fn run(
-    mut incoming_events: &mut IncomingEvent,
-    mut entities: &mut Entities,
-    mut event_channel: Unique<&mut EventRxChannel>,
-    world_id: Unique<&WorldId>,
-) {
-    let span = info_span!("world", world_id = world_id.0);
-    let _enter = span.enter();
+pub struct EventReceiver;
 
-    loop {
-        match event_channel.channel.try_recv() {
-            Ok(event) => {
-                debug!("Created incoming event {}", event);
-                trace!("Event data: {:?}", event);
-                entities.add_entity(&mut incoming_events, IncomingEvent(event));
-            }
-            Err(e) => {
-                match e {
-                    TryRecvError::Empty => {
-                        /* Nothing to do */
-                        return;
-                    }
-                    TryRecvError::Closed => {
-                        error!("Request channel was closed");
+impl<'sys> System<'sys> for EventReceiver {
+    type Data = (
+        &'sys mut IncomingEvent,
+        EntitiesMut,
+        Unique<&'sys mut EventRxChannel>,
+        Unique<&'sys WorldId>,
+    );
+
+    fn run(
+        (mut incoming_events, mut entities, mut event_channel, world_id): <Self::Data as SystemData<
+            'sys,
+        >>::View,
+    ) {
+        let span = info_span!("world", world_id = world_id.0);
+        let _enter = span.enter();
+
+        loop {
+            match event_channel.channel.try_recv() {
+                Ok(event) => {
+                    debug!("Created incoming event {}", event);
+                    trace!("Event data: {:?}", event);
+                    entities.add_entity(&mut incoming_events, IncomingEvent(event));
+                }
+                Err(e) => {
+                    match e {
+                        TryRecvError::Empty => {
+                            /* Nothing to do */
+                            return;
+                        }
+                        TryRecvError::Closed => {
+                            error!("Request channel was closed");
+                        }
                     }
                 }
             }

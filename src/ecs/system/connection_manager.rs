@@ -14,70 +14,87 @@ use crate::ecs::system::send_event;
 use crate::model::Region;
 use crate::protocol::packet::*;
 
-#[system(ConnectionManager)]
-pub fn run(
-    incoming_events: &IncomingEvent,
-    mut outgoing_events: &mut OutgoingEvent,
-    mut connections: &mut Connection,
-    mut entities: &mut Entities,
-    mut connection_map: Unique<&mut ConnectionMapping>,
-    mut deletion_list: Unique<&mut DeletionList>,
-    world_id: Unique<&WorldId>,
-) {
-    let span = info_span!("world", world_id = world_id.0);
-    let _enter = span.enter();
+pub struct ConnectionManager;
 
-    // Incoming events
-    (&incoming_events).iter().for_each(|event| match &*event.0 {
-        Event::RequestRegisterConnection {
-            response_channel, ..
-        } => handle_connection_registration(
-            &response_channel,
-            &mut connections,
-            &mut outgoing_events,
-            &mut entities,
-            &mut connection_map,
-        ),
-        Event::RequestCheckVersion {
-            connection_id,
-            packet,
-        } => handle_request_check_version(
-            *connection_id,
-            &packet,
-            &mut connections,
-            &mut outgoing_events,
-            &mut entities,
-        ),
-        Event::RequestLoginArbiter {
-            connection_id,
-            packet,
-        } => handle_request_login_arbiter(
-            *connection_id,
-            &packet,
-            &mut connections,
-            &mut outgoing_events,
-            &mut entities,
-        ),
-        Event::RequestPong { connection_id, .. } => handle_pong(*connection_id, &mut connections),
-        _ => { /* Ignore all other packets */ }
-    });
+impl<'sys> System<'sys> for ConnectionManager {
+    type Data = (
+        &'sys IncomingEvent,
+        &'sys mut OutgoingEvent,
+        &'sys mut Connection,
+        EntitiesMut,
+        Unique<&'sys mut ConnectionMapping>,
+        Unique<&'sys mut DeletionList>,
+        Unique<&'sys WorldId>,
+    );
 
-    // Connections
-    let now = Instant::now();
-    (&mut connections)
-        .iter()
-        .with_id()
-        .for_each(|(connection_id, mut connection)| {
-            if handle_ping(
-                &now,
-                connection_id,
-                &mut connection,
+    fn run(
+        (
+            incoming_events,
+            mut outgoing_events,
+            mut connections,
+            mut entities,
+            mut connection_map,
+            mut deletion_list,
+            world_id,
+        ): <Self::Data as SystemData<'sys>>::View,
+    ) {
+        let span = info_span!("world", world_id = world_id.0);
+        let _enter = span.enter();
+
+        // Incoming events
+        (&incoming_events).iter().for_each(|event| match &*event.0 {
+            Event::RequestRegisterConnection {
+                response_channel, ..
+            } => handle_connection_registration(
+                &response_channel,
+                &mut connections,
                 &mut outgoing_events,
                 &mut entities,
-            ) {
-                deletion_list.0.push(connection_id);
+                &mut connection_map,
+            ),
+            Event::RequestCheckVersion {
+                connection_id,
+                packet,
+            } => handle_request_check_version(
+                *connection_id,
+                &packet,
+                &mut connections,
+                &mut outgoing_events,
+                &mut entities,
+            ),
+            Event::RequestLoginArbiter {
+                connection_id,
+                packet,
+            } => handle_request_login_arbiter(
+                *connection_id,
+                &packet,
+                &mut connections,
+                &mut outgoing_events,
+                &mut entities,
+            ),
+            Event::RequestPong { connection_id, .. } => {
+                handle_pong(*connection_id, &mut connections)
             }
+            _ => { /* Ignore all other packets */ }
         });
+
+        // Connections
+        let now = Instant::now();
+        (&mut connections)
+            .iter()
+            .with_id()
+            .for_each(|(connection_id, mut connection)| {
+                if handle_ping(
+                    &now,
+                    connection_id,
+                    &mut connection,
+                    &mut outgoing_events,
+                    &mut entities,
+                ) {
+                    deletion_list.0.push(connection_id);
+                }
+            });
+    }
 }
 
 fn handle_connection_registration(

@@ -11,25 +11,32 @@ use crate::ecs::system::send_event;
 use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
 use crate::protocol::packet::*;
 
-#[system(UserManager)]
-pub fn run(
-    incoming_events: &IncomingEvent,
-    mut outgoing_events: &mut OutgoingEvent,
-    mut entities: &mut Entities,
-    world_id: Unique<&WorldId>,
-) {
-    let span = info_span!("world", world_id = world_id.0);
-    let _enter = span.enter();
+pub struct UserManager;
 
-    (&incoming_events).iter().for_each(|event| {
-        // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
-        match *event.0 {
-            Event::RequestGetUserList { connection_id, .. } => {
-                handle_user_list(connection_id, &mut outgoing_events, &mut entities);
+impl<'sys> System<'sys> for UserManager {
+    type Data = (
+        &'sys IncomingEvent,
+        &'sys mut OutgoingEvent,
+        EntitiesMut,
+        Unique<&'sys WorldId>,
+    );
+
+    fn run(
+        (incoming_events, mut outgoing_events, mut entities, world_id): <Self::Data as SystemData<'sys>>::View,
+    ) {
+        let span = info_span!("world", world_id = world_id.0);
+        let _enter = span.enter();
+
+        (&incoming_events).iter().for_each(|event| {
+            // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
+            match *event.0 {
+                Event::RequestGetUserList { connection_id, .. } => {
+                    handle_user_list(connection_id, &mut outgoing_events, &mut entities);
+                }
+                _ => { /* Ignore all other events */ }
             }
-            _ => { /* Ignore all other events */ }
-        }
-    });
+        });
+    }
 }
 
 fn handle_user_list(
@@ -41,7 +48,7 @@ fn handle_user_list(
 
     // TODO Just a mock. Proper DB handling comes later.
     let event = OutgoingEvent(Arc::new(Event::ResponseGetUserList {
-        connection_id: connection_id,
+        connection_id,
         packet: SGetUserList {
             characters: vec![SGetUserListCharacter {
                 custom_strings: vec![SGetUserListCharacterCustomString {

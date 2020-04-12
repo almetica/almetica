@@ -10,18 +10,25 @@ use crate::ecs::component::*;
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::{ConnectionMapping, WorldId};
 
-#[system(EventSender)]
-pub fn run(
-    outgoing_events: &OutgoingEvent,
-    mut connection_mapping: Unique<&mut ConnectionMapping>,
-    world_id: Unique<&WorldId>,
-) {
-    let span = info_span!("world", world_id = world_id.0);
-    let _enter = span.enter();
+pub struct EventSender;
 
-    (&outgoing_events).iter().for_each(|event| {
-        send_event_to_connection(&event, &mut connection_mapping.0);
-    });
+impl<'sys> System<'sys> for EventSender {
+    type Data = (
+        &'sys OutgoingEvent,
+        Unique<&'sys mut ConnectionMapping>,
+        Unique<&'sys WorldId>,
+    );
+
+    fn run(
+        (outgoing_events, mut connection_mapping, world_id): <Self::Data as SystemData<'sys>>::View,
+    ) {
+        let span = info_span!("world", world_id = world_id.0);
+        let _enter = span.enter();
+
+        (&outgoing_events).iter().for_each(|event| {
+            send_event_to_connection(&event, &mut connection_mapping.0);
+        });
+    }
 }
 
 fn send_event_to_connection(

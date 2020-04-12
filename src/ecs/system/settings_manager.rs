@@ -7,27 +7,32 @@ use crate::ecs::event::Event;
 use crate::ecs::resource::WorldId;
 use crate::protocol::packet::CSetVisibleRange;
 
-#[system(SettingsManager)]
-pub fn run(
-    events: &IncomingEvent,
-    mut settings: &mut Settings,
-    mut entities: &mut Entities,
-    world_id: Unique<&WorldId>,
-) {
-    let span = info_span!("world", world_id = world_id.0);
-    let _enter = span.enter();
+pub struct SettingsManager;
 
-    (&events).iter().for_each(|event| {
-        match &*event.0 {
-            Event::RequestSetVisibleRange {
-                connection_id,
-                packet,
-            } => {
-                handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
+impl<'sys> System<'sys> for SettingsManager {
+    type Data = (
+        &'sys IncomingEvent,
+        &'sys mut Settings,
+        EntitiesMut,
+        Unique<&'sys WorldId>,
+    );
+
+    fn run((events, mut settings, mut entities, world_id): <Self::Data as SystemData<'sys>>::View) {
+        let span = info_span!("world", world_id = world_id.0);
+        let _enter = span.enter();
+
+        (&events).iter().for_each(|event| {
+            match &*event.0 {
+                Event::RequestSetVisibleRange {
+                    connection_id,
+                    packet,
+                } => {
+                    handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
+                }
+                _ => { /* Ignore all other events */ }
             }
-            _ => { /* Ignore all other events */ }
-        }
-    });
+        });
+    }
 }
 
 fn handle_set_visible_range(
