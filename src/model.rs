@@ -155,7 +155,7 @@ pub mod tests {
             data: [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8],
         };
         let data = to_vec(&value)?;
-        assert_eq!(&value.data, data.as_slice());
+        assert_eq!(data.as_slice(), &value.data);
         Ok(())
     }
 
@@ -163,7 +163,7 @@ pub mod tests {
     fn test_customization_deserialization() -> Result<()> {
         let data = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
         let value: Customization = from_vec(data)?;
-        assert_eq!([1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8], value.data);
+        assert_eq!(value.data, [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
         Ok(())
     }
 }

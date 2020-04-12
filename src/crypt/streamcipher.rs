@@ -158,25 +158,25 @@ mod tests {
     fn test_cipher_repeat() {
         let mut cipher = setup_cipher();
 
-        let mut data: [u8; 32] = [0xCE; 32];
+        let mut data: [u8; 32] = [0xce; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "1b429bb891e2a631190550a609d2a815ddb58d0866ce2d7bb3894246c4c26d0d",
-            encode(&data)
         );
 
         data = [0x00; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "1eb1321c0cb111044a7264336dc9521c8c18bbe6b5af4ee227cce206990d60ef",
-            encode(&data)
         );
 
-        data = [0xFF; 32];
+        data = [0xff; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d",
-            encode(&data)
         );
     }
 
@@ -187,22 +187,22 @@ mod tests {
         let mut data: [u8; 32] = [0x00; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3",
-            encode(&data)
         );
 
-        data = [0xCE; 32];
+        data = [0xce; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "d07ffcd2c27fdfca84bcaafda3079cd242d675287b61802ce9022cc857c3ae21",
-            encode(&data)
         );
 
-        data = [0xFF; 32];
+        data = [0xff; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "fe07bb243a80a783caf91a7907978534efff975bd080ff39b1f3df04bd24f02d",
-            encode(&data)
         );
     }
 
@@ -213,8 +213,8 @@ mod tests {
         let mut data: [u8; 32] = [0x00; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "d58c55765f2c68ffd7cb9e68c71c66db137b43c6a800e3b57d478c880a0ca3c3",
-            encode(&data)
         );
     }
 
@@ -222,11 +222,11 @@ mod tests {
     fn test_cipher_ff_data() {
         let mut cipher = setup_cipher();
 
-        let mut data: [u8; 32] = [0xFF; 32];
+        let mut data: [u8; 32] = [0xff; 32];
         cipher.apply_keystream(&mut data);
         assert_eq!(
+            encode(&data),
             "2a73aa89a0d397002834619738e39924ec84bc3957ff1c4a82b87377f5f35c3c",
-            encode(&data)
         );
     }
 
@@ -236,6 +236,6 @@ mod tests {
 
         let mut data: [u8; 4] = [0x11; 4];
         cipher.apply_keystream(&mut data);
-        assert_eq!("c49d4467", encode(&data));
+        assert_eq!(encode(&data), "c49d4467");
     }
 }

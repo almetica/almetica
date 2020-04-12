@@ -110,13 +110,13 @@ mod tests {
         let table = read_opcode_table(&mut file.as_slice())?;
         let reverse_map = calculate_reverse_map(table.as_slice());
 
-        assert_eq!(table[1], Opcode::C_UNEQUIP_ITEM);
-        assert_eq!(table[5], Opcode::S_ANNOUNCE_MESSAGE);
-        assert_eq!(table[2], Opcode::C_ADD_FRIEND);
+        assert_eq!(Opcode::C_UNEQUIP_ITEM, table[1]);
+        assert_eq!(Opcode::S_ANNOUNCE_MESSAGE, table[5]);
+        assert_eq!(Opcode::C_ADD_FRIEND, table[2]);
 
-        assert_eq!(5, reverse_map[&Opcode::S_ANNOUNCE_MESSAGE]);
-        assert_eq!(2, reverse_map[&Opcode::C_ADD_FRIEND]);
-        assert_eq!(1, reverse_map[&Opcode::C_UNEQUIP_ITEM]);
+        assert_eq!(reverse_map[&Opcode::S_ANNOUNCE_MESSAGE], 5);
+        assert_eq!(reverse_map[&Opcode::C_ADD_FRIEND], 2);
+        assert_eq!(reverse_map[&Opcode::C_UNEQUIP_ITEM], 1);
 
         Ok(())
     }
@@ -130,7 +130,7 @@ mod tests {
         let test_data = create_test_data(key.as_slice(), iv.as_slice(), size)?;
         let data = read_datacenter_file(key.as_slice(), iv.as_slice(), test_data)?;
 
-        assert_eq!(size, data.len());
+        assert_eq!(data.len(), size);
         Ok(())
     }
 

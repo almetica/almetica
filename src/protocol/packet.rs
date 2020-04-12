@@ -1,3 +1,6 @@
+pub use client::*;
+pub use server::*;
+
 /// This module provides the network packet definitions.
 
 /// Used in unit tests for de- and serialization.
@@ -14,7 +17,8 @@ macro_rules! packet_test {
             let org = $data;
             let data = org.clone();
             let expected = $struct;
-            assert_eq!(expected, from_vec(data)?);
+            // FIXME: expected value needs to be on the right side (but then we need a type hint for the methods).
+            assert_eq!(expected, from_vec::<_>(data)?);
             assert_eq!(org, to_vec(expected)?);
             Ok(())
         }
@@ -42,6 +46,3 @@ macro_rules! print_packet_data_test {
 
 mod client;
 mod server;
-
-pub use client::*;
-pub use server::*;

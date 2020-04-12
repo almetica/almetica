@@ -175,24 +175,24 @@ mod tests {
     #[test]
     fn test_sha1_empty() {
         assert_eq!(
+            digest_to_hex(""),
             "19ea6cf956ddd18a4a08ac1710c6923defc00877",
-            digest_to_hex("")
         );
     }
 
     #[test]
     fn test_sha1_hello_world() {
         assert_eq!(
+            digest_to_hex("hello world"),
             "c382ce9f95c18748a2b3403b85183e88a6a84f0c",
-            digest_to_hex("hello world")
         );
         assert_eq!(
+            digest_to_hex("hello, world"),
             "cd4df1db2c067776df20233f305e1c8bb9101d94",
-            digest_to_hex("hello, world")
         );
         assert_eq!(
+            digest_to_hex("Hello, World"),
             "8a3e3ab2ba039d638aa171b17a1a477b06d19b53",
-            digest_to_hex("Hello, World")
         );
     }
 }

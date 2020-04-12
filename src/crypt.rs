@@ -1,3 +1,5 @@
+use streamcipher::StreamCipher;
+
 /// Module that implements the cryptography used in TERA.
 ///
 /// The stream cipher used by TERA is an implementation of the Pike streamcipher
@@ -21,8 +23,6 @@
 /// The stream cipher output is the XOR of the three sums.
 pub mod sha1;
 pub mod streamcipher;
-
-use streamcipher::StreamCipher;
 
 // Represents the cryptography session between a client and a server.
 // Direct port of the tera-network-proxy JS implementation to rust (GPL3).
@@ -88,8 +88,9 @@ fn xor_key(dst: &mut [u8], key1: &[u8], key2: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use super::CryptSession;
     use hex::{decode, encode};
+
+    use super::CryptSession;
 
     fn setup_session() -> CryptSession {
         let c1: Vec<u8> = vec![0x12; 128];
@@ -105,13 +106,13 @@ mod tests {
         let mut server_session = setup_session();
         let mut client_session = setup_session();
 
-        let org: [u8; 32] = [0xFE; 32];
+        let org: [u8; 32] = [0xfe; 32];
         let mut data: [u8; 32] = org;
 
         client_session.crypt_client_data(&mut data);
         server_session.crypt_client_data(&mut data);
 
-        assert_eq!(encode(&org), encode(&data));
+        assert_eq!(encode(&data), encode(&org));
     }
 
     #[test]
@@ -119,26 +120,26 @@ mod tests {
         let mut server_session = setup_session();
         let mut client_session = setup_session();
 
-        let org: [u8; 32] = [0xFE; 32];
+        let org: [u8; 32] = [0xfe; 32];
         let mut data: [u8; 32] = org;
 
         server_session.crypt_server_data(&mut data);
         client_session.crypt_server_data(&mut data);
 
-        assert_eq!(encode(&org), encode(&data));
+        assert_eq!(encode(&data), encode(&org));
     }
 
     #[test]
     fn test_server_packet_algorithm() {
         let mut client_session = setup_session();
 
-        let org: [u8; 32] = [0xFE; 32];
+        let org: [u8; 32] = [0xfe; 32];
         let mut data: [u8; 32] = org;
         client_session.crypt_server_data(&mut data);
 
         assert_eq!(
+            encode(&data),
             "4e089f08f20dbae0c5b3af03871f464f0af7477149de07d1e3b466ecba521e62",
-            encode(&data)
         );
     }
 
@@ -146,13 +147,13 @@ mod tests {
     fn test_client_packet_algorithm() {
         let mut server_session = setup_session();
 
-        let org: [u8; 32] = [0xFE; 32];
+        let org: [u8; 32] = [0xfe; 32];
         let mut data: [u8; 32] = org;
         server_session.crypt_client_data(&mut data);
 
         assert_eq!(
+            encode(&data),
             "659f3e8745d2fcb73923bef592f99537acf4f96ac853fcbaa51bbbd4c62b9ded",
-            encode(&data)
         );
     }
 
@@ -170,8 +171,8 @@ mod tests {
         server_session.crypt_client_data(&mut data);
 
         assert_eq!(
+            encode(&data),
             "2000bc4d0200080008001400000000001d8a05001400000001000000ce7b05006500629a1700330032000000000000060000002a23000072006f00790061006c004200750073006800340038003000360000004f5363474b746d7233736e676234313872466e484544574d547259536248613238306a76655a744365473754377058763748",
-            encode(&data)
         );
     }
 }

@@ -458,7 +458,8 @@ mod tests {
             d: 1.0,
         };
 
-        assert_eq!(expected, from_vec(data)?);
+        let str = from_vec::<SimpleStruct>(data)?;
+        assert_eq!(str, expected);
         Ok(())
     }
 }
