@@ -46,6 +46,24 @@ pub enum Error {
     #[error("wrong event received")]
     WrongEventReceived,
 
+    #[error("password hash is stored in a wrong format")]
+    PasswordHashWrongFormat,
+
+    #[error("unsupported password hash")]
+    UnsupportedPasswordHash,
+
+    #[error("parse int error")]
+    ParseInt(#[from] std::num::ParseIntError),
+
+    #[error("regex error")]
+    Regex(#[from] regex::Error),
+
+    #[error("argon2 error: {0}")]
+    Argon2(#[from] argon2::Error),
+
+    #[error("base64 decode error: {0}")]
+    Base64Decode(#[from] base64::DecodeError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
