@@ -54,7 +54,7 @@ pub async fn run(
                                 .instrument(info_span!("connection", connection = ?connection_id))
                                 .await
                             {
-                                Ok(_) => info!("Closed connection"),
+                                Ok(_) => info!("Connection closed"),
                                 Err(e) => warn!("Error while handling game session: {:?}", e),
                             }
                         }

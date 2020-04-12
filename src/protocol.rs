@@ -145,15 +145,18 @@ impl<'a> GameSession<'a> {
         let mut header_buf = vec![0u8; 4];
         loop {
             tokio::select! {
-                // Timeout
                 _ = delay_for(Duration::from_secs(180)) => {
                     info!("Connection timed out");
                     return Ok(());
-                }
+                },
                 // RX
                 result = self.stream.peek(&mut header_buf) => {
-                   match result {
-                       Ok(read_bytes) => {
+                    match result {
+                        Ok(0) => {
+                            // Connection was closed
+                            return Ok(());
+                        },
+                        Ok(read_bytes) => {
                             if read_bytes == 4 {
                                 self.stream.read_exact(&mut header_buf).await?;
                                 self.cipher.crypt_client_data(&mut header_buf);
@@ -176,7 +179,7 @@ impl<'a> GameSession<'a> {
                                     }
                                 }
                             }
-                        }
+                        },
                         Err(e) => {
                             return Err(Error::Io(e));
                         }
@@ -406,7 +409,7 @@ mod tests {
         stream.read_exact(hello_buffer.as_mut_slice()).await?;
 
         let hello = LittleEndian::read_u16(&hello_buffer[0..4]) as u32;
-        assert_eq!(1, hello);
+        assert_eq!(hello, 1);
 
         // key exchange stage
         let mut client_key1 = vec![0u8; 128];
