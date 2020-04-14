@@ -1,6 +1,7 @@
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
+use postgres::types::{FromSql, ToSql};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -116,6 +117,14 @@ impl<'de> Visitor<'de> for U64Visitor {
     {
         Ok(value)
     }
+}
+
+/// Supported password hash algorithms.
+#[derive(Debug, FromSql, ToSql)]
+#[postgres(name = "password_hash_algorithm")]
+pub enum PasswordHashAlgorithm {
+    #[postgres(name = "argon2")]
+    Argon2,
 }
 
 #[cfg(test)]
