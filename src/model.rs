@@ -120,31 +120,34 @@ impl<'de> Visitor<'de> for U64Visitor {
 
 #[cfg(test)]
 pub mod tests {
-    use mysql::prelude::*;
-    use mysql::*;
+    use postgres::NoTls;
 
     use crate::protocol::serde::{from_vec, to_vec};
-    use crate::Result;
+    use crate::{DbPool, Result};
 
     use super::*;
 
     /// Re-creates the test database. Configure the DATABASE_URL in your .env file.
-    pub fn prepare_test_database_pool() -> Result<Pool> {
+    pub fn prepare_test_database_pool() -> Result<DbPool> {
         let _ = dotenv::dotenv();
+        let db_url = &dotenv::var("DATABASE_URL").unwrap();
 
-        let pool = Pool::new(&dotenv::var("DATABASE_URL").unwrap())?;
-        let mut conn = pool.get_conn()?;
+        let manager = r2d2_postgres::PostgresConnectionManager::new(db_url.parse().unwrap(), NoTls);
+        let pool = r2d2::Pool::builder().max_size(15).build(manager)?;
+        let mut conn = pool.get()?;
 
         // Drop database content
-        conn.query_drop(
+        // TODO
+        conn.execute(
             r"SET FOREIGN_KEY_CHECKS = 0;
             SELECT concat('DROP TABLE IF EXISTS `', table_name, '`;')
             FROM information_schema.tables
             WHERE table_schema = 'almetica_test';
             SET FOREIGN_KEY_CHECKS = 1;",
+            &[],
         )?;
 
-        // Run migration scripts
+        // TODO Run migration scripts
 
         Ok(pool)
     }

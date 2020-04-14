@@ -2,6 +2,9 @@
 
 use std::sync::Arc;
 
+use postgres::NoTls;
+use r2d2::Pool;
+use r2d2_postgres::PostgresConnectionManager;
 use thiserror::Error;
 
 use ecs::event::Event;
@@ -16,6 +19,8 @@ pub mod protocol;
 pub mod webserver;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+pub type DbPool = Pool<PostgresConnectionManager<NoTls>>;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -76,8 +81,8 @@ pub enum Error {
     #[error("mpsc send event error: {0}")]
     MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
 
-    #[error("mysql error: {0}")]
-    MysqlError(#[from] mysql::error::Error),
+    #[error("r2d2 pool error: {0}")]
+    R2D2Pool(#[from] r2d2::Error),
 
     #[error("tokio timeout error: {0}")]
     TokioTimeOut(#[from] tokio::time::Elapsed),

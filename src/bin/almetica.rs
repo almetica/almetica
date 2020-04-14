@@ -6,7 +6,9 @@ use std::process;
 use std::sync::Arc;
 
 use clap::Clap;
-use mysql::Pool;
+use postgres::{self, NoTls};
+use r2d2;
+use r2d2_postgres;
 use tokio::sync::mpsc::Sender;
 use tokio::task::{self, JoinHandle};
 use tracing::{error, info, warn};
@@ -23,7 +25,7 @@ use almetica::ecs::world::Multiverse;
 use almetica::gameserver;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
-use almetica::{Error, Result};
+use almetica::{DbPool, Error, Result};
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -81,7 +83,8 @@ async fn run() -> Result<()> {
     };
 
     info!("Create database pool");
-    let pool = Pool::new(assemble_db_string(&config))?;
+    let manager = r2d2_postgres::PostgresConnectionManager::new(assemble_db_config(&config), NoTls);
+    let pool = r2d2::Pool::builder().max_size(15).build(manager)?;
 
     info!("Starting the ECS multiverse");
     let (multiverse_handle, global_tx_channel) = start_multiverse(pool.clone(), config.clone());
@@ -114,7 +117,7 @@ fn init_logging() {
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse(pool: Pool, config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>>) {
+fn start_multiverse(pool: DbPool, config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
@@ -126,7 +129,7 @@ fn start_multiverse(pool: Pool, config: Configuration) -> (JoinHandle<()>, Sende
 }
 
 /// Starts the web server handling all HTTP requests.
-fn start_web_server(pool: Pool, config: Configuration) -> JoinHandle<()> {
+fn start_web_server(pool: DbPool, config: Configuration) -> JoinHandle<()> {
     task::spawn(async {
         webserver::run(pool, config).await;
     })
@@ -142,13 +145,12 @@ fn start_game_server(
     task::spawn(async { gameserver::run(global_channel, map, reverse_map, config).await })
 }
 
-fn assemble_db_string(config: &Configuration) -> String {
-    format!(
-        "mysql://{}:{}@{}:{}/{}",
-        config.database.username,
-        config.database.password,
-        config.database.hostname,
-        config.database.port,
-        config.database.database
-    )
+fn assemble_db_config(config: &Configuration) -> postgres::Config {
+    let mut c = postgres::Config::new();
+    c.host(&config.database.hostname);
+    c.port(config.database.port);
+    c.user(&config.database.username);
+    c.password(&config.database.password);
+    c.dbname(&config.database.database);
+    c
 }
