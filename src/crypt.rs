@@ -21,7 +21,7 @@ use streamcipher::StreamCipher;
 /// two are clocked.
 ///
 /// The stream cipher output is the XOR of the three sums.
-pub mod argon2id;
+pub mod password_hash;
 pub mod sha1;
 pub mod streamcipher;
 

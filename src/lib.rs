@@ -51,17 +51,11 @@ pub enum Error {
     #[error("wrong event received")]
     WrongEventReceived,
 
-    #[error("password hash is stored in a wrong format")]
-    PasswordHashWrongFormat,
-
     #[error("unsupported password hash")]
     UnsupportedPasswordHash,
 
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
-
-    #[error("regex error")]
-    Regex(#[from] regex::Error),
 
     #[error("argon2 error: {0}")]
     Argon2(#[from] argon2::Error),

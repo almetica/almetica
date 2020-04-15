@@ -120,7 +120,7 @@ impl<'de> Visitor<'de> for U64Visitor {
 }
 
 /// Supported password hash algorithms.
-#[derive(Debug, FromSql, ToSql)]
+#[derive(Debug, FromSql, ToSql, PartialEq)]
 #[postgres(name = "password_hash_algorithm")]
 pub enum PasswordHashAlgorithm {
     #[postgres(name = "argon2")]

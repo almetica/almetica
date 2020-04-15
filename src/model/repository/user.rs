@@ -1,6 +1,6 @@
+/// Handles the user of a player (the characters).
 use postgres::GenericClient;
 
-/// Handles the user of a player (the characters).
 use crate::Result;
 
 /// Creates a new user.
@@ -43,7 +43,7 @@ pub mod tests {
     // TODO
     #[test]
     fn test_something_interesting() -> Result<()> {
-        db_test(|db_pool| {
+        db_test(|_db_pool| {
             assert!(true);
         })
     }
