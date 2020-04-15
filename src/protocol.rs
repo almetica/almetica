@@ -1,3 +1,8 @@
+/// Module that implements the network protocol used by TERA.
+pub mod opcode;
+pub mod packet;
+pub mod serde;
+
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -15,11 +20,6 @@ use crate::crypt::CryptSession;
 use crate::ecs::event::{EcsEvent, Event, EventTarget};
 use crate::protocol::opcode::Opcode;
 use crate::*;
-
-/// Module that implements the network protocol used by TERA.
-pub mod opcode;
-pub mod packet;
-pub mod serde;
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {

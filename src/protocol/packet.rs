@@ -1,7 +1,6 @@
+/// This module provides the network packet definitions.
 pub use client::*;
 pub use server::*;
-
-/// This module provides the network packet definitions.
 
 /// Used in unit tests for de- and serialization.
 #[allow(unused_macros)]

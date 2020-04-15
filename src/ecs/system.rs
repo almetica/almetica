@@ -1,5 +1,10 @@
-use shipyard::prelude::{Entities, ViewMut};
-use tracing::{debug, trace};
+/// Module that holds all systems used by the ECS.
+mod cleaner;
+mod connection_manager;
+mod event_receiver;
+mod event_sender;
+mod settings_manager;
+mod user_manager;
 
 pub use cleaner::*;
 pub use connection_manager::*;
@@ -8,15 +13,10 @@ pub use event_sender::*;
 pub use settings_manager::*;
 pub use user_manager::*;
 
-use crate::ecs::component::OutgoingEvent;
+use shipyard::prelude::{Entities, ViewMut};
+use tracing::{debug, trace};
 
-/// Module that holds all systems used by the ECS.
-mod cleaner;
-mod connection_manager;
-mod event_receiver;
-mod event_sender;
-mod settings_manager;
-mod user_manager;
+use crate::ecs::component::OutgoingEvent;
 
 pub fn send_event(
     event: OutgoingEvent,

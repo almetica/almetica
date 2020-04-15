@@ -1,4 +1,4 @@
-/// Event receiver dispatches the events from the Request channel into the ECS.
+/// Event receiver dispatches the events from the request channel into the ECS.
 use shipyard::prelude::*;
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info_span, trace};

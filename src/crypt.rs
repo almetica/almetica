@@ -1,5 +1,3 @@
-use streamcipher::StreamCipher;
-
 /// Module that implements the cryptography used in TERA.
 ///
 /// The stream cipher used by TERA is an implementation of the Pike streamcipher
@@ -24,6 +22,8 @@ use streamcipher::StreamCipher;
 pub mod password_hash;
 pub mod sha1;
 pub mod streamcipher;
+
+use streamcipher::StreamCipher;
 
 // Represents the cryptography session between a client and a server.
 // Direct port of the tera-network-proxy JS implementation to rust (GPL3).

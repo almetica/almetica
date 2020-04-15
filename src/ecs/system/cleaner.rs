@@ -1,4 +1,4 @@
-/// The event cleaner cleans up all Events in the current ECS.
+/// The event cleaner cleans up all events in the current ECS.
 use shipyard::prelude::*;
 use tracing::{info_span, trace};
 

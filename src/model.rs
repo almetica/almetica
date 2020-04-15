@@ -1,15 +1,15 @@
+/// Module that describes the models used for persistence.
+///
+/// Only the simple enums and data structures should be shared with the
+/// client.
+pub mod repository;
+
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
 use postgres::types::{FromSql, ToSql};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-/// Module that describes the models used for persistence.
-///
-/// Only the simple enums and data structures should be shared with the
-/// client.
-pub mod repository;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Region {

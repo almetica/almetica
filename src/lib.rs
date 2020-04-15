@@ -1,4 +1,12 @@
 #![warn(clippy::all)]
+pub mod config;
+pub mod crypt;
+pub mod dataloader;
+pub mod ecs;
+pub mod gameserver;
+pub mod model;
+pub mod protocol;
+pub mod webserver;
 
 use std::sync::Arc;
 
@@ -8,15 +16,6 @@ use r2d2_postgres::PostgresConnectionManager;
 use thiserror::Error;
 
 use ecs::event::Event;
-
-pub mod config;
-pub mod crypt;
-pub mod dataloader;
-pub mod ecs;
-pub mod gameserver;
-pub mod model;
-pub mod protocol;
-pub mod webserver;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

@@ -1,13 +1,13 @@
 /// This modules implements the web server interface.
+pub mod request;
+pub mod response;
+
 use std::net::SocketAddr;
 
 use warp::{Filter, Rejection, Reply};
 
 use crate::config::Configuration;
 use crate::DbPool;
-
-pub mod request;
-pub mod response;
 
 /// Main loop of the web server.
 pub async fn run(pool: DbPool, config: Configuration) {
