@@ -85,7 +85,7 @@ async fn run() -> Result<()> {
         }
     };
 
-    // We have two pools, one for the webserver and one for the gameserver. A DDOS should not be able
+    // We have two pools, one for the web server and one for the network server. A DDOS should not be able
     // to steal all the database connections. Sync postgres does spawn it's own tokio runtime though
     // so it's not the most efficient process right now. This has definitely room for improvement.
     info!("Create async database pool");
@@ -154,7 +154,7 @@ fn start_web_server(pool: AsyncDbPool, config: Configuration) -> JoinHandle<()> 
     })
 }
 
-/// Starts the network server.
+/// Starts the network server that handles all TCP game client connections.
 fn start_network_server(
     global_channel: Sender<Arc<Event>>,
     map: Vec<Opcode>,
