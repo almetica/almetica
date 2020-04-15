@@ -134,7 +134,7 @@ pub enum PasswordHashAlgorithm {
 
 #[cfg(test)]
 pub mod tests {
-    use std::{panic, time};
+    use std::panic;
 
     use hex::encode;
     use postgres::{Client, Config, NoTls};
@@ -145,7 +145,6 @@ pub mod tests {
     use crate::{Result, SyncDbPool};
 
     use super::*;
-    use std::thread::sleep;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
     /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
@@ -168,8 +167,6 @@ pub mod tests {
             let pool = r2d2::Pool::builder().max_size(1).build(manager).unwrap();
             test(pool)
         });
-
-        sleep(time::Duration::from_millis(1000));
 
         teardown_db(client, db_name)?;
 
@@ -196,7 +193,8 @@ pub mod tests {
 
     /// Deletes the randomly named test database.
     fn teardown_db(mut client: Client, db_name: String) -> Result<()> {
-        // Drop all other connections to the database
+        // Drop all other connections to the database. It seems that either the pool
+        // or the postgres tokio runtime doesn't close all connections on drop()...
         client.batch_execute(
             format!(
                 r#"
