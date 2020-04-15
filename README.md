@@ -23,8 +23,8 @@ For hardware accelerated AES you will need to use a compatible CPU and this buil
 RUSTFLAGS="-C target-feature=+aes,+ssse3" cargo build
 ```
 
-For the best performance (including AES speed improvements) compile the server with the full native instruction set
-of your CPU:
+For the best performance (including AES speed improvements) compile the server with the full
+native instruction set of your CPU:
 
 ```bash
 RUSTFLAGS="-C target-cpu=native" cargo build
@@ -54,6 +54,24 @@ You can run the server with the following commands:
 RUST_LOG=info cargo run --bin almetica
 ```
 
+## Testing
+
+Since some tests are integration tests that need a postgres database, you need to
+configure a database connection which will be used for the testing. You need a 
+database user that is allowed to create and delete databases and I recommend just
+to spin up a docker container for the testing. Don't run the tests against your
+production database.
+
+The tests will create a randomly named test database so that they can run in 
+parallel.
+
+To configure the database access, please create a .env file in the project root
+and add a DATABASE_CONNECTION variable.
+
+Use the format that is documented here:
+
+https://docs.rs/postgres/0.17.2/postgres/config/struct.Config.html
+ 
 ## Contributing
 
 Please contacts us in advance if you want to help with the server development so

@@ -117,6 +117,6 @@ mod tests {
             .filter(|component| component.visibility_range > 0)
             .count();
 
-        assert_eq!(1, valid_component_count);
+        assert_eq!(valid_component_count, 1);
     }
 }

@@ -129,36 +129,63 @@ pub enum PasswordHashAlgorithm {
 
 #[cfg(test)]
 pub mod tests {
-    use postgres::NoTls;
+    use std::panic;
+
+    use hex::encode;
+    use postgres::{Client, Config, NoTls};
+    use rand::{thread_rng, RngCore};
 
     use crate::protocol::serde::{from_vec, to_vec};
     use crate::{DbPool, Result};
 
     use super::*;
 
-    /// Re-creates the test database. Configure the DATABASE_URL in your .env file.
-    pub fn prepare_test_database_pool() -> Result<DbPool> {
+    /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
+    /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
+    /// and have the permission to create / delete databases.
+    pub fn db_test<T>(test: T) -> Result<()>
+    where
+        T: FnOnce(DbPool) -> () + panic::UnwindSafe,
+    {
+        // Read and assemble to database connection configuration
         let _ = dotenv::dotenv();
-        let db_url = &dotenv::var("DATABASE_URL").unwrap();
+        let db_url = &dotenv::var("DATABASE_CONNECTION")?;
+        let mut config: Config = db_url.parse()?;
 
-        let manager = r2d2_postgres::PostgresConnectionManager::new(db_url.parse().unwrap(), NoTls);
-        let pool = r2d2::Pool::builder().max_size(15).build(manager)?;
-        let mut conn = pool.get()?;
+        let (client, db_name) = setup_db(config.clone())?;
 
-        // Drop database content
-        // TODO
-        conn.execute(
-            r"SET FOREIGN_KEY_CHECKS = 0;
-            SELECT concat('DROP TABLE IF EXISTS `', table_name, '`;')
-            FROM information_schema.tables
-            WHERE table_schema = 'almetica_test';
-            SET FOREIGN_KEY_CHECKS = 1;",
-            &[],
-        )?;
+        // Don't re-use the connection when testing. It could get tainted.
+        let result = panic::catch_unwind(|| {
+            config.dbname(&db_name);
+            let manager = r2d2_postgres::PostgresConnectionManager::new(config, NoTls);
+            let pool = r2d2::Pool::builder().max_size(1).build(manager).unwrap();
+            test(pool)
+        });
+
+        teardown_db(client, db_name)?;
+
+        Ok(assert!(result.is_ok()))
+    }
+
+    /// Creates a randomly named test database.
+    fn setup_db(mut config: Config) -> Result<(Client, String)> {
+        let mut random = vec![0u8; 32];
+        thread_rng().fill_bytes(random.as_mut_slice());
+        let db_name: String = format!("test_{}", encode(random));
+
+        config.dbname("postgres");
+        let mut client = config.connect(NoTls)?;
+        client.batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())?;
 
         // TODO Run migration scripts
 
-        Ok(pool)
+        Ok((client, db_name))
+    }
+
+    /// Deletes the randomly named test database.
+    fn teardown_db(mut client: Client, db_name: String) -> Result<()> {
+        client.batch_execute(format!("DROP DATABASE {};", db_name).as_ref())?;
+        Ok(())
     }
 
     #[test]

@@ -34,3 +34,17 @@ where
 {
     Ok(())
 }
+
+#[cfg(test)]
+pub mod tests {
+    use crate::model::tests::db_test;
+    use crate::Result;
+
+    // TODO
+    #[test]
+    fn test_something_interesting() -> Result<()> {
+        db_test(|db_pool| {
+            assert!(true);
+        })
+    }
+}

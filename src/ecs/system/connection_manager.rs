@@ -798,7 +798,7 @@ mod tests {
             } = &*list[4].0
             {
                 assert_eq!(*connection_id, con);
-                assert_ne!(packet.server_name.trim().is_empty(), true);
+                assert!(!packet.server_name.trim().is_empty());
             } else {
                 panic!("received packets in wrong order");
             }

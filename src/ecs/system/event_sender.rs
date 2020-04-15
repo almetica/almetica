@@ -130,7 +130,7 @@ mod tests {
                 _ => panic!("Couldn't find register connection event"),
             }
         }
-        assert_eq!(10, count);
+        assert_eq!(count, 10);
     }
 
     #[test]
@@ -151,7 +151,7 @@ mod tests {
         world.run_system::<EventSender>();
 
         // Connection was dropped
-        assert_eq!(0, world.borrow::<Unique<&ConnectionMapping>>().0.len());
+        assert_eq!(world.borrow::<Unique<&ConnectionMapping>>().0.len(), 0);
 
         // ResponseDropConnection event was send
         let mut count: u64 = 0;
@@ -161,6 +161,6 @@ mod tests {
                 _ => panic!("Couldn't find drop connection event"),
             }
         }
-        assert_eq!(1, count);
+        assert_eq!(count, 1);
     }
 }

@@ -72,6 +72,9 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("dotenv error: {0}")]
+    Dotenv(#[from] dotenv::Error),
+
     #[error("serde error: {0}")]
     Serde(#[from] serde_yaml::Error),
 
@@ -89,6 +92,9 @@ pub enum Error {
 
     #[error("tokio join error: {0}")]
     TokioJoinError(#[from] tokio::task::JoinError),
+
+    #[error("tokio progres error: {0}")]
+    TokioProgresError(#[from] tokio_postgres::Error),
 
     #[error("utf8 error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),

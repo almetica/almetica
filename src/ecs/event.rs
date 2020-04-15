@@ -169,11 +169,11 @@ mod tests {
             packet,
         } = event
         {
-            assert_eq!(entity_id, Some(entity));
-            assert_eq!(0, packet.version[0].index);
-            assert_eq!(363_037, packet.version[0].value);
-            assert_eq!(1, packet.version[1].index);
-            assert_eq!(359_374, packet.version[1].value);
+            assert_eq!(Some(entity), entity_id);
+            assert_eq!(packet.version[0].index, 0);
+            assert_eq!(packet.version[0].value, 363_037);
+            assert_eq!(packet.version[1].index, 1);
+            assert_eq!(packet.version[1].value, 359_374);
         } else {
             panic!("New didn't returned the right event.");
         }
@@ -193,7 +193,7 @@ mod tests {
                 patch_version: 0,
             },
         };
-        assert_eq!(EventTarget::Global, org.target());
+        assert_eq!(org.target(), EventTarget::Global);
         Ok(())
     }
 
@@ -203,7 +203,7 @@ mod tests {
             connection_id: None,
             packet: SCheckVersion { ok: true },
         };
-        assert_eq!(EventTarget::Connection, org.target());
+        assert_eq!(org.target(), EventTarget::Connection);
         Ok(())
     }
 
@@ -213,7 +213,7 @@ mod tests {
             connection_id: None,
             packet: SCheckVersion { ok: true },
         };
-        assert_eq!(Some(Opcode::S_CHECK_VERSION), org.opcode());
+        assert_eq!(org.opcode(), Some(Opcode::S_CHECK_VERSION));
         Ok(())
     }
 
@@ -225,7 +225,7 @@ mod tests {
             response_channel,
         };
 
-        assert_eq!(None, org.opcode());
+        assert_eq!(org.opcode(), None);
         Ok(())
     }
 
@@ -239,7 +239,7 @@ mod tests {
             connection_id: Some(entity),
             packet: SCheckVersion { ok: true },
         };
-        assert_eq!(Some(entity), org.connection_id());
+        assert_eq!(org.connection_id(), Some(entity));
         Ok(())
     }
 
@@ -251,7 +251,7 @@ mod tests {
             response_channel,
         };
 
-        assert_eq!(None, org.connection_id());
+        assert_eq!(org.connection_id(), None);
         Ok(())
     }
 }

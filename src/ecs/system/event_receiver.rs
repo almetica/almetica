@@ -92,6 +92,6 @@ mod tests {
         world.run_system::<EventReceiver>();
 
         let count = world.borrow::<&IncomingEvent>().iter().count();
-        assert_eq!(2, count);
+        assert_eq!(count, 2);
     }
 }

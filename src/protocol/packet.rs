@@ -38,7 +38,7 @@ macro_rules! print_packet_data_test {
             let structure = $struct;
             let data = to_vec(structure)?;
             println!("{}", format!("{:#x?}", data));
-            assert_eq!(true, false);
+            assert!(false);
             Ok(())
         }
     };

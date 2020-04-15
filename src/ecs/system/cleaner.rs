@@ -83,12 +83,12 @@ mod tests {
         });
 
         let old_count = world.borrow::<&IncomingEvent>().iter().count();
-        assert_eq!(10, old_count);
+        assert_eq!(old_count, 10);
 
         world.run_system::<Cleaner>();
 
         let new_count = world.borrow::<&IncomingEvent>().iter().count();
-        assert_eq!(0, new_count);
+        assert_eq!(new_count, 0);
     }
 
     #[test]
@@ -107,11 +107,11 @@ mod tests {
         });
 
         let old_count = world.borrow::<&OutgoingEvent>().iter().count();
-        assert_eq!(10, old_count);
+        assert_eq!(old_count, 10);
 
         world.run_system::<Cleaner>();
 
         let new_count = world.borrow::<&OutgoingEvent>().iter().count();
-        assert_eq!(0, new_count);
+        assert_eq!(new_count, 0);
     }
 }
