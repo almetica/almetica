@@ -3,23 +3,26 @@ pub mod config;
 pub mod crypt;
 pub mod dataloader;
 pub mod ecs;
-pub mod gameserver;
 pub mod model;
+pub mod networkserver;
 pub mod protocol;
 pub mod webserver;
 
 use std::sync::Arc;
 
+use bb8;
+use bb8_postgres;
 use postgres::NoTls;
-use r2d2::Pool;
-use r2d2_postgres::PostgresConnectionManager;
+use r2d2;
+use r2d2_postgres;
 use thiserror::Error;
 
 use ecs::event::Event;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub type DbPool = Pool<PostgresConnectionManager<NoTls>>;
+pub type SyncDbPool = r2d2::Pool<r2d2_postgres::PostgresConnectionManager<NoTls>>;
+pub type AsyncDbPool = bb8::Pool<bb8_postgres::PostgresConnectionManager<NoTls>>;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -76,6 +79,9 @@ pub enum Error {
 
     #[error("mpsc send event error: {0}")]
     MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
+
+    #[error("refinery error: {0}")]
+    Refinery(#[from] refinery::Error),
 
     #[error("r2d2 pool error: {0}")]
     R2D2Pool(#[from] r2d2::Error),

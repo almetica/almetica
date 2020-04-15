@@ -10,7 +10,7 @@ use crate::config::Configuration;
 use crate::ecs::event::EcsEvent;
 use crate::ecs::resource::*;
 use crate::ecs::system::*;
-use crate::DbPool;
+use crate::SyncDbPool;
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
@@ -25,7 +25,7 @@ impl Multiverse {
     }
 
     /// Starts the main loop of the global world.
-    pub fn run(&mut self, pool: DbPool, config: Configuration) {
+    pub fn run(&mut self, pool: SyncDbPool, config: Configuration) {
         let world = &mut self.global_handle.world;
 
         // Define workloads

@@ -4,6 +4,11 @@
 /// client.
 pub mod repository;
 
+pub mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("./src/model/migrations");
+}
+
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -129,23 +134,25 @@ pub enum PasswordHashAlgorithm {
 
 #[cfg(test)]
 pub mod tests {
-    use std::panic;
+    use std::{panic, time};
 
     use hex::encode;
     use postgres::{Client, Config, NoTls};
     use rand::{thread_rng, RngCore};
 
+    use crate::model::embedded::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
-    use crate::{DbPool, Result};
+    use crate::{Result, SyncDbPool};
 
     use super::*;
+    use std::thread::sleep;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
     /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
     /// and have the permission to create / delete databases.
     pub fn db_test<T>(test: T) -> Result<()>
     where
-        T: FnOnce(DbPool) -> () + panic::UnwindSafe,
+        T: FnOnce(SyncDbPool) -> () + panic::UnwindSafe,
     {
         // Read and assemble to database connection configuration
         let _ = dotenv::dotenv();
@@ -162,6 +169,8 @@ pub mod tests {
             test(pool)
         });
 
+        sleep(time::Duration::from_millis(1000));
+
         teardown_db(client, db_name)?;
 
         Ok(assert!(result.is_ok()))
@@ -177,14 +186,39 @@ pub mod tests {
         let mut client = config.connect(NoTls)?;
         client.batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())?;
 
-        // TODO Run migration scripts
+        // Run migrations on the temporary database
+        config.dbname(&db_name);
+        let mut migration_client = config.connect(NoTls)?;
+        migrations::runner().run(&mut migration_client)?;
 
         Ok((client, db_name))
     }
 
     /// Deletes the randomly named test database.
     fn teardown_db(mut client: Client, db_name: String) -> Result<()> {
-        client.batch_execute(format!("DROP DATABASE {};", db_name).as_ref())?;
+        // Drop all other connections to the database
+        client.batch_execute(
+            format!(
+                r#"
+                SELECT pg_terminate_backend(pg_stat_activity.pid)
+                FROM pg_stat_activity
+                WHERE datname = '{}'
+                AND pid <> pg_backend_pid();
+                "#,
+                &db_name
+            )
+            .as_ref(),
+        )?;
+        // Drop the database itself
+        client.batch_execute(
+            format!(
+                r#"
+                DROP DATABASE {};
+                "#,
+                &db_name
+            )
+            .as_ref(),
+        )?;
         Ok(())
     }
 

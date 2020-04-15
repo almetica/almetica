@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
+use bb8;
+use bb8_postgres;
 use clap::Clap;
 use postgres::{self, NoTls};
 use r2d2;
@@ -22,10 +24,11 @@ use almetica::config::{read_configuration, Configuration};
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
-use almetica::gameserver;
+use almetica::model::embedded::migrations;
+use almetica::networkserver;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
-use almetica::{DbPool, Error, Result};
+use almetica::{AsyncDbPool, Error, Result};
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -82,25 +85,36 @@ async fn run() -> Result<()> {
         }
     };
 
-    info!("Create database pool");
-    let manager = r2d2_postgres::PostgresConnectionManager::new(assemble_db_config(&config), NoTls);
-    let pool = r2d2::Pool::builder().max_size(15).build(manager)?;
+    // We have two pools, one for the webserver and one for the gameserver. A DDOS should not be able
+    // to steal all the database connections. Sync postgres does spawn it's own tokio runtime though
+    // so it's not the most efficient process right now. This has definitely room for improvement.
+    info!("Create async database pool");
+    let asnyc_db_conf = assemble_async_db_config(&config);
+    let asnyc_manager = bb8_postgres::PostgresConnectionManager::new(asnyc_db_conf.clone(), NoTls);
+    let async_pool = bb8::Pool::builder()
+        .max_size(2)
+        .build(asnyc_manager)
+        .await?;
+
+    info!("Run database migrations");
+    let (mut client, _) = asnyc_db_conf.connect(NoTls).await?;
+    migrations::runner().run_async(&mut client).await?;
 
     info!("Starting the ECS multiverse");
-    let (multiverse_handle, global_tx_channel) = start_multiverse(pool.clone(), config.clone());
+    let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone());
 
     info!("Starting the web server");
-    let web_handle = start_web_server(pool, config.clone());
+    let web_handle = start_web_server(async_pool, config.clone());
 
-    info!("Starting the game server");
-    let game_handle = start_game_server(
+    info!("Starting the network server");
+    let network_handle = start_network_server(
         global_tx_channel,
         opcode_mapping,
         reverse_opcode_mapping,
         config,
     );
 
-    if let Err(e) = tokio::try_join!(multiverse_handle, web_handle, game_handle) {
+    if let Err(e) = tokio::try_join!(multiverse_handle, web_handle, network_handle) {
         return Err(Error::TokioJoinError(e));
     }
 
@@ -117,11 +131,16 @@ fn init_logging() {
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse(pool: DbPool, config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>>) {
+fn start_multiverse(config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
     let join_handle = task::spawn_blocking(move || {
+        info!("Create sync database pool");
+        let manager =
+            r2d2_postgres::PostgresConnectionManager::new(assemble_sync_db_config(&config), NoTls);
+        let pool = r2d2::Pool::builder().max_size(20).build(manager).unwrap();
+
         multiverse.run(pool, config);
     });
 
@@ -129,24 +148,34 @@ fn start_multiverse(pool: DbPool, config: Configuration) -> (JoinHandle<()>, Sen
 }
 
 /// Starts the web server handling all HTTP requests.
-fn start_web_server(pool: DbPool, config: Configuration) -> JoinHandle<()> {
+fn start_web_server(pool: AsyncDbPool, config: Configuration) -> JoinHandle<()> {
     task::spawn(async {
         webserver::run(pool, config).await;
     })
 }
 
-/// Starts the game server.
-fn start_game_server(
+/// Starts the network server.
+fn start_network_server(
     global_channel: Sender<Arc<Event>>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,
 ) -> JoinHandle<Result<()>> {
-    task::spawn(async { gameserver::run(global_channel, map, reverse_map, config).await })
+    task::spawn(async { networkserver::run(global_channel, map, reverse_map, config).await })
 }
 
-fn assemble_db_config(config: &Configuration) -> postgres::Config {
+fn assemble_sync_db_config(config: &Configuration) -> postgres::Config {
     let mut c = postgres::Config::new();
+    c.host(&config.database.hostname);
+    c.port(config.database.port);
+    c.user(&config.database.username);
+    c.password(&config.database.password);
+    c.dbname(&config.database.database);
+    c
+}
+
+fn assemble_async_db_config(config: &Configuration) -> tokio_postgres::Config {
+    let mut c = tokio_postgres::Config::new();
     c.host(&config.database.hostname);
     c.port(config.database.port);
     c.user(&config.database.username);

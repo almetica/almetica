@@ -1,4 +1,4 @@
-/// The module that holds the game server logic.
+/// The module of the network server that handles the TCP connections to the clients.
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use crate::protocol::opcode::Opcode;
 use crate::protocol::GameSession;
 use crate::Result;
 
-/// Main loop for the game server
+/// Main loop for the network server
 pub async fn run(
     global_channel: Sender<EcsEvent>,
     map: Vec<Opcode>,

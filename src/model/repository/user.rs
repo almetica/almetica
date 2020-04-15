@@ -42,7 +42,7 @@ pub mod tests {
 
     // TODO
     #[test]
-    fn test_something_interesting() -> Result<()> {
+    fn test_create_user() -> Result<()> {
         db_test(|_db_pool| {
             assert!(true);
         })

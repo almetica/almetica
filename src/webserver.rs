@@ -7,10 +7,10 @@ use std::net::SocketAddr;
 use warp::{Filter, Rejection, Reply};
 
 use crate::config::Configuration;
-use crate::DbPool;
+use crate::AsyncDbPool;
 
 /// Main loop of the web server.
-pub async fn run(pool: DbPool, config: Configuration) {
+pub async fn run(pool: AsyncDbPool, config: Configuration) {
     let api = auth_filter(pool.clone()).or(server_list_filter(pool));
     let routes = api.with(warp::log("almetica::webserver"));
 
@@ -24,14 +24,14 @@ pub async fn run(pool: DbPool, config: Configuration) {
 }
 
 fn with_db_pool(
-    pool: DbPool,
-) -> impl Filter<Extract = (DbPool,), Error = std::convert::Infallible> + Clone {
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = (AsyncDbPool,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || pool.clone())
 }
 
 // /server/list.* filter
 fn server_list_filter(
-    pool: DbPool,
+    pool: AsyncDbPool,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     // The TERA client needs to have the region endings (.uk / .de etc.) at the end or else it will not start!
     list_cn_filter(pool.clone())
@@ -46,7 +46,9 @@ fn server_list_filter(
 }
 
 // GET /server/list.cn
-fn list_cn_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_cn_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.cn")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -54,7 +56,9 @@ fn list_cn_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.de
-fn list_de_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_de_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.de")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -62,7 +66,9 @@ fn list_de_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.en
-fn list_en_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_en_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.en")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -70,7 +76,9 @@ fn list_en_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.fr
-fn list_fr_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_fr_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.fr")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -78,7 +86,9 @@ fn list_fr_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.jp
-fn list_jp_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_jp_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.jp")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -86,7 +96,9 @@ fn list_jp_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.kr
-fn list_kr_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_kr_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.kr")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -94,7 +106,9 @@ fn list_kr_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.ru
-fn list_ru_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_ru_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.ru")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -102,7 +116,9 @@ fn list_ru_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.th
-fn list_th_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_th_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.th")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -110,7 +126,9 @@ fn list_th_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // GET /server/list.uk
-fn list_uk_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn list_uk_filter(
+    pool: AsyncDbPool,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("server" / "list.uk")
         .and(warp::get())
         .and(with_db_pool(pool))
@@ -118,7 +136,7 @@ fn list_uk_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rej
 }
 
 // POST /auth
-fn auth_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn auth_filter(pool: AsyncDbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path!("auth")
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 16))
@@ -128,7 +146,7 @@ fn auth_filter(pool: DbPool) -> impl Filter<Extract = impl Reply, Error = Reject
 }
 
 /// Handles the server listening.
-async fn server_list_handler(_pool: DbPool) -> Result<impl Reply, Rejection> {
+async fn server_list_handler(_pool: AsyncDbPool) -> Result<impl Reply, Rejection> {
     // TODO include the configuration settings here
 
     let server_list_template = r###"<serverlist>
@@ -151,7 +169,7 @@ async fn server_list_handler(_pool: DbPool) -> Result<impl Reply, Rejection> {
 }
 
 /// Handles the client authentication.
-async fn auth_handler(_login: request::Login, _pool: DbPool) -> Result<impl Reply, Rejection> {
+async fn auth_handler(_login: request::Login, _pool: AsyncDbPool) -> Result<impl Reply, Rejection> {
     // TODO query database and do the login
     // TODO include proper UUID and other fields (chars_per_server and access_level/user_permission etc) "cb3c75d4-66a6-4506-a549-c8ae53fbafd8".to_string()
     let resp = response::AuthResponse {
