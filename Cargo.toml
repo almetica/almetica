@@ -21,7 +21,7 @@ r2d2 = "0.8"
 r2d2_postgres = "0.16"
 rand = "0.7"
 rand_core = "0.5"
-refinery = { version = "0.2", features = ["postgres", "tokio-postgres"]}
+refinery = { version = "0.2", features = ["tokio-postgres"]}
 rust-argon2 = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
@@ -42,6 +42,7 @@ warp = "0.2"
 [dev-dependencies]
 criterion = "0.3"
 criterion-cycles-per-byte = "0.1"
+refinery = { version = "0.2", features = ["postgres"]}
 regex = "1"
 serial_test = "0.4"
 tokio = { version = "0.2", features = ["full"] }

@@ -97,8 +97,7 @@ async fn run() -> Result<()> {
         .await?;
 
     info!("Run database migrations");
-    let (mut client, _) = asnyc_db_conf.connect(NoTls).await?;
-    migrations::runner().run_async(&mut client).await?;
+    run_db_migrations(asnyc_db_conf).await?;
 
     info!("Starting the ECS multiverse");
     let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone());
@@ -122,12 +121,26 @@ async fn run() -> Result<()> {
 }
 
 fn init_logging() {
-    let fmt_layer = Layer::default().with_target(false);
+    let fmt_layer = Layer::default().with_target(true);
     let filter_layer =
         EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
     LogTracer::init().unwrap();
+}
+
+/// Performs the database migrations
+async fn run_db_migrations(config: tokio_postgres::Config) -> Result<()> {
+    let (mut client, connection) = config.connect(NoTls).await?;
+    // This looks bonkers. The connection objects performs the actual communication and needs
+    // to run in a separate task. It's properly closed though once the migration finishes.
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            error!("connection error: {}", e);
+        }
+    });
+    migrations::runner().run_async(&mut client).await?;
+    Ok(())
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
