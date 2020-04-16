@@ -1,0 +1,116 @@
+on: [push, pull_request]
+
+name: Almetica CI
+
+jobs:
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+
+  build-linux:
+    name: Build Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Run cargo build --release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build --release
+  build-windows:
+    name: Build Windows
+    strategy:
+      matrix:
+        target: [x86_64-pc-windows-msvc, x86_64-pc-windows-gnu]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Run cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Run cargo build --release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build --release
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    container: rust:latest
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: almetica
+          POSTGRES_PASSWORD: almetica
+          POSTGRES_DB: almetica
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Set .env file
+        uses: actions-rs/cargo@v1
+        with:
+          command: echo `DATABASE_CONNECTION="postgres://almetica:almetica@postgres:5432/almetica` > .env
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
