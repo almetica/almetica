@@ -9,8 +9,6 @@ CREATE TABLE account (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX account_name_idx ON account (name);
-
 CREATE OR REPLACE FUNCTION account_update_updated_at()
     RETURNS TRIGGER AS $$
 BEGIN
