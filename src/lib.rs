@@ -56,6 +56,9 @@ pub enum Error {
     #[error("unsupported password hash")]
     UnsupportedPasswordHash,
 
+    #[error("no row was returned")]
+    NoRowReturned,
+
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
 

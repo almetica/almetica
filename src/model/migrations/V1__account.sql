@@ -1,15 +1,20 @@
+CREATE TYPE password_hash_algorithm AS ENUM ('argon2');
+
 CREATE TABLE account (
     id BIGSERIAL,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
+    algorithm password_hash_algorithm NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX account_name_idx ON account (name);
+
 CREATE OR REPLACE FUNCTION account_update_updated_at()
     RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.updated_at = now();
     RETURN NEW;
 END;
 $$ language 'plpgsql';

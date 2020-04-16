@@ -1,9 +1,6 @@
-/// Module that describes the models used for persistence.
-///
-/// Only the simple enums and data structures should be shared with the
-/// client.
+/// Module that abstracts the persistence model.
+pub mod entity;
 pub mod repository;
-
 pub mod embedded {
     use refinery::embed_migrations;
     embed_migrations!("./src/model/migrations");
@@ -12,7 +9,7 @@ pub mod embedded {
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
-use postgres::types::{FromSql, ToSql};
+use postgres_types::{FromSql, ToSql};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -151,7 +148,7 @@ pub mod tests {
     /// and have the permission to create / delete databases.
     pub fn db_test<T>(test: T) -> Result<()>
     where
-        T: FnOnce(SyncDbPool) -> () + panic::UnwindSafe,
+        T: FnOnce(SyncDbPool) -> Result<()> + panic::UnwindSafe,
     {
         // Read and assemble to database connection configuration
         let _ = dotenv::dotenv();
@@ -165,7 +162,7 @@ pub mod tests {
             config.dbname(&db_name);
             let manager = r2d2_postgres::PostgresConnectionManager::new(config, NoTls);
             let pool = r2d2::Pool::builder().max_size(1).build(manager).unwrap();
-            test(pool)
+            test(pool).unwrap()
         });
 
         teardown_db(client, db_name)?;
