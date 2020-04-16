@@ -3,33 +3,6 @@ on: [push, pull_request]
 name: Almetica CI
 
 jobs:
-  lints:
-    name: Lints
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
-
   build-linux:
     name: Build Ubuntu
     runs-on: ubuntu-latest
@@ -51,7 +24,9 @@ jobs:
       - name: Run cargo build --release
         uses: actions-rs/cargo@v1
         with:
-          command: build --release
+          command: build
+          args: --release
+
   build-windows:
     name: Build Windows
     strategy:
@@ -77,7 +52,8 @@ jobs:
       - name: Run cargo build --release
         uses: actions-rs/cargo@v1
         with:
-          command: build --release
+          command: build
+          args: --release
 
   test:
     name: Run tests
@@ -100,9 +76,8 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Set .env file
-        uses: actions-rs/cargo@v1
-        with:
-          command: echo `DATABASE_CONNECTION="postgres://almetica:almetica@postgres:5432/almetica` > .env
+        run: |
+          echo "DATABASE_CONNECTION="postgres://almetica:almetica@postgres:5432/almetica"" >> .env
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
