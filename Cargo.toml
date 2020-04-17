@@ -54,7 +54,7 @@ name = "crypt"
 harness = false
 
 [profile.dev]
-opt-level = 1
+opt-level = 0
 
 [profile.release]
 lto = true
