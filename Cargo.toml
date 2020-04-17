@@ -45,7 +45,6 @@ criterion = "0.3"
 criterion-cycles-per-byte = "0.1"
 refinery = { version = "0.2", features = ["postgres"]}
 regex = "1"
-serial_test = "0.4"
 tokio = { version = "0.2", features = ["full"] }
 tokio-test = "0.2"
 
