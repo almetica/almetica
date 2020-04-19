@@ -1,0 +1,6 @@
+CREATE TABLE login_ticket (
+    account_id BIGINT REFERENCES account UNIQUE NOT NULL,
+    ticket TEXT NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

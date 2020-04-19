@@ -1,7 +1,7 @@
 CREATE TYPE password_hash_algorithm AS ENUM ('argon2');
 
 CREATE TABLE account (
-    id BIGSERIAL,
+    id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
     algorithm password_hash_algorithm NOT NULL,

@@ -15,3 +15,13 @@ pub struct Account {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+/// Ticket that is used to authenticate the client connection.
+#[derive(Debug, FromSql, ToSql)]
+#[postgres(name = "login_ticket")]
+pub struct LoginTicket {
+    pub account_id: i64,
+    pub ticket: String,
+    pub used: bool,
+    pub created_at: DateTime<Utc>,
+}
