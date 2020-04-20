@@ -89,6 +89,9 @@ pub enum Error {
     #[error("r2d2 pool error: {0}")]
     R2D2Pool(#[from] r2d2::Error),
 
+    #[error("bb8 run error: {0}")]
+    BB8RunError(#[from] bb8::RunError<tokio_postgres::error::Error>),
+
     #[error("tokio timeout error: {0}")]
     TokioTimeOut(#[from] tokio::time::Elapsed),
 
@@ -96,7 +99,7 @@ pub enum Error {
     TokioJoinError(#[from] tokio::task::JoinError),
 
     #[error("tokio progres error: {0}")]
-    TokioProgresError(#[from] tokio_postgres::Error),
+    TokioProgresError(#[from] tokio_postgres::error::Error),
 
     #[error("utf8 error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),

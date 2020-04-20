@@ -134,14 +134,17 @@ pub mod tests {
     use std::panic;
 
     use hex::encode;
-    use postgres::{Client, Config, NoTls};
+    use postgres;
     use rand::{thread_rng, RngCore};
+    use tokio::runtime;
+    use tokio_postgres;
 
     use crate::model::embedded::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
-    use crate::{Result, SyncDbPool};
+    use crate::{AsyncDbPool, Result, SyncDbPool};
 
     use super::*;
+    use std::future::Future;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
     /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
@@ -153,14 +156,14 @@ pub mod tests {
         // Read and assemble to database connection configuration
         let _ = dotenv::dotenv();
         let db_url = &dotenv::var("DATABASE_CONNECTION")?;
-        let mut config: Config = db_url.parse()?;
+        let mut config: postgres::Config = db_url.parse()?;
 
         let (client, db_name) = setup_db(config.clone())?;
 
         // Don't re-use the connection when testing. It could get tainted.
         let result = panic::catch_unwind(|| {
             config.dbname(&db_name);
-            let manager = r2d2_postgres::PostgresConnectionManager::new(config, NoTls);
+            let manager = r2d2_postgres::PostgresConnectionManager::new(config, postgres::NoTls);
             let pool = r2d2::Pool::builder().max_size(1).build(manager).unwrap();
             test(pool).unwrap()
         });
@@ -170,26 +173,68 @@ pub mod tests {
         Ok(assert!(result.is_ok()))
     }
 
+    /// Async database test. Creates it's own tokio runtime. Just use the standard `[test]` macro.
+    pub fn async_db_test<'a, T, F>(test: F) -> Result<()>
+    where
+        T: Future<Output = Result<()>> + 'a,
+        F: FnOnce(AsyncDbPool) -> T + panic::UnwindSafe,
+    {
+        // Read and assemble to database connection configuration
+        let _ = dotenv::dotenv();
+        let db_url = &dotenv::var("DATABASE_CONNECTION")?;
+        let config: postgres::Config = db_url.parse()?;
+
+        let (client, db_name) = setup_db(config)?;
+
+        // Don't re-use the connection when testing. It could get tainted.
+        let result = panic::catch_unwind(|| {
+            let mut config: tokio_postgres::Config = db_url.parse().unwrap();
+            config.dbname(&db_name);
+
+            let mut rt = runtime::Builder::new()
+                .threaded_scheduler()
+                .enable_time()
+                .enable_io()
+                .core_threads(1)
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let manager = bb8_postgres::PostgresConnectionManager::new(config, postgres::NoTls);
+                let pool = bb8::Pool::builder()
+                    .max_size(1)
+                    .build(manager)
+                    .await
+                    .unwrap();
+                test(pool).await.unwrap();
+            });
+        });
+
+        teardown_db(client, db_name)?;
+
+        Ok(assert!(result.is_ok()))
+    }
+
     /// Creates a randomly named test database.
-    fn setup_db(mut config: Config) -> Result<(Client, String)> {
+    fn setup_db(mut config: postgres::Config) -> Result<(postgres::Client, String)> {
         let mut random = vec![0u8; 32];
         thread_rng().fill_bytes(random.as_mut_slice());
         let db_name: String = format!("test_{}", encode(random));
 
         config.dbname("postgres");
-        let mut client = config.connect(NoTls)?;
+        let mut client = config.connect(postgres::NoTls)?;
         client.batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())?;
 
         // Run migrations on the temporary database
         config.dbname(&db_name);
-        let mut migration_client = config.connect(NoTls)?;
+        let mut migration_client = config.connect(postgres::NoTls)?;
         migrations::runner().run(&mut migration_client)?;
 
         Ok((client, db_name))
     }
 
     /// Deletes the randomly named test database.
-    fn teardown_db(mut client: Client, db_name: String) -> Result<()> {
+    fn teardown_db(mut client: postgres::Client, db_name: String) -> Result<()> {
         // Drop all other connections to the database. It seems that either the pool
         // or the postgres tokio runtime doesn't close all connections on drop()...
         client.batch_execute(
