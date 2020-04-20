@@ -2,8 +2,7 @@
 
 ![Discord Shield](https://discordapp.com/api/guilds/694792322952462387/widget.png?style=shield)
 
-This is a server for the MMORPG TERA written in rust. Currently targeting 
-TERA EU 90.02.
+This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 92.04.
 
 ## Requirements
 
@@ -95,7 +94,7 @@ This server should also act as a way to preserve TERA for the future.
 
 ### Why didn't you extend already existing server projects:
 
-I had three requirements for the server projects for me to consider continue
+I had four requirements for the server projects for me to consider continue
 developing them:
 
  * Open Source License
@@ -103,7 +102,7 @@ developing them:
  * Written in a compiled and typed language
  * Written with a clear design goal
 
-None of he evaluated existing server projects did fullfil these requirements.
+None of he evaluated existing server projects did fulfilled these requirements.
 
 ## License
 
