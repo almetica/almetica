@@ -121,7 +121,7 @@ pub mod tests {
 
     #[test]
     fn test_create_account() -> Result<()> {
-        // FIXME into an async clojure once stable
+        // FIXME into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let org_account = Account {
                 id: -1,
@@ -148,7 +148,7 @@ pub mod tests {
 
     #[test]
     fn test_update_password() -> Result<()> {
-        // FIXME into an async clojure once stable
+        // FIXME into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let old_password = "password1".to_string();
             let new_password = "password2".to_string();
@@ -187,7 +187,7 @@ pub mod tests {
 
     #[test]
     fn test_get_by_id() -> Result<()> {
-        // FIXME into into an async clojure once stable
+        // FIXME into into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let conn = &mut *db_pool.get().await?;
 
@@ -243,7 +243,7 @@ pub mod tests {
 
     #[test]
     fn test_get_by_name_async() -> Result<()> {
-        // FIXME into into an async clojure once stable
+        // FIXME into into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let conn = &mut *db_pool.get().await?;
 
@@ -272,7 +272,7 @@ pub mod tests {
 
     #[test]
     fn test_delete_by_id() -> Result<()> {
-        // FIXME into into an async clojure once stable
+        // FIXME into into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let conn = &mut *db_pool.get().await?;
 
@@ -301,7 +301,7 @@ pub mod tests {
 
     #[test]
     fn test_delete_by_name() -> Result<()> {
-        // FIXME into into an async clojure once stable
+        // FIXME into into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let conn = &mut *db_pool.get().await?;
 

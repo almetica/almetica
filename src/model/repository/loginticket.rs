@@ -87,7 +87,7 @@ pub mod tests {
 
     #[test]
     fn test_upsert_login_ticket() -> Result<()> {
-        // FIXME into an async clojure once stable
+        // FIXME into an async closure once stable
         async fn test(db_pool: AsyncDbPool) -> Result<()> {
             let conn = &mut *db_pool.get().await?;
             let account = account::create_async(
