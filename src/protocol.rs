@@ -300,7 +300,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use byteorder::{ByteOrder, LittleEndian};
-    use shipyard::prelude::*;
+    use shipyard::*;
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::mpsc::channel;
     use tokio::task;
@@ -316,6 +316,7 @@ mod tests {
     use crate::Result;
 
     use super::*;
+    use shipyard::EntityId;
 
     async fn get_opcode_tables() -> Result<(Vec<Opcode>, HashMap<Opcode, u16>)> {
         let mut file = Vec::new();
@@ -337,8 +338,8 @@ mod tests {
     fn get_new_entity_with_connection_component() -> EntityId {
         let world = World::new();
 
-        world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
-            |(mut entities, mut connections)| {
+        world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
                 entities.add_entity(
                     &mut connections,
                     Connection {

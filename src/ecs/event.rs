@@ -17,7 +17,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use shipyard::prelude::*;
+use shipyard::*;
 use tokio::sync::mpsc::Sender;
 
 use crate::protocol::opcode::Opcode;
@@ -144,7 +144,7 @@ assemble_event! {
 
 #[cfg(test)]
 mod tests {
-    use shipyard::prelude::*;
+    use shipyard::*;
     use tokio::sync::mpsc::channel;
 
     use crate::model::Region;
@@ -157,7 +157,7 @@ mod tests {
     fn test_opcode_mapping() -> Result<(), Error> {
         let world = World::new();
 
-        let entity = world.borrow::<EntitiesMut>().add_entity((), ());
+        let entity = world.borrow::<EntitiesViewMut>().add_entity((), ());
 
         let data = vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0,
@@ -233,7 +233,7 @@ mod tests {
     fn test_event_connection_some() -> Result<(), Error> {
         let world = World::new();
 
-        let entity = world.borrow::<EntitiesMut>().add_entity((), ());
+        let entity = world.borrow::<EntitiesViewMut>().add_entity((), ());
 
         let org = Event::ResponseCheckVersion {
             connection_id: Some(entity),

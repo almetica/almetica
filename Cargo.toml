@@ -11,7 +11,7 @@ bb8 = "0.4.1"
 bb8-postgres = "0.4.0"
 byteorder = "1.3"
 cfb-mode = "0.3"
-clap = { version = "3.0.0-beta.1", features = ["yaml"], git = "https://github.com/clap-rs/clap/" }
+clap = { git = "https://github.com/clap-rs/clap/", features = ["yaml"] }
 chrono = "0.4"
 dotenv = "0.15"
 flate2 = "1.0"
@@ -27,7 +27,7 @@ rust-argon2 = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 serde_yaml = "0.8"
-shipyard = { version = "0.3", features = ["serde"] }
+shipyard = { git = "https://github.com/leudz/shipyard/", features = ["serde"] }
 strum = "0.18"
 strum_macros = "0.18"
 thiserror = "1.0"

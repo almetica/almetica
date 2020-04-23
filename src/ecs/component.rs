@@ -1,7 +1,7 @@
 /// Module holds the components that the ECS use.
 use std::time::Instant;
 
-use shipyard::prelude::EntityId;
+use shipyard::EntityId;
 
 use crate::ecs::event::EcsEvent;
 use crate::model::Region;

@@ -1,9 +1,8 @@
-/// Connection handler handles the connection components.
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
-use shipyard::prelude::*;
+use shipyard::*;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, trace};
 
@@ -14,94 +13,77 @@ use crate::ecs::system::send_event;
 use crate::model::Region;
 use crate::protocol::packet::*;
 
-pub struct ConnectionManager;
+/// Connection manager handles the connection components.
+pub fn connection_manager_system(
+    incoming_events: View<IncomingEvent>,
+    mut outgoing_events: ViewMut<OutgoingEvent>,
+    mut connections: ViewMut<Connection>,
+    mut entities: EntitiesViewMut,
+    mut connection_map: UniqueViewMut<ConnectionMapping>,
+    mut deletion_list: UniqueViewMut<DeletionList>,
+    world_id: UniqueView<WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-impl<'sys> System<'sys> for ConnectionManager {
-    type Data = (
-        &'sys IncomingEvent,
-        &'sys mut OutgoingEvent,
-        &'sys mut Connection,
-        EntitiesMut,
-        Unique<&'sys mut ConnectionMapping>,
-        Unique<&'sys mut DeletionList>,
-        Unique<&'sys WorldId>,
-    );
+    // Incoming events
+    (&incoming_events).iter().for_each(|event| match &*event.0 {
+        Event::RequestRegisterConnection {
+            response_channel, ..
+        } => handle_connection_registration(
+            &response_channel,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+            &mut connection_map,
+        ),
+        Event::RequestCheckVersion {
+            connection_id,
+            packet,
+        } => handle_request_check_version(
+            *connection_id,
+            &packet,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+        ),
+        Event::RequestLoginArbiter {
+            connection_id,
+            packet,
+        } => handle_request_login_arbiter(
+            *connection_id,
+            &packet,
+            &mut connections,
+            &mut outgoing_events,
+            &mut entities,
+        ),
+        Event::RequestPong { connection_id, .. } => handle_pong(*connection_id, &mut connections),
+        _ => { /* Ignore all other packets */ }
+    });
 
-    fn run(
-        (
-            incoming_events,
-            mut outgoing_events,
-            mut connections,
-            mut entities,
-            mut connection_map,
-            mut deletion_list,
-            world_id,
-        ): <Self::Data as SystemData<'sys>>::View,
-    ) {
-        let span = info_span!("world", world_id = world_id.0);
-        let _enter = span.enter();
-
-        // Incoming events
-        (&incoming_events).iter().for_each(|event| match &*event.0 {
-            Event::RequestRegisterConnection {
-                response_channel, ..
-            } => handle_connection_registration(
-                &response_channel,
-                &mut connections,
-                &mut outgoing_events,
-                &mut entities,
-                &mut connection_map,
-            ),
-            Event::RequestCheckVersion {
+    // Connections
+    let now = Instant::now();
+    (&mut connections)
+        .iter()
+        .with_id()
+        .for_each(|(connection_id, mut connection)| {
+            if handle_ping(
+                &now,
                 connection_id,
-                packet,
-            } => handle_request_check_version(
-                *connection_id,
-                &packet,
-                &mut connections,
+                &mut connection,
                 &mut outgoing_events,
                 &mut entities,
-            ),
-            Event::RequestLoginArbiter {
-                connection_id,
-                packet,
-            } => handle_request_login_arbiter(
-                *connection_id,
-                &packet,
-                &mut connections,
-                &mut outgoing_events,
-                &mut entities,
-            ),
-            Event::RequestPong { connection_id, .. } => {
-                handle_pong(*connection_id, &mut connections)
+            ) {
+                deletion_list.0.push(connection_id);
             }
-            _ => { /* Ignore all other packets */ }
         });
-
-        // Connections
-        let now = Instant::now();
-        (&mut connections)
-            .iter()
-            .with_id()
-            .for_each(|(connection_id, mut connection)| {
-                if handle_ping(
-                    &now,
-                    connection_id,
-                    &mut connection,
-                    &mut outgoing_events,
-                    &mut entities,
-                ) {
-                    deletion_list.0.push(connection_id);
-                }
-            });
-    }
 }
 
 fn handle_connection_registration(
     response_channel: &Sender<EcsEvent>,
     connections: &mut ViewMut<Connection>,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
     connection_map: &mut UniqueViewMut<ConnectionMapping>,
 ) {
     debug!("Registration event incoming");
@@ -137,7 +119,7 @@ fn handle_request_check_version(
     packet: &CCheckVersion,
     mut connections: &mut ViewMut<Connection>,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
 ) {
     if let Some(connection_id) = connection_id {
         let span = info_span!("connection", connection = ?connection_id);
@@ -191,7 +173,7 @@ fn handle_request_login_arbiter(
     packet: &CLoginArbiter,
     mut connections: &mut ViewMut<Connection>,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
 ) {
     if let Some(connection_id) = connection_id {
         let span = info_span!("connection", connection = ?connection_id);
@@ -247,7 +229,7 @@ fn handle_ping(
     connection_id: EntityId,
     mut connection: &mut Connection,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
 ) -> bool {
     let span = info_span!("connection", connection = ?connection_id);
     let _enter = span.enter();
@@ -294,7 +276,7 @@ fn check_and_handle_post_initialization(
     connection_id: EntityId,
     connection: &Connection,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
 ) {
     if connection.verified && connection.version_checked {
         if let Some(region) = connection.region {
@@ -439,12 +421,12 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use shipyard::prelude::*;
+    use shipyard::*;
     use tokio::sync::mpsc::channel;
 
     use crate::ecs::component::{IncomingEvent, OutgoingEvent};
     use crate::ecs::event::Event;
-    use crate::ecs::system::Cleaner;
+    use crate::ecs::system::cleaner_system;
     use crate::model::Region;
     use crate::protocol::packet::CCheckVersion;
 
@@ -466,8 +448,8 @@ mod tests {
         world.add_unique(WorldId(0));
         world.add_unique(DeletionList(vec![]));
 
-        let connection_id = world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
-            |(mut entities, mut connections)| {
+        let connection_id = world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
                 entities.add_entity(
                     &mut connections,
                     Connection {
@@ -492,21 +474,23 @@ mod tests {
         let world = setup();
         let (tx_channel, _rx_channel) = channel(10);
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            for _i in 0..5 {
-                entities.add_entity(
-                    &mut events,
-                    IncomingEvent(Arc::new(Event::RequestRegisterConnection {
-                        connection_id: None,
-                        response_channel: tx_channel.clone(),
-                    })),
-                );
-            }
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                for _i in 0..5 {
+                    entities.add_entity(
+                        &mut events,
+                        IncomingEvent(Arc::new(Event::RequestRegisterConnection {
+                            connection_id: None,
+                            response_channel: tx_channel.clone(),
+                        })),
+                    );
+                }
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
-        world.run::<&mut OutgoingEvent, _, _>(|events| {
+        world.run(|events: ViewMut<OutgoingEvent>| {
             let count = (&events)
                 .iter()
                 .filter(|event| match &*event.0 {
@@ -522,31 +506,33 @@ mod tests {
     fn test_check_version_valid() {
         let (world, connection_id) = setup_with_connection();
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestCheckVersion {
-                    connection_id: Some(connection_id),
-                    packet: CCheckVersion {
-                        version: vec![
-                            CCheckVersionEntry {
-                                index: 0,
-                                value: 366_222,
-                            },
-                            CCheckVersionEntry {
-                                index: 1,
-                                value: 365_535,
-                            },
-                        ],
-                    },
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                        connection_id: Some(connection_id),
+                        packet: CCheckVersion {
+                            version: vec![
+                                CCheckVersionEntry {
+                                    index: 0,
+                                    value: 366_222,
+                                },
+                                CCheckVersionEntry {
+                                    index: 1,
+                                    value: 365_535,
+                                },
+                            ],
+                        },
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
         let valid_count = world
-            .borrow::<&Connection>()
+            .borrow::<View<Connection>>()
             .iter()
             .filter(|connection| connection.version_checked)
             .count();
@@ -557,25 +543,27 @@ mod tests {
     fn test_check_version_invalid() {
         let (world, connection_id) = setup_with_connection();
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestCheckVersion {
-                    connection_id: Some(connection_id),
-                    packet: CCheckVersion {
-                        version: vec![CCheckVersionEntry {
-                            index: 0,
-                            value: 366_222,
-                        }],
-                    },
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                        connection_id: Some(connection_id),
+                        packet: CCheckVersion {
+                            version: vec![CCheckVersionEntry {
+                                index: 0,
+                                value: 366_222,
+                            }],
+                        },
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
         let count = world
-            .borrow::<&OutgoingEvent>()
+            .borrow::<View<OutgoingEvent>>()
             .iter()
             .filter(|event| match &*event.0 {
                 Event::ResponseCheckVersion { packet, .. } => !packet.ok,
@@ -585,7 +573,7 @@ mod tests {
         assert_eq!(count, 1);
 
         let invalid_count = world
-            .borrow::<&Connection>()
+            .borrow::<View<Connection>>()
             .iter()
             .filter(|connection| !connection.version_checked)
             .count();
@@ -596,32 +584,34 @@ mod tests {
     fn test_login_arbiter_valid() {
         let (world, connection_id) = setup_with_connection();
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
-                    connection_id: Some(connection_id),
-                    packet: CLoginArbiter {
-                        master_account_name: "royalBush5915".to_string(),
-                        ticket: vec![
-                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56,
-                            114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56,
-                            48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112, 88, 118, 55,
-                            72,
-                        ],
-                        unk1: 0,
-                        unk2: 0,
-                        region: Region::Europe,
-                        patch_version: 9002,
-                    },
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                        connection_id: Some(connection_id),
+                        packet: CLoginArbiter {
+                            master_account_name: "royalBush5915".to_string(),
+                            ticket: vec![
+                                79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49,
+                                56, 114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97,
+                                50, 56, 48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112,
+                                88, 118, 55, 72,
+                            ],
+                            unk1: 0,
+                            unk2: 0,
+                            region: Region::Europe,
+                            patch_version: 9002,
+                        },
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
         let valid_count = world
-            .borrow::<&Connection>()
+            .borrow::<View<Connection>>()
             .iter()
             .filter(|connection| connection.verified)
             .count();
@@ -632,27 +622,29 @@ mod tests {
     fn test_login_arbiter_invalid() {
         let (world, connection_id) = setup_with_connection();
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
-                    connection_id: Some(connection_id),
-                    packet: CLoginArbiter {
-                        master_account_name: "royalBush5915".to_string(),
-                        ticket: vec![],
-                        unk1: 0,
-                        unk2: 0,
-                        region: Region::Europe,
-                        patch_version: 9002,
-                    },
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                        connection_id: Some(connection_id),
+                        packet: CLoginArbiter {
+                            master_account_name: "royalBush5915".to_string(),
+                            ticket: vec![],
+                            unk1: 0,
+                            unk2: 0,
+                            region: Region::Europe,
+                            patch_version: 9002,
+                        },
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
         let count = world
-            .borrow::<&OutgoingEvent>()
+            .borrow::<View<OutgoingEvent>>()
             .iter()
             .filter(|event| match &*event.0 {
                 Event::ResponseLoginArbiter { packet, .. } => !packet.success,
@@ -662,7 +654,7 @@ mod tests {
         assert_eq!(count, 1);
 
         let valid_count = world
-            .borrow::<&Connection>()
+            .borrow::<View<Connection>>()
             .iter()
             .filter(|connection| !connection.verified)
             .count();
@@ -674,19 +666,21 @@ mod tests {
         let world = setup();
         let (tx_channel, _rx_channel) = channel(10);
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestRegisterConnection {
-                    connection_id: None,
-                    response_channel: tx_channel.clone(),
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestRegisterConnection {
+                        connection_id: None,
+                        response_channel: tx_channel.clone(),
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
-        let con = world.run::<&OutgoingEvent, Option<EntityId>, _>(|events| {
+        let con = world.run(|events: View<OutgoingEvent>| {
             if let Some(event) = (&events).iter().next() {
                 match *event.0 {
                     Event::ResponseRegisterConnection { connection_id } => connection_id,
@@ -699,51 +693,53 @@ mod tests {
         assert_ne!(con, None);
 
         // Run the cleaner to clean up all events.
-        world.run_system::<Cleaner>();
+        world.run(cleaner_system);
 
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestCheckVersion {
-                    connection_id: con,
-                    packet: CCheckVersion {
-                        version: vec![
-                            CCheckVersionEntry {
-                                index: 0,
-                                value: 366_222,
-                            },
-                            CCheckVersionEntry {
-                                index: 1,
-                                value: 365_535,
-                            },
-                        ],
-                    },
-                })),
-            );
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestLoginArbiter {
-                    connection_id: con,
-                    packet: CLoginArbiter {
-                        master_account_name: "royalBush5915".to_string(),
-                        ticket: vec![
-                            79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49, 56,
-                            114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97, 50, 56,
-                            48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112, 88, 118, 55,
-                            72,
-                        ],
-                        unk1: 0,
-                        unk2: 0,
-                        region: Region::Europe,
-                        patch_version: 9002,
-                    },
-                })),
-            );
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestCheckVersion {
+                        connection_id: con,
+                        packet: CCheckVersion {
+                            version: vec![
+                                CCheckVersionEntry {
+                                    index: 0,
+                                    value: 366_222,
+                                },
+                                CCheckVersionEntry {
+                                    index: 1,
+                                    value: 365_535,
+                                },
+                            ],
+                        },
+                    })),
+                );
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestLoginArbiter {
+                        connection_id: con,
+                        packet: CLoginArbiter {
+                            master_account_name: "royalBush5915".to_string(),
+                            ticket: vec![
+                                79, 83, 99, 71, 75, 116, 109, 114, 51, 115, 110, 103, 98, 52, 49,
+                                56, 114, 70, 110, 72, 69, 68, 87, 77, 84, 114, 89, 83, 98, 72, 97,
+                                50, 56, 48, 106, 118, 101, 90, 116, 67, 101, 71, 55, 84, 55, 112,
+                                88, 118, 55, 72,
+                            ],
+                            unk1: 0,
+                            unk2: 0,
+                            region: Region::Europe,
+                            patch_version: 9002,
+                        },
+                    })),
+                );
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
-        world.run::<&OutgoingEvent, _, _>(|events| {
+        world.run(|events: View<OutgoingEvent>| {
             let list: Vec<&OutgoingEvent> = (&events).iter().collect();
             assert_eq!(list.len(), 5);
 
@@ -813,7 +809,7 @@ mod tests {
         let now = Instant::now();
         let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
 
-        world.run::<&mut Connection, _, _>(|mut connections| {
+        world.run(|mut connections: ViewMut<Connection>| {
             if let Ok(mut connection) = (&mut connections).get(connection_id) {
                 connection.last_pong = old_pong;
             } else {
@@ -821,15 +817,20 @@ mod tests {
             }
         });
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
-        let count = world.borrow::<&OutgoingEvent>().iter().count();
+        let count = world.borrow::<View<OutgoingEvent>>().iter().count();
         assert_eq!(count, 1);
 
         // Check if ping is present
         let mut to_delete: Option<EntityId> = None;
 
-        if let Some((entity, event)) = world.borrow::<&OutgoingEvent>().iter().with_id().next() {
+        if let Some((entity, event)) = world
+            .borrow::<View<OutgoingEvent>>()
+            .iter()
+            .with_id()
+            .next()
+        {
             match &*event.0 {
                 Event::ResponsePing { .. } => {
                     to_delete = Some(entity);
@@ -837,10 +838,12 @@ mod tests {
                 _ => panic!("Couldn't find ping event"),
             }
         }
-        world.borrow::<AllStorages>().delete(to_delete.unwrap());
+        world
+            .borrow::<AllStoragesViewMut>()
+            .delete(to_delete.unwrap());
 
         // Check if waiting_for_pong is updated
-        world.run::<&Connection, _, _>(|connections| {
+        world.run(|connections: View<Connection>| {
             if let Ok(connection) = (&connections).get(connection_id) {
                 if !connection.waiting_for_pong {
                     panic!("Waiting_for_pong was not set after ping");
@@ -851,20 +854,22 @@ mod tests {
         });
 
         // Send pong
-        world.run::<(EntitiesMut, &mut IncomingEvent), _, _>(|(mut entities, mut events)| {
-            entities.add_entity(
-                &mut events,
-                IncomingEvent(Arc::new(Event::RequestPong {
-                    connection_id: Some(connection_id),
-                    packet: CPong {},
-                })),
-            )
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                entities.add_entity(
+                    &mut events,
+                    IncomingEvent(Arc::new(Event::RequestPong {
+                        connection_id: Some(connection_id),
+                        packet: CPong {},
+                    })),
+                )
+            },
+        );
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
         // Check if last_pong is updated
-        world.run::<&Connection, _, _>(|connections| {
+        world.run(|connections: View<Connection>| {
             let component = &connections[connection_id];
             assert_eq!(component.last_pong > old_pong, true);
         });
@@ -877,17 +882,17 @@ mod tests {
         // Set last pong 91 seconds ago.
         let now = Instant::now();
         let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
-        world.run::<&mut Connection, _, _>(|mut connections| {
+        world.run(|mut connections: ViewMut<Connection>| {
             connections[connection_id].last_pong = old_pong;
         });
 
-        world.run_system::<ConnectionManager>();
+        world.run(connection_manager_system);
 
-        let count = world.borrow::<&mut OutgoingEvent>().iter().count();
+        let count = world.borrow::<ViewMut<OutgoingEvent>>().iter().count();
         assert_eq!(count, 1);
 
         // Check if drop connection event is present
-        world.run::<&OutgoingEvent, _, _>(|events| {
+        world.run(|events: View<OutgoingEvent>| {
             if let Some(event) = (&events).iter().next() {
                 match &*event.0 {
                     Event::ResponseDropConnection { .. } => { /* do nothing */ }
@@ -897,10 +902,10 @@ mod tests {
         });
 
         // Run the cleaner so that the connection is cleaned up.
-        world.run_system::<Cleaner>();
+        world.run(cleaner_system);
 
         // Check if connection component was deleted
-        if let Ok(_component) = world.borrow::<&Connection>().get(connection_id) {
+        if let Ok(_component) = world.borrow::<View<Connection>>().get(connection_id) {
             panic!("Found the connection component even though it should have been deleted");
         };
     }

@@ -1,45 +1,35 @@
-/// Event receiver dispatches the events from the request channel into the ECS.
-use shipyard::prelude::*;
+use shipyard::*;
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info_span, trace};
 
 use crate::ecs::component::IncomingEvent;
 use crate::ecs::resource::{EventRxChannel, WorldId};
 
-pub struct EventReceiver;
+/// Event receiver dispatches the events from the request channel into the ECS.
+pub fn event_receiver_system(
+    mut incoming_events: ViewMut<IncomingEvent>,
+    mut entities: EntitiesViewMut,
+    mut event_channel: UniqueViewMut<EventRxChannel>,
+    world_id: UniqueView<WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-impl<'sys> System<'sys> for EventReceiver {
-    type Data = (
-        &'sys mut IncomingEvent,
-        EntitiesMut,
-        Unique<&'sys mut EventRxChannel>,
-        Unique<&'sys WorldId>,
-    );
-
-    fn run(
-        (mut incoming_events, mut entities, mut event_channel, world_id): <Self::Data as SystemData<
-            'sys,
-        >>::View,
-    ) {
-        let span = info_span!("world", world_id = world_id.0);
-        let _enter = span.enter();
-
-        loop {
-            match event_channel.channel.try_recv() {
-                Ok(event) => {
-                    debug!("Created incoming event {}", event);
-                    trace!("Event data: {:?}", event);
-                    entities.add_entity(&mut incoming_events, IncomingEvent(event));
-                }
-                Err(e) => {
-                    match e {
-                        TryRecvError::Empty => {
-                            /* Nothing to do */
-                            return;
-                        }
-                        TryRecvError::Closed => {
-                            error!("Request channel was closed");
-                        }
+    loop {
+        match event_channel.channel.try_recv() {
+            Ok(event) => {
+                debug!("Created incoming event {}", event);
+                trace!("Event data: {:?}", event);
+                entities.add_entity(&mut incoming_events, IncomingEvent(event));
+            }
+            Err(e) => {
+                match e {
+                    TryRecvError::Empty => {
+                        /* Nothing to do */
+                        return;
+                    }
+                    TryRecvError::Closed => {
+                        error!("Request channel was closed");
                     }
                 }
             }
@@ -51,7 +41,7 @@ impl<'sys> System<'sys> for EventReceiver {
 mod tests {
     use std::sync::Arc;
 
-    use shipyard::prelude::*;
+    use shipyard::*;
     use tokio::sync::mpsc::channel;
 
     use crate::ecs::event::Event;
@@ -89,9 +79,9 @@ mod tests {
             }))
             .unwrap();
 
-        world.run_system::<EventReceiver>();
+        world.run(event_receiver_system);
 
-        let count = world.borrow::<&IncomingEvent>().iter().count();
+        let count = world.borrow::<View<IncomingEvent>>().iter().count();
         assert_eq!(count, 2);
     }
 }

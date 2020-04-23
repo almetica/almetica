@@ -1,7 +1,6 @@
-/// Event sender sends all outgoing events to the connection / local worlds.
 use std::collections::HashMap;
 
-use shipyard::prelude::*;
+use shipyard::*;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, warn};
@@ -10,25 +9,18 @@ use crate::ecs::component::*;
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::{ConnectionMapping, WorldId};
 
-pub struct EventSender;
+/// Event sender sends all outgoing events to the connection / local worlds.
+pub fn event_sender_system(
+    outgoing_events: View<OutgoingEvent>,
+    mut connection_mapping: UniqueViewMut<ConnectionMapping>,
+    world_id: UniqueView<WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-impl<'sys> System<'sys> for EventSender {
-    type Data = (
-        &'sys OutgoingEvent,
-        Unique<&'sys mut ConnectionMapping>,
-        Unique<&'sys WorldId>,
-    );
-
-    fn run(
-        (outgoing_events, mut connection_mapping, world_id): <Self::Data as SystemData<'sys>>::View,
-    ) {
-        let span = info_span!("world", world_id = world_id.0);
-        let _enter = span.enter();
-
-        (&outgoing_events).iter().for_each(|event| {
-            send_event_to_connection(&event, &mut connection_mapping.0);
-        });
-    }
+    (&outgoing_events).iter().for_each(|event| {
+        send_event_to_connection(&event, &mut connection_mapping.0);
+    });
 }
 
 fn send_event_to_connection(
@@ -70,7 +62,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant;
 
-    use shipyard::prelude::*;
+    use shipyard::*;
     use tokio::sync::mpsc::{channel, Receiver};
 
     use crate::ecs::component::Connection;
@@ -82,8 +74,8 @@ mod tests {
         let world = World::new();
         world.add_unique(WorldId(0));
 
-        let connection_id = world.run::<(EntitiesMut, &mut Connection), EntityId, _>(
-            |(mut entities, mut connections)| {
+        let connection_id = world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
                 entities.add_entity(
                     &mut connections,
                     Connection {
@@ -110,18 +102,20 @@ mod tests {
     fn test_send_single_event() {
         let (world, connection_id, mut channel) = setup();
 
-        world.run::<(EntitiesMut, &mut OutgoingEvent), _, _>(|(mut entities, mut events)| {
-            for _i in 0..10 {
-                entities.add_entity(
-                    &mut events,
-                    OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-                        connection_id: Some(connection_id),
-                    })),
-                );
-            }
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<OutgoingEvent>| {
+                for _i in 0..10 {
+                    entities.add_entity(
+                        &mut events,
+                        OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
+                            connection_id: Some(connection_id),
+                        })),
+                    );
+                }
+            },
+        );
 
-        world.run_system::<EventSender>();
+        world.run(event_sender_system);
 
         let mut count: u64 = 0;
         while let Ok(event) = channel.try_recv() {
@@ -137,21 +131,23 @@ mod tests {
     fn test_drop_connection_event() {
         let (world, connection_id, mut channel) = setup();
 
-        world.run::<(EntitiesMut, &mut OutgoingEvent), _, _>(|(mut entities, mut events)| {
-            for _i in 0..1 {
-                entities.add_entity(
-                    &mut events,
-                    OutgoingEvent(Arc::new(Event::ResponseDropConnection {
-                        connection_id: Some(connection_id),
-                    })),
-                );
-            }
-        });
+        world.run(
+            |mut entities: EntitiesViewMut, mut events: ViewMut<OutgoingEvent>| {
+                for _i in 0..1 {
+                    entities.add_entity(
+                        &mut events,
+                        OutgoingEvent(Arc::new(Event::ResponseDropConnection {
+                            connection_id: Some(connection_id),
+                        })),
+                    );
+                }
+            },
+        );
 
-        world.run_system::<EventSender>();
+        world.run(event_sender_system);
 
         // Connection was dropped
-        assert_eq!(world.borrow::<Unique<&ConnectionMapping>>().0.len(), 0);
+        assert_eq!(world.borrow::<UniqueView<ConnectionMapping>>().0.len(), 0);
 
         // ResponseDropConnection event was send
         let mut count: u64 = 0;

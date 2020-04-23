@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::{thread, time};
 
-use shipyard::prelude::*;
+use shipyard::*;
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::debug;
 
@@ -28,9 +28,6 @@ impl Multiverse {
     pub fn run(&mut self, pool: SyncDbPool, config: Configuration) {
         let world = &mut self.global_handle.world;
 
-        // Define workloads
-        world.add_workload::<(SettingsManager, UserManager), _>("GeneralSystems");
-
         // Copy configuration and db pool into the global resources so that systems can access them.
         world.add_unique(config);
         world.add_unique(pool);
@@ -40,11 +37,15 @@ impl Multiverse {
         loop {
             let start = time::Instant::now();
 
-            world.run_system::<EventReceiver>();
-            world.run_system::<ConnectionManager>();
-            world.run_workload("GeneralSystems");
-            world.run_system::<EventSender>();
-            world.run_system::<Cleaner>();
+            world
+                .add_workload("global world tick")
+                .with_system(system!(event_receiver_system))
+                .with_system(system!(connection_manager_system))
+                .with_system(system!(settings_manager_system))
+                .with_system(system!(user_manager_system))
+                .with_system(system!(event_sender_system))
+                .with_system(system!(cleaner_system))
+                .build();
 
             let elapsed = start.elapsed();
             if elapsed < min_duration {
@@ -73,8 +74,12 @@ impl Default for Multiverse {
         world.add_unique(EventRxChannel {
             channel: rx_channel,
         });
-        world.add_unique(ConnectionMapping(HashMap::with_capacity(512)));
-        world.add_unique(DeletionList(Vec::with_capacity(512)));
+
+        let map: HashMap<EntityId, Sender<EcsEvent>> = HashMap::with_capacity(512);
+        world.add_unique(ConnectionMapping(map));
+
+        let vec: Vec<EntityId> = Vec::with_capacity(512);
+        world.add_unique(DeletionList(vec));
 
         Multiverse {
             global_handle: WorldHandle {

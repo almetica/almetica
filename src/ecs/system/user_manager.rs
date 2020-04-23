@@ -1,7 +1,7 @@
 /// Handles the users of an account. Users in TERA terminology are the player characters of an account.
 use std::sync::Arc;
 
-use shipyard::prelude::*;
+use shipyard::*;
 use tracing::{debug, info_span};
 
 use crate::ecs::component::{IncomingEvent, OutgoingEvent};
@@ -11,38 +11,30 @@ use crate::ecs::system::send_event;
 use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
 use crate::protocol::packet::*;
 
-pub struct UserManager;
+pub fn user_manager_system(
+    incoming_events: View<IncomingEvent>,
+    mut outgoing_events: ViewMut<OutgoingEvent>,
+    mut entities: EntitiesViewMut,
+    world_id: UniqueView<WorldId>,
+) {
+    let span = info_span!("world", world_id = world_id.0);
+    let _enter = span.enter();
 
-impl<'sys> System<'sys> for UserManager {
-    type Data = (
-        &'sys IncomingEvent,
-        &'sys mut OutgoingEvent,
-        EntitiesMut,
-        Unique<&'sys WorldId>,
-    );
-
-    fn run(
-        (incoming_events, mut outgoing_events, mut entities, world_id): <Self::Data as SystemData<'sys>>::View,
-    ) {
-        let span = info_span!("world", world_id = world_id.0);
-        let _enter = span.enter();
-
-        (&incoming_events).iter().for_each(|event| {
-            // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
-            match *event.0 {
-                Event::RequestGetUserList { connection_id, .. } => {
-                    handle_user_list(connection_id, &mut outgoing_events, &mut entities);
-                }
-                _ => { /* Ignore all other events */ }
+    (&incoming_events).iter().for_each(|event| {
+        // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
+        match *event.0 {
+            Event::RequestGetUserList { connection_id, .. } => {
+                handle_user_list(connection_id, &mut outgoing_events, &mut entities);
             }
-        });
-    }
+            _ => { /* Ignore all other events */ }
+        }
+    });
 }
 
 fn handle_user_list(
     connection_id: Option<EntityId>,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut Entities,
+    entities: &mut EntitiesViewMut,
 ) {
     debug!("Get user list event incoming");
 
