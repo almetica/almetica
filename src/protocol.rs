@@ -4,9 +4,7 @@ pub mod packet;
 pub mod serde;
 
 use std::collections::HashMap;
-use std::time::Duration;
 
-use async_std::future;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use async_std::sync::{channel, Receiver, Sender};
@@ -26,10 +24,7 @@ enum ConnectionHandleEvent {
     GlobalTx(Option<EcsEvent>),
     #[allow(dead_code)]
     LocalTx(Option<EcsEvent>), // FIXME remove me once implemented
-    Timeout,
 }
-
-// FIXME: Use futures_channel::mpsc::channel || unbounded
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
@@ -67,6 +62,7 @@ impl<'a> GameSession<'a> {
                 response_channel: tx_response_channel,
             }))
             .await;
+
         // Wait for the global ECS to return an uid for the connection.
         let message = rx_response_channel.recv().await;
         let connection_id = GameSession::parse_connection(message).await?;
@@ -163,18 +159,12 @@ impl<'a> GameSession<'a> {
                 Ok::<_, Error>(ConnectionHandleEvent::Rx(read))
             };
 
-            let channel = self.global_response_channel.clone();
             let global_tx = async {
-                let event = channel.recv().await;
+                let event = self.global_response_channel.recv().await;
                 Ok::<_, Error>(ConnectionHandleEvent::GlobalTx(event))
             };
 
-            let timeout = async {
-                future::ready(1).delay(Duration::from_millis(2000));
-                Ok::<_, Error>(ConnectionHandleEvent::Timeout)
-            };
-
-            match rx.race(global_tx).race(timeout).await? {
+            match rx.race(global_tx).await? {
                 ConnectionHandleEvent::Rx(read) => {
                     if read == 0 {
                         // Connection was closed
@@ -209,10 +199,6 @@ impl<'a> GameSession<'a> {
                 }
                 ConnectionHandleEvent::GlobalTx(event) => self.handle_message(event).await?,
                 ConnectionHandleEvent::LocalTx(event) => self.handle_message(event).await?,
-                ConnectionHandleEvent::Timeout => {
-                    warn!("Connection timed out");
-                    return Ok(());
-                }
             };
         }
     }
@@ -418,7 +404,7 @@ mod tests {
         Ok((addr, tcp_join, world_join))
     }
 
-    #[tokio::test]
+    #[async_std::test]
     async fn test_gamesession_creation() -> Result<()> {
         let (addr, tcp_join, world_join) = spawn_dummy_server().await?;
         let mut stream = TcpStream::connect(&addr).await?;

@@ -23,7 +23,7 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
 
     let mut webserver = Server::with_state(WebServerState { config, pool });
     webserver.middleware(tide::middleware::RequestLogger::new());
-    webserver.at("/server/list.*").get(server_list_endpoint);
+    webserver.at("/server/list.uk").get(server_list_endpoint); // FIXME: wildcard!
     webserver.at("/auth").post(auth_endpoint);
     webserver.listen(listen_string).await?;
     Ok(())
@@ -56,7 +56,7 @@ async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
 
 /// Handles the client authentication.
 async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
-    let login_request: request::Login = match req.body_json().await {
+    let login_request: request::Login = match req.body_form().await {
         Ok(login) => login,
         Err(e) => {
             error!("Couldn't deserialize login request: {:?}", e);

@@ -115,7 +115,10 @@ async fn run() -> Result<()> {
 
 fn init_logging() {
     let fmt_layer = Layer::default().with_target(true);
-    let filter_layer = EnvFilter::from_default_env();
+    let filter_layer = EnvFilter::from_default_env()
+        .add_directive("async_std::task::builder=warn".parse().unwrap())
+        .add_directive("async_std::task::block_on=warn".parse().unwrap());
+
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
     LogTracer::init().unwrap();

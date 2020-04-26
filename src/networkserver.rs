@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use async_std::net::TcpListener;
 use async_std::sync::Sender;
+use async_std::task;
 use tracing::{error, info, info_span, warn};
 use tracing_futures::Instrument;
 
@@ -34,7 +35,7 @@ pub async fn run(
                 let thread_opcode_map = arc_map.clone();
                 let thread_reverse_map = arc_reverse_map.clone();
 
-                tokio::spawn(async move {
+                task::spawn(async move {
                     let span = info_span!("socket", %addr);
                     let _enter = span.enter();
 
@@ -45,6 +46,7 @@ pub async fn run(
                         thread_opcode_map,
                         thread_reverse_map,
                     )
+                    .instrument(span.clone())
                     .await
                     {
                         Ok(mut session) => {

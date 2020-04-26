@@ -14,7 +14,6 @@ clap = { git = "https://github.com/clap-rs/clap/", features = ["yaml"] }
 chrono = "0.4"
 dotenv = "0.15"
 flate2 = "1.0"
-futures-channel = "0.3"
 hex = "0.4"
 http-types = "1.2"
 rand = "0.7"

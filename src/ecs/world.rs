@@ -32,20 +32,24 @@ impl Multiverse {
         world.add_unique(config);
         world.add_unique(pool);
 
+        // Build the workload
+        const GLOBAL_WORLD_TICK: &str = "GLOBAL_WORLD_TICK";
+        world
+            .add_workload(GLOBAL_WORLD_TICK)
+            .with_system(system!(event_receiver_system))
+            .with_system(system!(connection_manager_system))
+            .with_system(system!(settings_manager_system))
+            .with_system(system!(user_manager_system))
+            .with_system(system!(event_sender_system))
+            .with_system(system!(cleaner_system))
+            .build();
+
         // Global tick rate is at best 50ms (20 Hz)
         let min_duration = time::Duration::from_millis(50);
         loop {
             let start = time::Instant::now();
 
-            world
-                .add_workload("global world tick")
-                .with_system(system!(event_receiver_system))
-                .with_system(system!(connection_manager_system))
-                .with_system(system!(settings_manager_system))
-                .with_system(system!(user_manager_system))
-                .with_system(system!(event_sender_system))
-                .with_system(system!(cleaner_system))
-                .build();
+            world.run_workload(GLOBAL_WORLD_TICK);
 
             let elapsed = start.elapsed();
             if elapsed < min_duration {
