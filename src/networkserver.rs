@@ -35,7 +35,6 @@ pub async fn run(
                 let thread_opcode_map = arc_map.clone();
                 let thread_reverse_map = arc_reverse_map.clone();
 
-                // TODO Implement timeouts against bad behaving clients (game session creation and protocol loop).
                 task::spawn(async move {
                     let span = info_span!("socket", %addr);
                     let _enter = span.enter();

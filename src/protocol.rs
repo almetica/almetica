@@ -5,6 +5,7 @@ pub mod serde;
 
 use std::collections::HashMap;
 
+use async_std::io::timeout;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use async_std::sync::{channel, Receiver, Sender};
@@ -18,6 +19,7 @@ use crate::crypt::CryptSession;
 use crate::ecs::event::{EcsEvent, Event, EventTarget};
 use crate::protocol::opcode::Opcode;
 use crate::*;
+use std::time::Duration;
 
 enum ConnectionHandleEvent {
     Rx(usize),
@@ -41,6 +43,9 @@ pub struct GameSession<'a> {
     _instance_request_channel: Option<Sender<EcsEvent>>,
     // Receiving channel FROM the instance world
     _instance_response_channel: Option<Receiver<EcsEvent>>,
+    write_timeout_dur: Duration,
+    read_timeout_dur: Duration,
+    peek_timeout_dur: Duration,
 }
 
 impl<'a> GameSession<'a> {
@@ -82,42 +87,47 @@ impl<'a> GameSession<'a> {
             global_response_channel: rx_response_channel,
             _instance_request_channel: None,
             _instance_response_channel: None,
+            write_timeout_dur: Duration::from_secs(15),
+            read_timeout_dur: Duration::from_secs(15),
+            peek_timeout_dur: Duration::from_secs(120),
         })
     }
 
     async fn init_crypto(stream: &mut TcpStream) -> Result<CryptSession> {
+        let timeout_dur = Duration::from_secs(5);
+
         let magic_word_buffer: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
         let mut client_key_1 = vec![0; 128];
         let mut client_key_2 = vec![0; 128];
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
         debug!("Sending magic word");
-        if let Err(e) = stream.write_all(&magic_word_buffer).await {
+        if let Err(e) = timeout(timeout_dur, stream.write_all(&magic_word_buffer)).await {
             error!("Can't send magic word: {:?}", e);
             return Err(Error::Io(e));
         }
 
-        if let Err(e) = stream.read_exact(&mut client_key_1).await {
+        if let Err(e) = timeout(timeout_dur, stream.read_exact(&mut client_key_1)).await {
             error!("Can't read client key 1: {:?}", e);
             return Err(Error::Io(e));
         }
         debug!("Received client key 1");
 
         OsRng.fill_bytes(&mut server_key_1);
-        if let Err(e) = stream.write_all(&server_key_1).await {
+        if let Err(e) = timeout(timeout_dur, stream.write_all(&server_key_1)).await {
             error!("Can't write server key 1: {:?}", e);
             return Err(Error::Io(e));
         }
         debug!("Send server key 1");
 
-        if let Err(e) = stream.read_exact(&mut client_key_2).await {
+        if let Err(e) = timeout(timeout_dur, stream.read_exact(&mut client_key_2)).await {
             error!("Can't read client key 2: {:?}", e);
             return Err(Error::Io(e));
         }
         debug!("Received client key 2");
 
         OsRng.fill_bytes(&mut server_key_2);
-        if let Err(e) = stream.write_all(&server_key_2).await {
+        if let Err(e) = timeout(timeout_dur, stream.write_all(&server_key_2)).await {
             error!("Can't write server key 2: {:?}", e);
             return Err(Error::Io(e));
         }
@@ -155,7 +165,7 @@ impl<'a> GameSession<'a> {
             // TODO Query instance response channel
 
             let rx = async {
-                let read = self.stream.peek(&mut peek_buf).await?;
+                let read = timeout(self.peek_timeout_dur, self.stream.peek(&mut peek_buf)).await?;
                 Ok::<_, Error>(ConnectionHandleEvent::Rx(read))
             };
 
@@ -171,13 +181,18 @@ impl<'a> GameSession<'a> {
                         return Ok(());
                     }
                     if read == 4 {
-                        self.stream.read_exact(&mut header_buf).await?;
+                        timeout(
+                            self.read_timeout_dur,
+                            self.stream.read_exact(&mut header_buf),
+                        )
+                        .await?;
                         self.cipher.crypt_client_data(&mut header_buf);
                         let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
                         let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
                         let mut data_buf = vec![0u8; packet_length];
                         if packet_length != 0 {
-                            self.stream.read_exact(&mut data_buf).await?;
+                            timeout(self.read_timeout_dur, self.stream.read_exact(&mut data_buf))
+                                .await?;
                             self.cipher.crypt_client_data(&mut data_buf);
                             trace!(
                                 "Received packet with opcode value {}: {:?}",
@@ -250,7 +265,7 @@ impl<'a> GameSession<'a> {
                     buffer.append(&mut data);
 
                     self.cipher.crypt_server_data(buffer.as_mut_slice());
-                    self.stream.write_all(&buffer).await?;
+                    timeout(self.write_timeout_dur, self.stream.write_all(&buffer)).await?;
                 }
             }
             None => {
