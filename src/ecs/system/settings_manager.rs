@@ -42,7 +42,7 @@ fn handle_set_visible_range(
         debug!("Set visible range event incoming");
 
         // TODO The local world need to know of this values. Send this value once the user enters the local world.
-        if let Ok(mut settings) = (&mut settings).get(connection_id) {
+        if let Ok(mut settings) = (&mut settings).try_get(connection_id) {
             settings.visibility_range = packet.range;
         } else {
             let user_settings = Settings {

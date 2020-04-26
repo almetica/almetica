@@ -46,13 +46,14 @@ macro_rules! impl_nums {
     ($ty:ty, $dser_method:ident, $visitor_method:ident, $reader_method:ident, $size:literal) => {
         #[inline]
         fn $dser_method<V>(self, visitor: V) -> Result<V::Value>
-            where V: serde::de::Visitor<'de>,
+        where
+            V: serde::de::Visitor<'de>,
         {
             let d = LittleEndian::$reader_method(&self.data[self.pos..self.pos + $size]);
             self.pos += $size;
             visitor.$visitor_method(d)
         }
-    }
+    };
 }
 
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {

@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+#![recursion_limit = "256"]
 pub mod config;
 pub mod crypt;
 pub mod dataloader;
@@ -10,19 +11,9 @@ pub mod webserver;
 
 use std::sync::Arc;
 
-use bb8;
-use bb8_postgres;
-use postgres::NoTls;
-use r2d2;
-use r2d2_postgres;
 use thiserror::Error;
 
-use ecs::event::Event;
-
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-pub type SyncDbPool = r2d2::Pool<r2d2_postgres::PostgresConnectionManager<NoTls>>;
-pub type AsyncDbPool = bb8::Pool<bb8_postgres::PostgresConnectionManager<NoTls>>;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -56,14 +47,14 @@ pub enum Error {
     #[error("unsupported password hash")]
     UnsupportedPasswordHash,
 
-    #[error("no row was returned")]
-    NoRowReturned,
-
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
 
     #[error("argon2 error: {0}")]
     Argon2(#[from] argon2::Error),
+
+    #[error("future timeout error: {0}")]
+    FutureTimeout(#[from] async_std::future::TimeoutError),
 
     #[error("base64 decode error: {0}")]
     Base64Decode(#[from] base64::DecodeError),
@@ -80,23 +71,14 @@ pub enum Error {
     #[error("protocol serde error: {0}")]
     ProtocolSerde(#[from] protocol::serde::Error),
 
-    #[error("mpsc send event error: {0}")]
-    MpscSendEvent(#[from] tokio::sync::mpsc::error::SendError<Arc<Event>>),
-
     #[error("refinery error: {0}")]
     Refinery(#[from] refinery::Error),
 
-    #[error("r2d2 pool error: {0}")]
-    R2D2Pool(#[from] r2d2::Error),
-
-    #[error("bb8 run error: {0}")]
-    BB8RunError(#[from] bb8::RunError<tokio_postgres::error::Error>),
+    #[error("sqlx error: {0}")]
+    Sqlx(#[from] sqlx::Error),
 
     #[error("tokio timeout error: {0}")]
     TokioTimeOut(#[from] tokio::time::Elapsed),
-
-    #[error("tokio join error: {0}")]
-    TokioJoinError(#[from] tokio::task::JoinError),
 
     #[error("tokio progres error: {0}")]
     TokioProgresError(#[from] tokio_postgres::error::Error),

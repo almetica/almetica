@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use async_std::sync::Sender;
+use async_std::task;
 use shipyard::*;
-use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, info_span, warn};
+use tracing::{debug, error, info_span};
 
 use crate::ecs::component::*;
 use crate::ecs::event::{EcsEvent, Event};
@@ -34,17 +34,12 @@ fn send_event_to_connection(
         if let Some(channel) = connection_mapping.get_mut(&connection_id) {
             debug!("Sending event {}", *event.0);
 
-            if let Err(err) = channel.try_send(event.0.clone()) {
-                match err {
-                    TrySendError::Full(..) => {
-                        error!("Dropping event for connection because channel is full");
-                    }
-                    TrySendError::Closed(..) => {
-                        warn!("Couldn't send event for connection because channel is closed");
-                        connection_mapping.remove(&connection_id);
-                        return;
-                    }
-                }
+            if !channel.is_full() {
+                task::block_on(async {
+                    channel.send(event.0.clone()).await;
+                });
+            } else {
+                error!("Dropping event for connection because channel is full");
             }
             if let Event::ResponseDropConnection { connection_id } = *event.0 {
                 connection_mapping.remove(&connection_id.unwrap());
@@ -62,8 +57,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant;
 
+    use async_std::sync::{channel, Receiver};
+    use async_std::task;
     use shipyard::*;
-    use tokio::sync::mpsc::{channel, Receiver};
 
     use crate::ecs::component::Connection;
     use crate::ecs::event::Event;
@@ -100,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_send_single_event() {
-        let (world, connection_id, mut channel) = setup();
+        let (world, connection_id, channel) = setup();
 
         world.run(
             |mut entities: EntitiesViewMut, mut events: ViewMut<OutgoingEvent>| {
@@ -118,18 +114,22 @@ mod tests {
         world.run(event_sender_system);
 
         let mut count: u64 = 0;
-        while let Ok(event) = channel.try_recv() {
-            match *event {
-                Event::ResponseRegisterConnection { .. } => count += 1,
-                _ => panic!("Couldn't find register connection event"),
+        task::block_on(async {
+            while !channel.is_empty() {
+                if let Some(event) = channel.recv().await {
+                    match *event {
+                        Event::ResponseRegisterConnection { .. } => count += 1,
+                        _ => panic!("Couldn't find register connection event"),
+                    }
+                }
             }
-        }
+        });
         assert_eq!(count, 10);
     }
 
     #[test]
     fn test_drop_connection_event() {
-        let (world, connection_id, mut channel) = setup();
+        let (world, connection_id, channel) = setup();
 
         world.run(
             |mut entities: EntitiesViewMut, mut events: ViewMut<OutgoingEvent>| {
@@ -151,12 +151,16 @@ mod tests {
 
         // ResponseDropConnection event was send
         let mut count: u64 = 0;
-        while let Ok(event) = channel.try_recv() {
-            match *event {
-                Event::ResponseDropConnection { .. } => count += 1,
-                _ => panic!("Couldn't find drop connection event"),
+        task::block_on(async {
+            while !channel.is_empty() {
+                if let Some(event) = channel.recv().await {
+                    match *event {
+                        Event::ResponseDropConnection { .. } => count += 1,
+                        _ => panic!("Couldn't find drop connection event"),
+                    }
+                }
             }
-        }
+        });
         assert_eq!(count, 1);
     }
 }

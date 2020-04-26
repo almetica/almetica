@@ -2,15 +2,15 @@
 use std::collections::HashMap;
 use std::{thread, time};
 
+use async_std::sync::{channel, Sender};
 use shipyard::*;
-use tokio::sync::mpsc::{channel, Sender};
+use sqlx::PgPool;
 use tracing::debug;
 
 use crate::config::Configuration;
 use crate::ecs::event::EcsEvent;
 use crate::ecs::resource::*;
 use crate::ecs::system::*;
-use crate::SyncDbPool;
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
@@ -25,7 +25,7 @@ impl Multiverse {
     }
 
     /// Starts the main loop of the global world.
-    pub fn run(&mut self, pool: SyncDbPool, config: Configuration) {
+    pub fn run(&mut self, pool: PgPool, config: Configuration) {
         let world = &mut self.global_handle.world;
 
         // Copy configuration and db pool into the global resources so that systems can access them.
@@ -103,28 +103,31 @@ pub struct WorldHandle {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
-    use tokio::sync::mpsc::channel;
+    use async_std::future::timeout;
+    use async_std::sync::channel;
 
     use crate::ecs::event::Event;
     use crate::Result;
 
     use super::*;
 
-    #[test]
-    fn test_multiverse_creation() -> Result<()> {
-        let mut m = Multiverse::new();
+    #[async_std::test]
+    async fn test_multiverse_creation() -> Result<()> {
+        let m = Multiverse::new();
         let (tx, _) = channel(128);
 
-        match m
+        let future = m
             .global_handle
             .tx_channel
-            .try_send(Arc::new(Event::RequestRegisterConnection {
+            .send(Arc::new(Event::RequestRegisterConnection {
                 connection_id: None,
                 response_channel: tx,
-            })) {
-            Ok(()) => Ok(()),
-            Err(e) => panic!(e),
-        }
+            }));
+
+        timeout(Duration::from_millis(100), future).await?;
+
+        Ok(())
     }
 }

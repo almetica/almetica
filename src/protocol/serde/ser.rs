@@ -116,7 +116,7 @@ macro_rules! impl_nums {
                 .append(&mut buf);
             Ok(())
         }
-    }
+    };
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {

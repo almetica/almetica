@@ -17,8 +17,8 @@
 use std::fmt;
 use std::sync::Arc;
 
+use async_std::sync::Sender;
 use shipyard::*;
-use tokio::sync::mpsc::Sender;
 
 use crate::protocol::opcode::Opcode;
 use crate::protocol::packet::*;
@@ -144,8 +144,8 @@ assemble_event! {
 
 #[cfg(test)]
 mod tests {
+    use async_std::sync::channel;
     use shipyard::*;
-    use tokio::sync::mpsc::channel;
 
     use crate::model::Region;
     use crate::protocol::opcode::Opcode;

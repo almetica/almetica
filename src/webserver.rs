@@ -2,158 +2,41 @@
 pub mod request;
 pub mod response;
 
-use std::net::SocketAddr;
-
-use warp::{Filter, Rejection, Reply};
+use http_types::StatusCode;
+use sqlx::PgPool;
+use tide::{Request, Response, Server};
+use tracing::{error, info};
 
 use crate::config::Configuration;
-use crate::AsyncDbPool;
+use crate::Result;
+
+struct WebServerState {
+    config: Configuration,
+    pool: PgPool,
+}
 
 /// Main loop of the web server.
-pub async fn run(pool: AsyncDbPool, config: Configuration) {
-    let api = auth_filter(pool.clone()).or(server_list_filter(pool));
-    let routes = api.with(warp::log("almetica::webserver"));
-
+pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
     let listen_string = format!("{}:{}", config.server.hostname, config.server.web_port);
-    let listen_addr: SocketAddr = listen_string
-        .parse()
-        .expect("Unable to parse listen address");
 
-    // Sadly, warp doesn't have a method to start with a `Result` return type. It loves to panic.
-    warp::serve(routes).run(listen_addr).await;
+    // FIXME: Add a body length limiting middleware once official implemented: https://github.com/http-rs/tide/issues/448
+
+    let mut webserver = Server::with_state(WebServerState { config, pool });
+    webserver.middleware(tide::middleware::RequestLogger::new());
+    webserver.at("/server/list.*").get(server_list_endpoint);
+    webserver.at("/auth").post(auth_endpoint);
+    webserver.listen(listen_string).await?;
+    Ok(())
 }
 
-fn with_db_pool(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = (AsyncDbPool,), Error = std::convert::Infallible> + Clone {
-    warp::any().map(move || pool.clone())
-}
-
-// /server/list.* filter
-fn server_list_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    // The TERA client needs to have the region endings (.uk / .de etc.) at the end or else it will not start!
-    list_cn_filter(pool.clone())
-        .or(list_de_filter(pool.clone()))
-        .or(list_en_filter(pool.clone()))
-        .or(list_fr_filter(pool.clone()))
-        .or(list_jp_filter(pool.clone()))
-        .or(list_kr_filter(pool.clone()))
-        .or(list_ru_filter(pool.clone()))
-        .or(list_th_filter(pool.clone()))
-        .or(list_uk_filter(pool))
-}
-
-// GET /server/list.cn
-fn list_cn_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.cn")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.de
-fn list_de_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.de")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.en
-fn list_en_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.en")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.fr
-fn list_fr_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.fr")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.jp
-fn list_jp_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.jp")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.kr
-fn list_kr_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.kr")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.ru
-fn list_ru_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.ru")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.th
-fn list_th_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.th")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// GET /server/list.uk
-fn list_uk_filter(
-    pool: AsyncDbPool,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("server" / "list.uk")
-        .and(warp::get())
-        .and(with_db_pool(pool))
-        .and_then(server_list_handler)
-}
-
-// POST /auth
-fn auth_filter(pool: AsyncDbPool) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path!("auth")
-        .and(warp::post())
-        .and(warp::body::content_length_limit(1024 * 16))
-        .and(warp::body::form())
-        .and(with_db_pool(pool))
-        .and_then(auth_handler)
-}
-
-/// Handles the server listening.
-async fn server_list_handler(_pool: AsyncDbPool) -> Result<impl Reply, Rejection> {
-    // TODO include the configuration settings here
-
-    let server_list_template = r###"<serverlist>
+/// Handles the sever listing
+async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
+    let server_list_template = format!(
+        r###"<serverlist>
 <server>
 <id>1</id>
-<ip>127.0.0.1</ip>
-<port>10001</port>
+<ip>{}</ip>
+<port>{}</port>
 <category sort="1">Almetica</category>
 <name raw_name="Almetica">Almetica</name>
 <crowdness sort="1">None</crowdness>
@@ -163,15 +46,38 @@ async fn server_list_handler(_pool: AsyncDbPool) -> Result<impl Reply, Rejection
 <popup> This server isn't up yet! </popup>
 <language>en</language>
 </server>
-</serverlist>"###;
+</serverlist>"###,
+        req.state().config.server.hostname,
+        req.state().config.server.game_port
+    );
 
-    Ok(warp::reply::html(server_list_template))
+    Response::new(StatusCode::Ok).body_string(server_list_template)
 }
 
 /// Handles the client authentication.
-async fn auth_handler(_login: request::Login, _pool: AsyncDbPool) -> Result<impl Reply, Rejection> {
+async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
+    let login_request: request::Login = match req.body_json().await {
+        Ok(login) => login,
+        Err(e) => {
+            error!("Couldn't deserialize login request: {:?}", e);
+            return Response::new(StatusCode::BadRequest);
+        }
+    };
+
     // TODO query database and do the login
-    // TODO include proper UUID and other fields (chars_per_server and access_level/user_permission etc) "cb3c75d4-66a6-4506-a549-c8ae53fbafd8".to_string()
+    // TODO include proper ticket and other fields (chars_per_server and access_level/user_permission etc)
+    let _conn = &req.state().pool;
+
+    // TODO when registering, only allow unicode letters (\p{Letter}) and numeric characters (\p{Number})
+    let account = login_request.username;
+    let ticket = "DEADDEADDEADDEAD".to_string();
+
+    info!(
+        "Account {} created auth ticket: {}",
+        account.clone(),
+        ticket.clone()
+    );
+
     let resp = response::AuthResponse {
         last_connected_server_id: 1,
         chars_per_server: vec![],
@@ -181,10 +87,15 @@ async fn auth_handler(_login: request::Login, _pool: AsyncDbPool) -> Result<impl
         access_level: 1,
         user_permission: 0,
         game_account_name: "TERA".to_string(),
-        master_account_name: "Almetica".to_string(),
-        ticket: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.VFb0qJ1LRg_4ujbZoRMXnVkUgiuKq5KxWqNdbKq_G9Vvz-S1zZa9LPxtHWKa64zDl2ofkT8F6jBt_K4riU-fPg" // HS512 JWT
-            .to_string(),
+        master_account_name: account,
+        ticket,
     };
 
-    Ok(warp::reply::json(&resp))
+    match Response::new(StatusCode::Ok).body_json(&resp) {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!("Couldn't serialize auth response: {:?}", e);
+            return Response::new(StatusCode::InternalServerError);
+        }
+    }
 }

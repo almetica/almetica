@@ -1,18 +1,15 @@
 #![warn(clippy::all)]
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
-use bb8;
-use bb8_postgres;
+use async_std::prelude::*;
+use async_std::sync::Sender;
+use async_std::task::{self, JoinHandle};
 use clap::Clap;
-use postgres::{self, NoTls};
-use r2d2;
-use r2d2_postgres;
-use tokio::sync::mpsc::Sender;
-use tokio::task::{self, JoinHandle};
+use sqlx::PgPool;
+use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 use tracing_log::LogTracer;
 use tracing_subscriber::filter::EnvFilter;
@@ -28,7 +25,7 @@ use almetica::model::embedded::migrations;
 use almetica::networkserver;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
-use almetica::{AsyncDbPool, Error, Result};
+use almetica::Result;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
@@ -37,7 +34,7 @@ struct Opts {
     config: PathBuf,
 }
 
-#[tokio::main]
+#[async_std::main]
 async fn main() {
     init_logging();
 
@@ -85,25 +82,17 @@ async fn run() -> Result<()> {
         }
     };
 
-    // We have two pools, one for the web server and one for the network server. A DDOS should not be able
-    // to steal all the database connections. Sync postgres does spawn it's own tokio runtime though
-    // so it's not the most efficient process right now. This has definitely room for improvement.
-    info!("Create async database pool");
-    let asnyc_db_conf = assemble_async_db_config(&config);
-    let asnyc_manager = bb8_postgres::PostgresConnectionManager::new(asnyc_db_conf.clone(), NoTls);
-    let async_pool = bb8::Pool::builder()
-        .max_size(2)
-        .build(asnyc_manager)
-        .await?;
+    info!("Running database migrations");
+    run_db_migrations(&config)?;
 
-    info!("Run database migrations");
-    run_db_migrations(asnyc_db_conf).await?;
+    info!("Creating database pool");
+    let pool = PgPool::new(sqlx_config(&config).as_ref()).await?;
 
     info!("Starting the ECS multiverse");
-    let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone());
+    let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone(), pool.clone());
 
     info!("Starting the web server");
-    let web_handle = start_web_server(async_pool, config.clone());
+    let web_handle = start_web_server(pool, config.clone());
 
     info!("Starting the network server");
     let network_handle = start_network_server(
@@ -113,8 +102,12 @@ async fn run() -> Result<()> {
         config,
     );
 
-    if let Err(e) = tokio::try_join!(multiverse_handle, web_handle, network_handle) {
-        return Err(Error::TokioJoinError(e));
+    let (_, err) = multiverse_handle
+        .join(web_handle)
+        .join(network_handle)
+        .await;
+    if let Err(e) = err {
+        error!("Can't shutdown server gracefully: {:?}", e);
     }
 
     Ok(())
@@ -122,38 +115,35 @@ async fn run() -> Result<()> {
 
 fn init_logging() {
     let fmt_layer = Layer::default().with_target(true);
-    let filter_layer =
-        EnvFilter::from_default_env().add_directive("legion_systems::system=warn".parse().unwrap());
+    let filter_layer = EnvFilter::from_default_env();
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
     LogTracer::init().unwrap();
 }
 
 /// Performs the database migrations
-async fn run_db_migrations(config: tokio_postgres::Config) -> Result<()> {
-    let (mut client, connection) = config.connect(NoTls).await?;
-    // This looks bonkers. The connection objects performs the actual communication and needs
-    // to run in a separate task. It's properly closed though once the migration finishes.
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            error!("connection error: {}", e);
-        }
+fn run_db_migrations(config: &Configuration) -> Result<()> {
+    // FIXME: Use sqlx once refinery adds support for it or we implement our own migration framework.
+    let mut rt = Runtime::new()?;
+    rt.block_on(async {
+        let db_conf = tokio_postgres_config(&config);
+        let (mut client, connection) = db_conf.connect(tokio_postgres::NoTls).await.unwrap();
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                error!("connection error: {}", e);
+            }
+        });
+        migrations::runner().run_async(&mut client).await.unwrap();
     });
-    migrations::runner().run_async(&mut client).await?;
     Ok(())
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse(config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>>) {
+fn start_multiverse(config: Configuration, pool: PgPool) -> (JoinHandle<()>, Sender<Arc<Event>>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
     let join_handle = task::spawn_blocking(move || {
-        info!("Create sync database pool");
-        let manager =
-            r2d2_postgres::PostgresConnectionManager::new(assemble_sync_db_config(&config), NoTls);
-        let pool = r2d2::Pool::builder().max_size(20).build(manager).unwrap();
-
         multiverse.run(pool, config);
     });
 
@@ -161,9 +151,11 @@ fn start_multiverse(config: Configuration) -> (JoinHandle<()>, Sender<Arc<Event>
 }
 
 /// Starts the web server handling all HTTP requests.
-fn start_web_server(pool: AsyncDbPool, config: Configuration) -> JoinHandle<()> {
+fn start_web_server(pool: PgPool, config: Configuration) -> JoinHandle<()> {
     task::spawn(async {
-        webserver::run(pool, config).await;
+        if let Err(e) = webserver::run(pool, config).await {
+            error!("Can't run the web server: {:?}", e);
+        };
     })
 }
 
@@ -177,8 +169,8 @@ fn start_network_server(
     task::spawn(async { networkserver::run(global_channel, map, reverse_map, config).await })
 }
 
-fn assemble_sync_db_config(config: &Configuration) -> postgres::Config {
-    let mut c = postgres::Config::new();
+fn tokio_postgres_config(config: &Configuration) -> tokio_postgres::Config {
+    let mut c = tokio_postgres::Config::new();
     c.host(&config.database.hostname);
     c.port(config.database.port);
     c.user(&config.database.username);
@@ -187,12 +179,13 @@ fn assemble_sync_db_config(config: &Configuration) -> postgres::Config {
     c
 }
 
-fn assemble_async_db_config(config: &Configuration) -> tokio_postgres::Config {
-    let mut c = tokio_postgres::Config::new();
-    c.host(&config.database.hostname);
-    c.port(config.database.port);
-    c.user(&config.database.username);
-    c.password(&config.database.password);
-    c.dbname(&config.database.database);
-    c
+fn sqlx_config(config: &Configuration) -> String {
+    format!(
+        "postgres://{}:{}@{}:{}/{}",
+        config.database.username,
+        config.database.password,
+        config.database.hostname,
+        config.database.port,
+        config.database.database
+    )
 }

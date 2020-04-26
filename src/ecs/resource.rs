@@ -1,8 +1,8 @@
 /// Module that hold the definitions for Resources used by the ECS.
 use std::collections::HashMap;
 
+use async_std::sync::{Receiver, Sender};
 use shipyard::EntityId;
-use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::ecs::event::EcsEvent;
 

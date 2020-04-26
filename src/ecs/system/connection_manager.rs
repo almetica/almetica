@@ -2,8 +2,8 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
+use async_std::sync::Sender;
 use shipyard::*;
-use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info_span, trace};
 
 use crate::ecs::component::{Connection, IncomingEvent, OutgoingEvent};
@@ -147,7 +147,7 @@ fn handle_request_check_version(
             packet.version[1].value
         );
 
-        if let Ok(mut connection) = (&mut connections).get(connection_id) {
+        if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
             connection.version_checked = true;
             check_and_handle_post_initialization(
                 connection_id,
@@ -198,7 +198,7 @@ fn handle_request_login_arbiter(
                 return;
             }
 
-            if let Ok(mut connection) = (&mut connections).get(connection_id) {
+            if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
                 connection.verified = true;
                 connection.region = Some(packet.region);
                 check_and_handle_post_initialization(
@@ -261,7 +261,7 @@ fn handle_pong(connection_id: Option<EntityId>, mut connections: &mut ViewMut<Co
         let span = info_span!("connection", connection = ?connection_id);
         let _enter = span.enter();
 
-        if let Ok(mut connection) = (&mut connections).get(connection_id) {
+        if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
             connection.last_pong = Instant::now();
             connection.waiting_for_pong = false;
         } else {
@@ -421,8 +421,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use async_std::sync::channel;
     use shipyard::*;
-    use tokio::sync::mpsc::channel;
 
     use crate::ecs::component::{IncomingEvent, OutgoingEvent};
     use crate::ecs::event::Event;
@@ -810,7 +810,7 @@ mod tests {
         let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
 
         world.run(|mut connections: ViewMut<Connection>| {
-            if let Ok(mut connection) = (&mut connections).get(connection_id) {
+            if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
                 connection.last_pong = old_pong;
             } else {
                 panic!("Couldn't find connection component");
@@ -844,7 +844,7 @@ mod tests {
 
         // Check if waiting_for_pong is updated
         world.run(|connections: View<Connection>| {
-            if let Ok(connection) = (&connections).get(connection_id) {
+            if let Ok(connection) = (&connections).try_get(connection_id) {
                 if !connection.waiting_for_pong {
                     panic!("Waiting_for_pong was not set after ping");
                 }
@@ -905,7 +905,7 @@ mod tests {
         world.run(cleaner_system);
 
         // Check if connection component was deleted
-        if let Ok(_component) = world.borrow::<View<Connection>>().get(connection_id) {
+        if let Ok(_component) = world.borrow::<View<Connection>>().try_get(connection_id) {
             panic!("Found the connection component even though it should have been deleted");
         };
     }

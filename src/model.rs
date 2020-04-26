@@ -9,7 +9,6 @@ pub mod embedded {
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
-use postgres_types::{FromSql, ToSql};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -122,10 +121,10 @@ impl<'de> Visitor<'de> for U64Visitor {
 }
 
 /// Supported password hash algorithms.
-#[derive(Debug, FromSql, ToSql, PartialEq)]
-#[postgres(name = "password_hash_algorithm")]
+#[derive(Debug, sqlx::Type, PartialEq)]
+#[sqlx(rename = "PASSWORD_HASH_ALGORITHM")]
 pub enum PasswordHashAlgorithm {
-    #[postgres(name = "argon2")]
+    #[sqlx(rename = "argon2")]
     Argon2,
 }
 
@@ -133,132 +132,120 @@ pub enum PasswordHashAlgorithm {
 pub mod tests {
     use std::panic;
 
+    use async_std::task;
     use hex::encode;
-    use postgres;
     use rand::{thread_rng, RngCore};
-    use tokio::runtime;
+    use sqlx::{Connect, PgConnection};
+    use std::future::Future;
+    use tokio::runtime::Runtime;
     use tokio_postgres;
 
     use crate::model::embedded::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
-    use crate::{AsyncDbPool, Result, SyncDbPool};
+    use crate::Result;
 
     use super::*;
-    use std::future::Future;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
     /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
     /// and have the permission to create / delete databases.
-    pub fn db_test<T>(test: T) -> Result<()>
-    where
-        T: FnOnce(SyncDbPool) -> Result<()> + panic::UnwindSafe,
-    {
-        // Read and assemble to database connection configuration
-        let _ = dotenv::dotenv();
-        let db_url = &dotenv::var("DATABASE_CONNECTION")?;
-        let mut config: postgres::Config = db_url.parse()?;
-
-        let (client, db_name) = setup_db(config.clone())?;
-
-        // Don't re-use the connection when testing. It could get tainted.
-        let result = panic::catch_unwind(|| {
-            config.dbname(&db_name);
-            let manager = r2d2_postgres::PostgresConnectionManager::new(config, postgres::NoTls);
-            let pool = r2d2::Pool::builder().max_size(1).build(manager).unwrap();
-            test(pool).unwrap()
-        });
-
-        teardown_db(client, db_name)?;
-
-        Ok(assert!(result.is_ok()))
-    }
-
-    /// Async database test. Creates it's own tokio runtime. Just use the standard `[test]` macro.
-    pub fn async_db_test<'a, T, F>(test: F) -> Result<()>
+    /// Uses the default async_std runtime. Just use the standard `[test]` macro.
+    pub fn db_test<'a, T, F>(test: F) -> Result<()>
     where
         T: Future<Output = Result<()>> + 'a,
-        F: FnOnce(AsyncDbPool) -> T + panic::UnwindSafe,
+        F: FnOnce(PgConnection) -> T + panic::UnwindSafe,
     {
-        // Read and assemble to database connection configuration
         let _ = dotenv::dotenv();
-        let db_url = &dotenv::var("DATABASE_CONNECTION")?;
-        let config: postgres::Config = db_url.parse()?;
+        let db_url = &dotenv::var("TEST_DATABASE_CONNECTION")?;
 
-        let (client, db_name) = setup_db(config)?;
+        // FIXME: Switch to pure sqlx once refinery added support for it.
+        let mut db_name = "".to_string();
+        {
+            let mut config: tokio_postgres::Config = db_url.parse()?;
+            config.dbname("postgres");
+
+            let mut rt = Runtime::new()?;
+            rt.block_on(async {
+                db_name = setup_db(config.clone()).await.unwrap();
+            });
+        }
 
         // Don't re-use the connection when testing. It could get tainted.
         let result = panic::catch_unwind(|| {
-            let mut config: tokio_postgres::Config = db_url.parse().unwrap();
-            config.dbname(&db_name);
-
-            let mut rt = runtime::Builder::new()
-                .threaded_scheduler()
-                .enable_time()
-                .enable_io()
-                .core_threads(1)
-                .build()
-                .unwrap();
-
-            rt.block_on(async {
-                let manager = bb8_postgres::PostgresConnectionManager::new(config, postgres::NoTls);
-                let pool = bb8::Pool::builder()
-                    .max_size(1)
-                    .build(manager)
-                    .await
-                    .unwrap();
-                test(pool).await.unwrap();
+            task::block_on(async {
+                let db_string = format!("{}/{}", db_url, db_name);
+                let conn = PgConnection::connect(db_string).await.unwrap();
+                if let Err(e) = test(conn).await {
+                    panic!("Error while executing test: {}", e);
+                }
             });
         });
 
-        teardown_db(client, db_name)?;
+        task::block_on(async {
+            teardown_db(format!("{}/postgres", db_url).as_ref(), db_name)
+                .await
+                .unwrap();
+        });
 
         Ok(assert!(result.is_ok()))
     }
 
     /// Creates a randomly named test database.
-    fn setup_db(mut config: postgres::Config) -> Result<(postgres::Client, String)> {
+    async fn setup_db(mut config: tokio_postgres::Config) -> Result<String> {
         let mut random = vec![0u8; 32];
         thread_rng().fill_bytes(random.as_mut_slice());
         let db_name: String = format!("test_{}", encode(random));
 
-        config.dbname("postgres");
-        let mut client = config.connect(postgres::NoTls)?;
-        client.batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())?;
+        let (client, connection) = config.connect(tokio_postgres::NoTls).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+
+        client
+            .batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())
+            .await?;
 
         // Run migrations on the temporary database
         config.dbname(&db_name);
-        let mut migration_client = config.connect(postgres::NoTls)?;
-        migrations::runner().run(&mut migration_client)?;
+        let (mut migration_client, connection) = config.connect(tokio_postgres::NoTls).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
 
-        Ok((client, db_name))
+        migrations::runner()
+            .run_async(&mut migration_client)
+            .await?;
+
+        Ok(db_name)
     }
 
     /// Deletes the randomly named test database.
-    fn teardown_db(mut client: postgres::Client, db_name: String) -> Result<()> {
-        // Drop all other connections to the database. It seems that either the pool
-        // or the postgres tokio runtime doesn't close all connections on drop()...
-        client.batch_execute(
+    async fn teardown_db(db_url: &str, db_name: String) -> Result<()> {
+        let mut conn = PgConnection::connect(db_url).await?;
+
+        // Drop all other connections to the database
+        sqlx::query(
             format!(
-                r#"
-                SELECT pg_terminate_backend(pg_stat_activity.pid)
-                FROM pg_stat_activity
-                WHERE datname = '{}'
-                AND pid <> pg_backend_pid();
-                "#,
+                r#"SELECT pg_terminate_backend(pg_stat_activity.pid)
+                   FROM pg_stat_activity
+                   WHERE datname = '{}'
+                   AND pid <> pg_backend_pid();"#,
                 &db_name
             )
             .as_ref(),
-        )?;
+        )
+        .execute(&mut conn)
+        .await?;
+
         // Drop the database itself
-        client.batch_execute(
-            format!(
-                r#"
-                DROP DATABASE {};
-                "#,
-                &db_name
-            )
-            .as_ref(),
-        )?;
+        sqlx::query(format!("DROP DATABASE {}", db_name).as_ref())
+            .execute(&mut conn)
+            .await?;
+
         Ok(())
     }
 

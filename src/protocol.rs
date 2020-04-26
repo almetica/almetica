@@ -6,20 +6,30 @@ pub mod serde;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use async_std::future;
+use async_std::net::TcpStream;
+use async_std::prelude::*;
+use async_std::sync::{channel, Receiver, Sender};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use shipyard::EntityId;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::delay_for;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::crypt::CryptSession;
 use crate::ecs::event::{EcsEvent, Event, EventTarget};
 use crate::protocol::opcode::Opcode;
 use crate::*;
+
+enum ConnectionHandleEvent {
+    Rx(usize),
+    GlobalTx(Option<EcsEvent>),
+    #[allow(dead_code)]
+    LocalTx(Option<EcsEvent>), // FIXME remove me once implemented
+    Timeout,
+}
+
+// FIXME: Use futures_channel::mpsc::channel || unbounded
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
@@ -42,7 +52,7 @@ impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
     pub async fn new(
         stream: &'a mut TcpStream,
-        mut global_request_channel: Sender<EcsEvent>,
+        global_request_channel: Sender<EcsEvent>,
         opcode_table: Arc<Vec<Opcode>>,
         reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     ) -> Result<GameSession<'a>> {
@@ -50,13 +60,13 @@ impl<'a> GameSession<'a> {
         let cipher = GameSession::init_crypto(stream).await?;
 
         // Channel to receive response events from the global world ECS.
-        let (tx_response_channel, mut rx_response_channel) = channel(128);
+        let (tx_response_channel, rx_response_channel) = channel(128);
         global_request_channel
             .send(Arc::new(Event::RequestRegisterConnection {
                 connection_id: None,
                 response_channel: tx_response_channel,
             }))
-            .await?;
+            .await;
         // Wait for the global ECS to return an uid for the connection.
         let message = rx_response_channel.recv().await;
         let connection_id = GameSession::parse_connection(message).await?;
@@ -143,54 +153,67 @@ impl<'a> GameSession<'a> {
     /// Handles the writing / sending on the TCP stream.
     pub async fn handle_connection(&mut self) -> Result<()> {
         let mut header_buf = vec![0u8; 4];
+        let mut peek_buf = vec![0u8; 4];
+
         loop {
-            tokio::select! {
-                _ = delay_for(Duration::from_secs(180)) => {
-                    info!("Connection timed out");
-                    return Ok(());
-                },
-                // RX
-                result = self.stream.peek(&mut header_buf) => {
-                    match result {
-                        Ok(0) => {
-                            // Connection was closed
-                            return Ok(());
-                        },
-                        Ok(read_bytes) => {
-                            if read_bytes == 4 {
-                                self.stream.read_exact(&mut header_buf).await?;
-                                self.cipher.crypt_client_data(&mut header_buf);
-                                let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
-                                let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
-                                let mut data_buf = vec![0u8; packet_length];
-                                if packet_length != 0 {
-                                    self.stream.read_exact(&mut data_buf).await?;
-                                    self.cipher.crypt_client_data(&mut data_buf);
-                                    trace!("Received packet with opcode value {}: {:?}", opcode, data_buf);
+            // TODO Query instance response channel
+
+            let rx = async {
+                let read = self.stream.peek(&mut peek_buf).await?;
+                Ok::<_, Error>(ConnectionHandleEvent::Rx(read))
+            };
+
+            let channel = self.global_response_channel.clone();
+            let global_tx = async {
+                let event = channel.recv().await;
+                Ok::<_, Error>(ConnectionHandleEvent::GlobalTx(event))
+            };
+
+            let timeout = async {
+                future::ready(1).delay(Duration::from_millis(2000));
+                Ok::<_, Error>(ConnectionHandleEvent::Timeout)
+            };
+
+            match rx.race(global_tx).race(timeout).await? {
+                ConnectionHandleEvent::Rx(read) => {
+                    if read == 0 {
+                        // Connection was closed
+                        return Ok(());
+                    }
+                    if read == 4 {
+                        self.stream.read_exact(&mut header_buf).await?;
+                        self.cipher.crypt_client_data(&mut header_buf);
+                        let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
+                        let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
+                        let mut data_buf = vec![0u8; packet_length];
+                        if packet_length != 0 {
+                            self.stream.read_exact(&mut data_buf).await?;
+                            self.cipher.crypt_client_data(&mut data_buf);
+                            trace!(
+                                "Received packet with opcode value {}: {:?}",
+                                opcode,
+                                data_buf
+                            );
+                        }
+                        if let Err(e) = self.handle_packet(opcode, data_buf).await {
+                            match e {
+                                Error::ConnectionClosed { .. } => {
+                                    return Ok(());
                                 }
-                                if let Err(e) = self.handle_packet(opcode, data_buf).await {
-                                    match e {
-                                        Error::ConnectionClosed { .. } => {
-                                            return Ok(());
-                                        },
-                                        _ => {
-                                            return Err(e);
-                                        }
-                                    }
+                                _ => {
+                                    return Err(e);
                                 }
                             }
-                        },
-                        Err(e) => {
-                            return Err(Error::Io(e));
                         }
                     }
                 }
-                // TX
-                message = self.global_response_channel.recv() => {
-                    self.handle_message(message).await?;
+                ConnectionHandleEvent::GlobalTx(event) => self.handle_message(event).await?,
+                ConnectionHandleEvent::LocalTx(event) => self.handle_message(event).await?,
+                ConnectionHandleEvent::Timeout => {
+                    warn!("Connection timed out");
+                    return Ok(());
                 }
-                // TODO Query instance response channel
-            }
+            };
         }
     }
 
@@ -266,7 +289,7 @@ impl<'a> GameSession<'a> {
                     debug!("Received valid packet {:?}", opcode_type);
                     match event.target() {
                         EventTarget::Global => {
-                            self.global_request_channel.send(Arc::new(event)).await?;
+                            self.global_request_channel.send(Arc::new(event)).await;
                         }
                         EventTarget::Local => {
                             // TODO send to the local world
@@ -299,14 +322,12 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
 
+    use async_std::future::timeout;
+    use async_std::net::{TcpListener, TcpStream};
+    use async_std::sync::channel;
+    use async_std::task::{self, JoinHandle};
     use byteorder::{ByteOrder, LittleEndian};
     use shipyard::*;
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::mpsc::channel;
-    use tokio::task;
-    use tokio::task::JoinHandle;
-    use tokio::time::timeout;
-    use tokio_test::assert_ok;
 
     use crate::dataloader::*;
     use crate::ecs::component::Connection;
@@ -355,27 +376,26 @@ mod tests {
     }
 
     async fn spawn_dummy_server() -> Result<(SocketAddr, JoinHandle<()>, JoinHandle<()>)> {
-        let mut srv = TcpListener::bind("127.0.0.1:0").await?;
+        let srv = TcpListener::bind("127.0.0.1:0").await?;
         let addr = srv.local_addr()?;
         let (opcode_mapping, reverse_opcode_mapping) = get_opcode_tables().await?;
-        let (tx_channel, mut rx_channel) = channel(1024);
+        let (tx_channel, rx_channel) = channel(1024);
 
         // TCP server
-        let tcp_join = tokio::spawn(async move {
-            let (mut socket, _) = assert_ok!(srv.accept().await);
-            let _session = assert_ok!(
-                GameSession::new(
-                    &mut socket,
-                    tx_channel,
-                    Arc::new(opcode_mapping),
-                    Arc::new(reverse_opcode_mapping)
-                )
-                .await
-            );
+        let tcp_join = task::spawn(async move {
+            let (mut socket, _) = srv.accept().await.unwrap();
+            let _session = GameSession::new(
+                &mut socket,
+                tx_channel,
+                Arc::new(opcode_mapping),
+                Arc::new(reverse_opcode_mapping),
+            )
+            .await
+            .unwrap();
         });
 
         // World loop mock
-        let world_join = tokio::spawn(async move {
+        let world_join = task::spawn(async move {
             let connection_id = Some(get_new_entity_with_connection_component());
             loop {
                 task::yield_now().await;
@@ -384,11 +404,9 @@ mod tests {
                         RequestRegisterConnection {
                             response_channel, ..
                         } => {
-                            let mut tx = response_channel.clone();
-                            assert_ok!(
-                                tx.send(Arc::new(ResponseRegisterConnection { connection_id }))
-                                    .await
-                            );
+                            let tx = response_channel.clone();
+                            tx.send(Arc::new(ResponseRegisterConnection { connection_id }))
+                                .await;
                             break;
                         }
                         _ => break,
@@ -403,7 +421,7 @@ mod tests {
     #[tokio::test]
     async fn test_gamesession_creation() -> Result<()> {
         let (addr, tcp_join, world_join) = spawn_dummy_server().await?;
-        let mut stream = assert_ok!(TcpStream::connect(&addr).await);
+        let mut stream = TcpStream::connect(&addr).await?;
 
         // hello stage
         let mut hello_buffer = vec![0u8; 4];
@@ -457,8 +475,8 @@ mod tests {
             panic!("{}", e);
         }
 
-        tcp_join.await?;
-        world_join.await?;
+        tcp_join.await;
+        world_join.await;
         Ok(())
     }
 }

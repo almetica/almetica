@@ -1,12 +1,11 @@
 /// Holds all database entities.
 use chrono::{DateTime, Utc};
-use postgres_types::{FromSql, ToSql};
 
 use crate::model::PasswordHashAlgorithm;
 
 /// Account that holds the login information of a player.
-#[derive(Debug, FromSql, ToSql)]
-#[postgres(name = "account")]
+#[derive(Debug, sqlx::FromRow)]
+#[sqlx(rename_all = "lowercase")]
 pub struct Account {
     pub id: i64,
     pub name: String,
@@ -17,8 +16,8 @@ pub struct Account {
 }
 
 /// Ticket that is used to authenticate the client connection.
-#[derive(Debug, FromSql, ToSql)]
-#[postgres(name = "login_ticket")]
+#[derive(Debug, sqlx::FromRow)]
+#[sqlx(rename_all = "lowercase")]
 pub struct LoginTicket {
     pub account_id: i64,
     pub ticket: String,
