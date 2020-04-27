@@ -69,7 +69,7 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
     let _conn = &req.state().pool;
 
     // TODO when registering, only allow unicode letters (\p{Letter}) and numeric characters (\p{Number})
-    let account = login_request.username;
+    let account = login_request.accountname;
     let ticket = "DEADDEADDEADDEAD".to_string();
 
     info!(

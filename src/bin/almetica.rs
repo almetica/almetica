@@ -7,12 +7,12 @@ use std::sync::Arc;
 use async_std::prelude::*;
 use async_std::sync::Sender;
 use async_std::task::{self, JoinHandle};
-use clap::Clap;
+use clap::{App, Arg, ArgMatches};
 use sqlx::PgPool;
 use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 use tracing_log::LogTracer;
-use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::Registry;
@@ -27,35 +27,101 @@ use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
 use almetica::Result;
 
-#[derive(Clap)]
-#[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]
-struct Opts {
-    #[clap(short = "c", long = "config", default_value = "config.yaml")]
-    config: PathBuf,
-}
-
 #[async_std::main]
 async fn main() {
-    init_logging();
+    let matches = App::new("almetica")
+        .version("0.0.2")
+        .author("Almetica <almetica@protonmail.com>")
+        .about("Custom server implementation for the game TERA")
+        .arg(
+            Arg::with_name("config")
+                .short('c')
+                .long("config")
+                .value_name("FILE")
+                .help("Sets a custom config file")
+                .default_value("config.yaml")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("log")
+                .short('l')
+                .long("log")
+                .value_name("LEVEL")
+                .help("Sets the log level")
+                .default_value("WARN")
+                .possible_values(&["ERROR", "WARN", "INFO", "DEBUG", "TRACE"])
+                .takes_value(true),
+        )
+        .subcommand(App::new("run").about("Starts the game server"))
+        .subcommand(
+            App::new("create-account")
+                .about("Creates an account")
+                .arg(
+                    Arg::with_name("name")
+                        .short('n')
+                        .long("name")
+                        .help("name of the account")
+                        .required(true)
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("password")
+                        .short('p')
+                        .long("password")
+                        .help("password of the account")
+                        .required(true)
+                        .takes_value(true),
+                ),
+        )
+        .get_matches();
 
-    if let Err(e) = run().await {
+    init_logging(&matches);
+
+    if let Err(e) = run_command(&matches).await {
         error!("Error while executing program: {:?}", e);
         process::exit(1);
     }
 }
 
-async fn run() -> Result<()> {
-    let opts: Opts = Opts::parse();
+fn init_logging(matches: &ArgMatches) {
+    let level = match matches.value_of("log").unwrap_or_default() {
+        "ERROR" => LevelFilter::ERROR,
+        "WARN" => LevelFilter::WARN,
+        "INFO" => LevelFilter::INFO,
+        "DEBUG" => LevelFilter::DEBUG,
+        "TRACE" => LevelFilter::TRACE,
+        _ => LevelFilter::WARN,
+    };
 
+    let fmt_layer = Layer::default().with_target(true);
+    let filter_layer = EnvFilter::from_default_env()
+        .add_directive(level.into())
+        .add_directive("async_std::task::builder=warn".parse().unwrap())
+        .add_directive("async_std::task::block_on=warn".parse().unwrap());
+
+    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    LogTracer::init().unwrap();
+}
+
+async fn run_command(matches: &ArgMatches) -> Result<()> {
+    let config = matches.value_of("config").unwrap_or("config.yaml");
+
+    if let Some(matches) = matches.subcommand_matches("run") {
+        start_server(matches, config).await?;
+    } else if let Some(matches) = matches.subcommand_matches("create-account") {
+        create_account(matches, config).await?;
+    }
+    Ok(())
+}
+
+async fn start_server(_matches: &ArgMatches, config_str: &str) -> Result<()> {
     info!("Reading configuration file");
-    let config = match read_configuration(&opts.config) {
+    let path = PathBuf::from(config_str);
+    let config = match read_configuration(&path) {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "Can't read configuration file {}: {:?}",
-                &opts.config.display(),
-                e
-            );
+            error!("Can't read configuration file {:?}: {:?}", path, e);
             return Err(e);
         }
     };
@@ -74,9 +140,8 @@ async fn run() -> Result<()> {
         }
         Err(e) => {
             error!(
-                "Can't read opcode mapping file {}: {:?}",
-                &opts.config.display(),
-                e
+                "Can't read opcode mapping file {:?}: {:?}",
+                &config.data.path, e
             );
             return Err(e);
         }
@@ -111,17 +176,6 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn init_logging() {
-    let fmt_layer = Layer::default().with_target(true);
-    let filter_layer = EnvFilter::from_default_env()
-        .add_directive("async_std::task::builder=warn".parse().unwrap())
-        .add_directive("async_std::task::block_on=warn".parse().unwrap());
-
-    let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-    LogTracer::init().unwrap();
 }
 
 /// Performs the database migrations
@@ -191,4 +245,11 @@ fn sqlx_config(config: &Configuration) -> String {
         config.database.port,
         config.database.database
     )
+}
+
+async fn create_account(matches: &ArgMatches, _config_str: &str) -> Result<()> {
+    let _account_name = matches.value_of("name").unwrap_or_default();
+    let _password = matches.value_of("password").unwrap_or_default();
+
+    Ok(())
 }

@@ -2,6 +2,6 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Login {
-    pub username: String,
+    pub accountname: String,
     pub password: String,
 }
