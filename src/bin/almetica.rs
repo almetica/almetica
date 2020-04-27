@@ -22,10 +22,14 @@ use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
 use almetica::model::embedded::migrations;
-use almetica::networkserver;
+use almetica::model::entity::Account;
+use almetica::model::repository::account;
+use almetica::model::PasswordHashAlgorithm;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
 use almetica::Result;
+use almetica::{networkserver, Error};
+use chrono::Utc;
 
 #[async_std::main]
 async fn main() {
@@ -48,7 +52,7 @@ async fn main() {
                 .long("log")
                 .value_name("LEVEL")
                 .help("Sets the log level")
-                .default_value("WARN")
+                .default_value("INFO")
                 .possible_values(&["ERROR", "WARN", "INFO", "DEBUG", "TRACE"])
                 .takes_value(true),
         )
@@ -90,7 +94,7 @@ fn init_logging(matches: &ArgMatches) {
         "INFO" => LevelFilter::INFO,
         "DEBUG" => LevelFilter::DEBUG,
         "TRACE" => LevelFilter::TRACE,
-        _ => LevelFilter::WARN,
+        _ => LevelFilter::INFO,
     };
 
     let fmt_layer = Layer::default().with_target(true);
@@ -105,18 +109,8 @@ fn init_logging(matches: &ArgMatches) {
 }
 
 async fn run_command(matches: &ArgMatches) -> Result<()> {
-    let config = matches.value_of("config").unwrap_or("config.yaml");
-
-    if let Some(matches) = matches.subcommand_matches("run") {
-        start_server(matches, config).await?;
-    } else if let Some(matches) = matches.subcommand_matches("create-account") {
-        create_account(matches, config).await?;
-    }
-    Ok(())
-}
-
-async fn start_server(_matches: &ArgMatches, config_str: &str) -> Result<()> {
     info!("Reading configuration file");
+    let config_str = matches.value_of("config").unwrap_or("config.yaml");
     let path = PathBuf::from(config_str);
     let config = match read_configuration(&path) {
         Ok(c) => c,
@@ -126,6 +120,15 @@ async fn start_server(_matches: &ArgMatches, config_str: &str) -> Result<()> {
         }
     };
 
+    if let Some(matches) = matches.subcommand_matches("run") {
+        start_server(matches, &config).await?;
+    } else if let Some(matches) = matches.subcommand_matches("create-account") {
+        create_account(matches, &config).await?;
+    }
+    Ok(())
+}
+
+async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<()> {
     info!("Reading opcode mapping file");
     let (opcode_mapping, reverse_opcode_mapping) = match load_opcode_mapping(&config.data.path) {
         Ok((opcode_mapping, reverse_opcode_mapping)) => {
@@ -151,7 +154,7 @@ async fn start_server(_matches: &ArgMatches, config_str: &str) -> Result<()> {
     run_db_migrations(&config)?;
 
     info!("Creating database pool");
-    let pool = PgPool::new(sqlx_config(&config).as_ref()).await?;
+    let pool = sqlx_pool(&config).await?;
 
     info!("Starting the ECS multiverse");
     let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone(), pool.clone());
@@ -164,7 +167,7 @@ async fn start_server(_matches: &ArgMatches, config_str: &str) -> Result<()> {
         global_tx_channel,
         opcode_mapping,
         reverse_opcode_mapping,
-        config,
+        config.clone(),
     );
 
     let (_, err) = multiverse_handle
@@ -236,6 +239,10 @@ fn tokio_postgres_config(config: &Configuration) -> tokio_postgres::Config {
     c
 }
 
+async fn sqlx_pool(config: &Configuration) -> Result<PgPool> {
+    Ok(PgPool::new(sqlx_config(config).as_ref()).await?)
+}
+
 fn sqlx_config(config: &Configuration) -> String {
     format!(
         "postgres://{}:{}@{}:{}/{}",
@@ -247,9 +254,34 @@ fn sqlx_config(config: &Configuration) -> String {
     )
 }
 
-async fn create_account(matches: &ArgMatches, _config_str: &str) -> Result<()> {
-    let _account_name = matches.value_of("name").unwrap_or_default();
-    let _password = matches.value_of("password").unwrap_or_default();
+async fn create_account(matches: &ArgMatches, config: &Configuration) -> Result<()> {
+    let mut conn = sqlx_pool(&config).await?.acquire().await?;
 
+    let account_name = matches.value_of("name").unwrap_or_default();
+    let password = matches.value_of("password").unwrap_or_default();
+
+    match account::get_by_name(&mut conn, account_name).await {
+        Err(Error::Sqlx(sqlx::Error::RowNotFound)) => {
+            let acc = account::create(
+                &mut conn,
+                &Account {
+                    id: -1,
+                    name: account_name.to_string(),
+                    password: password.to_string(),
+                    algorithm: PasswordHashAlgorithm::Argon2,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                },
+            )
+            .await?;
+            info!("Created account {} with ID {}", acc.name, acc.id);
+        }
+        Err(e) => {
+            return Err(e);
+        }
+        Ok(acc) => {
+            error!("Account {} already exists with ID {}", acc.name, acc.id);
+        }
+    }
     Ok(())
 }
