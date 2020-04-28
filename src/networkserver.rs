@@ -35,34 +35,35 @@ pub async fn run(
                 let thread_opcode_map = arc_map.clone();
                 let thread_reverse_map = arc_reverse_map.clone();
 
-                task::spawn(async move {
-                    let span = info_span!("socket", %addr);
-                    let _enter = span.enter();
-
-                    info!("Incoming connection");
-                    match GameSession::new(
-                        &mut socket,
-                        thread_channel,
-                        thread_opcode_map,
-                        thread_reverse_map,
-                    )
-                    .instrument(span.clone())
-                    .await
-                    {
-                        Ok(mut session) => {
-                            let connection_id = session.connection_id;
-                            match session
-                                .handle_connection()
-                                .instrument(info_span!("connection", connection = ?connection_id))
-                                .await
-                            {
-                                Ok(_) => info!("Connection closed"),
-                                Err(e) => warn!("Error while handling game session: {:?}", e),
+                task::spawn(
+                    async move {
+                        info!("Incoming connection");
+                        match GameSession::new(
+                            &mut socket,
+                            thread_channel,
+                            thread_opcode_map,
+                            thread_reverse_map,
+                        )
+                        .await
+                        {
+                            Ok(mut session) => {
+                                let connection_id = session.connection_id;
+                                match session
+                                    .handle_connection()
+                                    .instrument(
+                                        info_span!("connection", connection = ?connection_id),
+                                    )
+                                    .await
+                                {
+                                    Ok(_) => info!("Connection closed"),
+                                    Err(e) => warn!("Error while handling game session: {:?}", e),
+                                }
                             }
+                            Err(e) => error!("Failed create game session: {:?}", e),
                         }
-                        Err(e) => error!("Failed create game session: {:?}", e),
                     }
-                });
+                    .instrument(info_span!("socket", %addr)),
+                );
             }
             Err(e) => error!("Failed to open connection: {:?}", e),
         }

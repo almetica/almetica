@@ -4,7 +4,7 @@ use sqlx::PgConnection;
 
 use crate::model::entity::Account;
 use crate::model::PasswordHashAlgorithm;
-use crate::{Error, Result};
+use crate::Result;
 
 /// Creates an new account.
 pub async fn create(conn: &mut PgConnection, account: &Account) -> Result<Account> {
@@ -24,7 +24,7 @@ pub async fn update_password(
     name: &str,
     password: &str,
     algorithm: PasswordHashAlgorithm,
-) -> Result<(), Error> {
+) -> Result<()> {
     sqlx::query("UPDATE account SET password = $1, algorithm = $2 WHERE name = $3")
         .bind(password)
         .bind(algorithm)
@@ -75,7 +75,7 @@ pub async fn delete_by_name(conn: &mut PgConnection, name: &str) -> Result<()> {
 #[cfg(test)]
 pub mod tests {
     use chrono::prelude::*;
-    use sqlx::PgConnection;
+    use sqlx::PgPool;
 
     use crate::model::entity::Account;
     use crate::model::tests::db_test;
@@ -87,7 +87,9 @@ pub mod tests {
     #[test]
     fn test_create_account() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let org_account = Account {
                 id: -1,
                 name: "testuser".to_string(),
@@ -113,7 +115,9 @@ pub mod tests {
     #[test]
     fn test_update_password() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let old_password = "password1".to_string();
             let new_password = "password2".to_string();
 
@@ -151,7 +155,9 @@ pub mod tests {
     #[test]
     fn test_get_by_id() -> Result<()> {
         // FIXME into into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             for i in 1..=10i32 {
                 let org_account = Account {
                     id: -1,
@@ -178,7 +184,9 @@ pub mod tests {
     #[test]
     fn test_get_by_name() -> Result<()> {
         // FIXME into into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             for i in 1..=10i32 {
                 let org_account = Account {
                     id: -1,
@@ -205,7 +213,9 @@ pub mod tests {
     #[test]
     fn test_delete_by_id() -> Result<()> {
         // FIXME into into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             for i in 1..=10i32 {
                 let org_account = Account {
                     id: -1,
@@ -219,12 +229,16 @@ pub mod tests {
             }
 
             delete_by_id(&mut conn, 5).await?;
-            let res = get_by_id(&mut conn, 5).await;
-            match res {
-                Err(Error::Sqlx(sqlx::Error::RowNotFound)) => Ok(()),
-                Err(e) => Err(e),
-                _ => panic!("record was not deleted"),
+            if let Err(e) = get_by_id(&mut conn, 5).await {
+                match e.downcast_ref::<sqlx::Error>() {
+                    Some(sqlx::Error::RowNotFound) => Ok(()),
+                    Some(..) => Err(e),
+                    None => Err(e),
+                }?
+            } else {
+                panic!("record was not deleted");
             }
+            Ok(())
         }
         db_test(test)
     }
@@ -232,7 +246,9 @@ pub mod tests {
     #[test]
     fn test_delete_by_name() -> Result<()> {
         // FIXME into into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             for i in 1..=10i32 {
                 let org_account = Account {
                     id: -1,
@@ -246,12 +262,16 @@ pub mod tests {
             }
 
             delete_by_name(&mut conn, "testuser-5").await?;
-            let res = get_by_name(&mut conn, "testuser-5").await;
-            match res {
-                Err(Error::Sqlx(sqlx::Error::RowNotFound)) => Ok(()),
-                Err(e) => Err(e),
-                _ => panic!("record was not deleted"),
+            if let Err(e) = get_by_id(&mut conn, 5).await {
+                match e.downcast_ref::<sqlx::Error>() {
+                    Some(sqlx::Error::RowNotFound) => Ok(()),
+                    Some(..) => Err(e),
+                    None => Err(e),
+                }?
+            } else {
+                panic!("record was not deleted");
             }
+            Ok(())
         }
         db_test(test)
     }

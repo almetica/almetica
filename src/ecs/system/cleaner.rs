@@ -33,7 +33,9 @@ pub fn cleaner_system(mut all_storages: AllStoragesViewMut) {
         .collect();
     deletion_list.append(&mut list);
 
-    trace!("Deleting {} entities", deletion_list.len());
+    if deletion_list.len() > 0 {
+        trace!("Deleting {} entities", deletion_list.len());
+    }
 
     // Delete entities that the other system marked for deletion.
     for id in deletion_list {
@@ -69,6 +71,7 @@ mod tests {
     #[test]
     fn test_clean_incoming_event() {
         let world = setup();
+        let connection_id = world.borrow::<EntitiesViewMut>().add_entity((), ());
 
         world.run(
             |(mut entities, mut events): (EntitiesViewMut, ViewMut<IncomingEvent>)| {
@@ -76,7 +79,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         IncomingEvent(Arc::new(Event::RequestPong {
-                            connection_id: None,
+                            connection_id,
                             packet: CPong {},
                         })),
                     );
@@ -96,6 +99,7 @@ mod tests {
     #[test]
     fn test_clean_outgoing_event() {
         let world = setup();
+        let connection_id = world.borrow::<EntitiesViewMut>().add_entity((), ());
 
         world.run(
             |(mut entities, mut events): (EntitiesViewMut, ViewMut<OutgoingEvent>)| {
@@ -103,7 +107,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-                            connection_id: None,
+                            connection_id,
                         })),
                     );
                 }

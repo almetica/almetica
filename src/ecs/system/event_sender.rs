@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use async_std::sync::Sender;
 use async_std::task;
 use shipyard::*;
-use tracing::{debug, error, info_span};
+use tracing::{debug, error, info_span, trace};
 
 use crate::ecs::component::*;
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::{ConnectionMapping, WorldId};
+use tracing_futures::Instrument;
 
 /// Event sender sends all outgoing events to the connection / local worlds.
 pub fn event_sender_system(
@@ -33,16 +34,17 @@ fn send_event_to_connection(
 
         if let Some(channel) = connection_mapping.get_mut(&connection_id) {
             debug!("Sending event {}", *event.0);
-
             if !channel.is_full() {
                 task::block_on(async {
                     channel.send(event.0.clone()).await;
-                });
+                })
+                .instrument(span.clone());
+                trace!("Finished sending event {}", *event.0);
             } else {
                 error!("Dropping event for connection because channel is full");
             }
             if let Event::ResponseDropConnection { connection_id } = *event.0 {
-                connection_mapping.remove(&connection_id.unwrap());
+                connection_mapping.remove(&connection_id);
             }
         } else {
             debug!("Couldn't find a channel mapping for the connection");
@@ -104,7 +106,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-                            connection_id: Some(connection_id),
+                            connection_id: connection_id,
                         })),
                     );
                 }
@@ -137,7 +139,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         OutgoingEvent(Arc::new(Event::ResponseDropConnection {
-                            connection_id: Some(connection_id),
+                            connection_id: connection_id,
                         })),
                     );
                 }

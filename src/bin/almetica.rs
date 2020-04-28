@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
-use async_std::prelude::*;
+use anyhow::{bail, Context};
+use async_macros::join;
 use async_std::sync::Sender;
 use async_std::task::{self, JoinHandle};
 use clap::{App, Arg, ArgMatches};
@@ -18,6 +19,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::Registry;
 
 use almetica::config::{read_configuration, Configuration};
+use almetica::crypt::password_hash;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::Event;
 use almetica::ecs::world::Multiverse;
@@ -25,10 +27,10 @@ use almetica::model::embedded::migrations;
 use almetica::model::entity::Account;
 use almetica::model::repository::account;
 use almetica::model::PasswordHashAlgorithm;
+use almetica::networkserver;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
 use almetica::Result;
-use almetica::{networkserver, Error};
 use chrono::Utc;
 
 #[async_std::main]
@@ -112,13 +114,8 @@ async fn run_command(matches: &ArgMatches) -> Result<()> {
     info!("Reading configuration file");
     let config_str = matches.value_of("config").unwrap_or("config.yaml");
     let path = PathBuf::from(config_str);
-    let config = match read_configuration(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Can't read configuration file {:?}: {:?}", path, e);
-            return Err(e);
-        }
-    };
+    let config =
+        read_configuration(&path).context(format!("Can't read configuration file {:?}", path))?;
 
     if let Some(matches) = matches.subcommand_matches("run") {
         start_server(matches, &config).await?;
@@ -130,25 +127,17 @@ async fn run_command(matches: &ArgMatches) -> Result<()> {
 
 async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<()> {
     info!("Reading opcode mapping file");
-    let (opcode_mapping, reverse_opcode_mapping) = match load_opcode_mapping(&config.data.path) {
-        Ok((opcode_mapping, reverse_opcode_mapping)) => {
-            info!(
-                "Loaded opcode mapping table with {} entries",
-                opcode_mapping
-                    .iter()
-                    .filter(|&op| *op != Opcode::UNKNOWN)
-                    .count()
-            );
-            (opcode_mapping, reverse_opcode_mapping)
-        }
-        Err(e) => {
-            error!(
-                "Can't read opcode mapping file {:?}: {:?}",
-                &config.data.path, e
-            );
-            return Err(e);
-        }
-    };
+    let (opcode_mapping, reverse_opcode_mapping) = load_opcode_mapping(&config.data.path).context(
+        format!("Can't read opcode mapping file {:?}", &config.data.path),
+    )?;
+
+    info!(
+        "Loaded opcode mapping table with {} entries",
+        opcode_mapping
+            .iter()
+            .filter(|&op| *op != Opcode::UNKNOWN)
+            .count()
+    );
 
     info!("Running database migrations");
     run_db_migrations(&config)?;
@@ -170,13 +159,12 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
         config.clone(),
     );
 
-    let (_, err) = multiverse_handle
-        .join(web_handle)
-        .join(network_handle)
-        .await;
-    if let Err(e) = err {
-        error!("Can't shutdown server gracefully: {:?}", e);
-    }
+    let (multiverse_res, web_server_res, network_server_res) =
+        join!(multiverse_handle, web_handle, network_handle).await;
+
+    multiverse_res.context("Error while running the multiverse")?;
+    web_server_res.context("Error while running the web server")?;
+    network_server_res.context("Error while running the network server")?;
 
     Ok(())
 }
@@ -187,35 +175,38 @@ fn run_db_migrations(config: &Configuration) -> Result<()> {
     let mut rt = Runtime::new()?;
     rt.block_on(async {
         let db_conf = tokio_postgres_config(&config);
-        let (mut client, connection) = db_conf.connect(tokio_postgres::NoTls).await.unwrap();
+        let (mut client, connection) = db_conf.connect(tokio_postgres::NoTls).await?;
         tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                error!("connection error: {}", e);
-            }
+            connection.await.unwrap();
         });
-        migrations::runner().run_async(&mut client).await.unwrap();
-    });
-    Ok(())
+        migrations::runner().run_async(&mut client).await?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .context("Can't run migrations")
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse(config: Configuration, pool: PgPool) -> (JoinHandle<()>, Sender<Arc<Event>>) {
+fn start_multiverse(
+    config: Configuration,
+    pool: PgPool,
+) -> (JoinHandle<Result<()>>, Sender<Arc<Event>>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
     let join_handle = task::spawn_blocking(move || {
         multiverse.run(pool, config);
+        Ok(())
     });
 
     (join_handle, rx)
 }
 
 /// Starts the web server handling all HTTP requests.
-fn start_web_server(pool: PgPool, config: Configuration) -> JoinHandle<()> {
+fn start_web_server(pool: PgPool, config: Configuration) -> JoinHandle<Result<()>> {
     task::spawn(async {
-        if let Err(e) = webserver::run(pool, config).await {
-            error!("Can't run the web server: {:?}", e);
-        };
+        webserver::run(pool, config)
+            .await
+            .context("Can't run the web server")
     })
 }
 
@@ -261,24 +252,28 @@ async fn create_account(matches: &ArgMatches, config: &Configuration) -> Result<
     let password = matches.value_of("password").unwrap_or_default();
 
     match account::get_by_name(&mut conn, account_name).await {
-        Err(Error::Sqlx(sqlx::Error::RowNotFound)) => {
-            let acc = account::create(
-                &mut conn,
-                &Account {
-                    id: -1,
-                    name: account_name.to_string(),
-                    password: password.to_string(),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
-                },
-            )
-            .await?;
-            info!("Created account {} with ID {}", acc.name, acc.id);
-        }
-        Err(e) => {
-            return Err(e);
-        }
+        Err(e) => match e.downcast_ref::<sqlx::Error>() {
+            Some(sqlx::Error::RowNotFound) => {
+                let hash =
+                    password_hash::create_hash(password.as_bytes(), PasswordHashAlgorithm::Argon2)?;
+                let acc = account::create(
+                    &mut conn,
+                    &Account {
+                        id: -1,
+                        name: account_name.to_string(),
+                        password: hash,
+                        algorithm: PasswordHashAlgorithm::Argon2,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                    },
+                )
+                .await?;
+                info!("Created account {} with ID {}", acc.name, acc.id);
+            }
+            Some(..) | None => {
+                bail!(e);
+            }
+        },
         Ok(acc) => {
             error!("Account {} already exists with ID {}", acc.name, acc.id);
         }

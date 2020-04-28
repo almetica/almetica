@@ -215,7 +215,7 @@ pub struct SRemainPlayTime {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use crate::protocol::serde::{from_vec, to_vec, Error};
+    use crate::protocol::serde::{from_vec, to_vec, Result};
 
     use super::*;
 

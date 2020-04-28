@@ -25,46 +25,44 @@ pub async fn upsert_ticket(conn: &mut PgConnection, account_id: i64) -> Result<L
 }
 
 /// Tests if the given ticket is valid. A ticket can only be used one time. Should be called in a transaction.
-pub async fn is_ticket_valid(
-    conn: &mut PgConnection,
-    account_id: i64,
-    ticket: &str,
-) -> Result<bool> {
+pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &str) -> Result<bool> {
     // We have to manually re-borrow the transaction. &mut *conn will take a &mut PgConnection and
     // produce a &mut PgConnection that is held for the lifetime required by the function.
     // This is normally done implicitly by Rust. It's not in this case due to fetch_*() being
     // generic over its parameter (allowing both connection, a pool or a transaction to be passed in).
 
-    let found = match sqlx::query_as(
-        r#"SELECT EXISTS( 
-               SELECT account_id FROM login_ticket 
-               WHERE account_id = $1
-               AND ticket = $2
-               AND used = 'false'
-               AND age(CURRENT_TIMESTAMP, created_at) < INTERVAL '5 minutes')"#,
+    let account_id: i64 = match sqlx::query_as(
+        r#" 
+               SELECT l.account_id
+               FROM login_ticket l
+               INNER JOIN account a
+               ON l.account_id = a.id
+               WHERE a.name = $1
+               AND l.ticket = $2
+               AND l.used = 'false'
+               AND age(CURRENT_TIMESTAMP, l.created_at) < INTERVAL '5 minutes'"#,
     )
-    .bind(account_id)
+    .bind(name)
     .bind(ticket)
     .fetch_optional(&mut *conn)
     .await?
     {
-        Some((b,)) => b,
-        None => false,
+        Some((id,)) => id,
+        None => return Ok(false),
     };
 
-    if found {
-        sqlx::query("UPDATE login_ticket SET used = 'true' WHERE account_id = $1")
-            .bind(account_id)
-            .execute(&mut *conn)
-            .await?;
-    }
-    Ok(found)
+    sqlx::query("UPDATE login_ticket SET used = 'true' WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *conn)
+        .await?;
+
+    Ok(true)
 }
 
 #[cfg(test)]
 pub mod tests {
     use chrono::prelude::*;
-    use sqlx::PgConnection;
+    use sqlx::PgPool;
 
     use crate::model::entity::Account;
     use crate::model::repository::account;
@@ -77,7 +75,9 @@ pub mod tests {
     #[test]
     fn test_upsert_login_ticket() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let account = account::create(
                 &mut conn,
                 &Account {
@@ -106,7 +106,9 @@ pub mod tests {
     #[test]
     fn test_validate_valid_ticket() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let account = account::create(
                 &mut conn,
                 &Account {
@@ -122,9 +124,9 @@ pub mod tests {
 
             let ticket = upsert_ticket(&mut conn, account.id).await?;
             assert!(!ticket.ticket.is_empty());
-            assert!(is_ticket_valid(&mut conn, account.id, &ticket.ticket).await?);
+            assert!(is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
             // Ticket can only be used one time
-            assert!(!is_ticket_valid(&mut conn, account.id, &ticket.ticket).await?);
+            assert!(!is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
 
             Ok(())
         }
@@ -134,7 +136,9 @@ pub mod tests {
     #[test]
     fn test_validate_invalid_ticket_1() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let account = account::create(
                 &mut conn,
                 &Account {
@@ -149,7 +153,7 @@ pub mod tests {
             .await?;
 
             upsert_ticket(&mut conn, account.id).await?;
-            assert!(!is_ticket_valid(&mut conn, account.id, "not a valid ticket").await?);
+            assert!(!is_ticket_valid(&mut conn, &account.name, "not a valid ticket").await?);
 
             Ok(())
         }
@@ -159,7 +163,9 @@ pub mod tests {
     #[test]
     fn test_validate_invalid_ticket_2() -> Result<()> {
         // FIXME into an async closure once stable
-        async fn test(mut conn: PgConnection) -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+
             let account = account::create(
                 &mut conn,
                 &Account {
@@ -174,7 +180,7 @@ pub mod tests {
             .await?;
 
             let ticket = upsert_ticket(&mut conn, account.id).await?;
-            assert!(!is_ticket_valid(&mut conn, 100, &ticket.ticket).await?);
+            assert!(!is_ticket_valid(&mut conn, &"not-a-user", &ticket.ticket).await?);
 
             Ok(())
         }

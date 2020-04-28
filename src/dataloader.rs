@@ -5,21 +5,21 @@ use std::io::{BufReader, Read};
 use std::path::PathBuf;
 
 use aes::Aes128;
+use anyhow::ensure;
 use byteorder::{ByteOrder, LittleEndian};
 use cfb_mode::stream_cipher::{NewStreamCipher, StreamCipher};
 use cfb_mode::Cfb;
 use flate2::{Decompress, FlushDecompress};
-use tracing::error;
 
 use crate::protocol::opcode::Opcode;
 use crate::*;
 
 /// Read the encrypted data of a data center file and decrypt/decompress it.
 pub fn read_datacenter_file(key: &[u8], iv: &[u8], mut data: Vec<u8>) -> Result<Vec<u8>> {
-    if key.len() != 16 && iv.len() != 16 {
-        error!("KEY or IV are not 128 bits long (16 bytes)");
-        return Err(Error::KeyOrIvWrongSize);
-    }
+    ensure!(
+        key.len() == 16 && iv.len() == 16,
+        "KEY and IV must be 128 bits long (16 bytes)"
+    );
 
     let mut cipher = Cfb::<Aes128>::new_var(key, iv).unwrap();
     let mut decompressor = Decompress::new(true);
@@ -35,9 +35,10 @@ pub fn read_datacenter_file(key: &[u8], iv: &[u8], mut data: Vec<u8>) -> Result<
     // Deflate
     let mut buffer = Vec::with_capacity(size);
     decompressor.decompress_vec(&data[4..], &mut buffer, FlushDecompress::None)?;
-    if decompressor.total_out() != size as u64 {
-        return Err(Error::DecompressionNotFinished);
-    }
+    ensure!(
+        decompressor.total_out() == size as u64,
+        "Decompression was successful, but data is missing to finalize it"
+    );
     Ok(buffer)
 }
 

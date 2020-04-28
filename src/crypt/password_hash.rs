@@ -1,10 +1,11 @@
 /// Implements helper functions for the password hasher.
+use anyhow::bail;
 use argon2::{hash_encoded, verify_encoded, Config, ThreadMode, Variant, Version};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 
 use crate::model::PasswordHashAlgorithm;
-use crate::{Error, Result};
+use crate::{AlmeticaError, Result};
 
 /// Creates a String that contains the hash of the given password hashed with the chosen password
 /// hash algorithm. Creates a random salt, which is saved alongside the password hash and the used
@@ -25,20 +26,20 @@ pub fn create_hash(password_data: &[u8], algorithm: PasswordHashAlgorithm) -> Re
 
         Ok(hash_encoded(&password_data, &salt_data, &config)?)
     } else {
-        Err(Error::UnsupportedPasswordHash)
+        bail!(AlmeticaError::UnsupportedPasswordHash);
     }
 }
 
 /// Verifies the given password hash, password and algorithm. Returns true if the password can produce the given hash.
 pub fn verify_hash(
     password_data: &[u8],
-    hash_string: String,
+    hash_string: &str,
     algorithm: PasswordHashAlgorithm,
 ) -> Result<bool> {
     if algorithm == PasswordHashAlgorithm::Argon2 {
-        Ok(verify_encoded(&hash_string, password_data)?)
+        Ok(verify_encoded(hash_string, password_data)?)
     } else {
-        Err(Error::UnsupportedPasswordHash)
+        bail!(AlmeticaError::UnsupportedPasswordHash);
     }
 }
 
@@ -104,7 +105,7 @@ mod tests {
         let hash_string = create_hash(password.as_bytes(), PasswordHashAlgorithm::Argon2)?;
         assert!(verify_hash(
             password.as_bytes(),
-            hash_string,
+            &hash_string,
             PasswordHashAlgorithm::Argon2,
         )?);
         Ok(())

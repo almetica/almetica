@@ -126,7 +126,6 @@ mod tests {
             .global_handle
             .tx_channel
             .send(Arc::new(Event::RequestRegisterConnection {
-                connection_id: None,
                 response_channel: tx,
             }));
 

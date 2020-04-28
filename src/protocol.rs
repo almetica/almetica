@@ -4,7 +4,11 @@ pub mod packet;
 pub mod serde;
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
+use anyhow::{bail, Context};
+use async_macros::select;
 use async_std::io::timeout;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
@@ -18,8 +22,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::crypt::CryptSession;
 use crate::ecs::event::{EcsEvent, Event, EventTarget};
 use crate::protocol::opcode::Opcode;
-use crate::*;
-use std::time::Duration;
+use crate::{AlmeticaError, Result};
 
 enum ConnectionHandleEvent {
     Rx(usize),
@@ -63,7 +66,6 @@ impl<'a> GameSession<'a> {
         let (tx_response_channel, rx_response_channel) = channel(128);
         global_request_channel
             .send(Arc::new(Event::RequestRegisterConnection {
-                connection_id: None,
                 response_channel: tx_response_channel,
             }))
             .await;
@@ -102,35 +104,31 @@ impl<'a> GameSession<'a> {
         let mut server_key_1 = vec![0; 128];
         let mut server_key_2 = vec![0; 128];
         debug!("Sending magic word");
-        if let Err(e) = timeout(timeout_dur, stream.write_all(&magic_word_buffer)).await {
-            error!("Can't send magic word: {:?}", e);
-            return Err(Error::Io(e));
-        }
+        timeout(timeout_dur, stream.write_all(&magic_word_buffer))
+            .await
+            .context("Can't send magic word")?;
 
-        if let Err(e) = timeout(timeout_dur, stream.read_exact(&mut client_key_1)).await {
-            error!("Can't read client key 1: {:?}", e);
-            return Err(Error::Io(e));
-        }
+        timeout(timeout_dur, stream.read_exact(&mut client_key_1))
+            .await
+            .context("Can't read client key 1")?;
         debug!("Received client key 1");
 
         OsRng.fill_bytes(&mut server_key_1);
-        if let Err(e) = timeout(timeout_dur, stream.write_all(&server_key_1)).await {
-            error!("Can't write server key 1: {:?}", e);
-            return Err(Error::Io(e));
-        }
+        timeout(timeout_dur, stream.write_all(&server_key_1))
+            .await
+            .context("Can't write server key 1")?;
+
         debug!("Send server key 1");
 
-        if let Err(e) = timeout(timeout_dur, stream.read_exact(&mut client_key_2)).await {
-            error!("Can't read client key 2: {:?}", e);
-            return Err(Error::Io(e));
-        }
+        timeout(timeout_dur, stream.read_exact(&mut client_key_2))
+            .await
+            .context("Can't read client key 2")?;
         debug!("Received client key 2");
 
         OsRng.fill_bytes(&mut server_key_2);
-        if let Err(e) = timeout(timeout_dur, stream.write_all(&server_key_2)).await {
-            error!("Can't write server key 2: {:?}", e);
-            return Err(Error::Io(e));
-        }
+        timeout(timeout_dur, stream.write_all(&server_key_2))
+            .await
+            .context("Can't write server key 2")?;
         debug!("Send server key 2");
 
         Ok(CryptSession::new(
@@ -144,15 +142,11 @@ impl<'a> GameSession<'a> {
         match message {
             Some(event) => match &*event {
                 Event::ResponseRegisterConnection { connection_id } => {
-                    if let Some(entity) = connection_id {
-                        Ok(*entity)
-                    } else {
-                        Err(Error::EntityNotSet)
-                    }
+                    return Ok(*connection_id);
                 }
-                _ => Err(Error::WrongEventReceived),
+                _ => bail!("Wrong event received"),
             },
-            None => Err(Error::NoSenderWaitingConnectionEntity),
+            None => bail!("No sender open when waiting for connection entity"),
         }
     }
 
@@ -165,16 +159,18 @@ impl<'a> GameSession<'a> {
             // TODO Query instance response channel
 
             let rx = async {
-                let read = timeout(self.peek_timeout_dur, self.stream.peek(&mut peek_buf)).await?;
-                Ok::<_, Error>(ConnectionHandleEvent::Rx(read))
+                let read = timeout(self.peek_timeout_dur, self.stream.peek(&mut peek_buf))
+                    .await
+                    .context("Could not peek into TCP stream")?;
+                Ok::<_, anyhow::Error>(ConnectionHandleEvent::Rx(read))
             };
 
             let global_tx = async {
                 let event = self.global_response_channel.recv().await;
-                Ok::<_, Error>(ConnectionHandleEvent::GlobalTx(event))
+                Ok::<_, anyhow::Error>(ConnectionHandleEvent::GlobalTx(event))
             };
 
-            match rx.race(global_tx).await? {
+            match select!(rx, global_tx).await? {
                 ConnectionHandleEvent::Rx(read) => {
                     if read == 0 {
                         // Connection was closed
@@ -201,29 +197,35 @@ impl<'a> GameSession<'a> {
                             );
                         }
                         if let Err(e) = self.handle_packet(opcode, data_buf).await {
-                            match e {
-                                Error::ConnectionClosed { .. } => {
-                                    return Ok(());
-                                }
-                                _ => {
-                                    return Err(e);
-                                }
-                            }
+                            self.handle_error(e)?;
                         }
                     }
                 }
-                ConnectionHandleEvent::GlobalTx(event) => self.handle_message(event).await?,
-                ConnectionHandleEvent::LocalTx(event) => self.handle_message(event).await?,
+                ConnectionHandleEvent::GlobalTx(event) | ConnectionHandleEvent::LocalTx(event) => {
+                    if let Err(e) = self.handle_event(event).await {
+                        self.handle_error(e)?;
+                    }
+                }
             };
         }
     }
 
-    /// Handles the incoming messages that could contain Response events or normal events.
-    async fn handle_message(&mut self, message: Option<EcsEvent>) -> Result<()> {
+    fn handle_error(&self, e: anyhow::Error) -> Result<()> {
+        match e.downcast_ref::<AlmeticaError>() {
+            Some(AlmeticaError::ConnectionClosed { .. }) => Ok(()),
+            Some(..) | None => {
+                bail!(e);
+            }
+        }
+    }
+
+    /// Handles the incoming events from the global or local ECS.
+    async fn handle_event(&mut self, message: Option<EcsEvent>) -> Result<()> {
         match message {
             Some(event) => {
                 if let Event::ResponseDropConnection { .. } = &*event {
-                    return Err(Error::ConnectionClosed);
+                    debug!("Received drop connection event");
+                    bail!(AlmeticaError::ConnectionClosed);
                 }
                 match event.data()? {
                     Some(data) => match event.opcode() {
@@ -242,7 +244,7 @@ impl<'a> GameSession<'a> {
                 }
             }
             None => {
-                return Err(Error::NoSenderResponseChannel);
+                bail!(AlmeticaError::ConnectionClosed);
             }
         }
         Ok(())
@@ -303,11 +305,11 @@ impl<'a> GameSession<'a> {
                         }
                     }
                 }
-                Err(e) => match e {
-                    Error::NoEventMappingForPacket => {
+                Err(e) => match e.downcast_ref::<AlmeticaError>() {
+                    Some(AlmeticaError::NoEventMappingForPacket) => {
                         warn!("No mapping found for packet {:?}", opcode_type);
                     }
-                    _ => error!(
+                    Some(..) | None => error!(
                         "Can't create event from valid packet {:?}: {:?}",
                         opcode_type, e
                     ),
@@ -334,11 +336,12 @@ mod tests {
     use crate::ecs::component::Connection;
     use crate::ecs::event::Event::{RequestRegisterConnection, ResponseRegisterConnection};
     use crate::protocol::opcode::Opcode;
-    use crate::protocol::protocol::GameSession;
+    use crate::protocol::GameSession;
     use crate::Result;
 
     use super::*;
     use shipyard::EntityId;
+    use std::sync::Arc;
 
     async fn get_opcode_tables() -> Result<(Vec<Opcode>, HashMap<Opcode, u16>)> {
         let mut file = Vec::new();
@@ -397,7 +400,7 @@ mod tests {
 
         // World loop mock
         let world_join = task::spawn(async move {
-            let connection_id = Some(get_new_entity_with_connection_component());
+            let connection_id = get_new_entity_with_connection_component();
             loop {
                 task::yield_now().await;
                 if let Some(event) = rx_channel.recv().await {

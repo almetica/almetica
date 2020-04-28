@@ -6,6 +6,8 @@ edition = "2018"
 
 [dependencies]
 aes = "0.3"
+anyhow = "1.0"
+async-macros = "2.0"
 async-std = { version = "1.5", features = ["attributes", "unstable"]}
 base64 = "0.12"
 byteorder = "1.3"

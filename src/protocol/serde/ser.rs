@@ -516,7 +516,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_primitive_struct() -> Result<(), Error> {
+    fn test_primitive_struct() -> Result<()> {
         #[derive(Serialize, PartialEq, Debug)]
         struct SimpleStruct {
             a: u8,

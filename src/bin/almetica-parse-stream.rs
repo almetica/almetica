@@ -5,6 +5,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
+use anyhow::{bail, ensure, Context};
 use byteorder::{ByteOrder, LittleEndian};
 use clap::Clap;
 use hex::encode;
@@ -18,7 +19,6 @@ use almetica::config::read_configuration;
 use almetica::crypt::CryptSession;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::protocol::opcode::Opcode;
-use almetica::Error;
 use almetica::Result;
 
 #[derive(Clap)]
@@ -55,37 +55,24 @@ fn init_logging() {
 ///
 fn run() -> Result<()> {
     let opts: Opts = Opts::parse();
-    let config = match read_configuration(&opts.config) {
-        Ok(c) => c,
-        Err(e) => {
-            error!(
-                "Can't read configuration file {}: {}",
-                &opts.config.display(),
-                e
-            );
-            return Err(e);
-        }
-    };
-    let (opcode_mapping, _reverse_opcode_mapping) = match load_opcode_mapping(&config.data.path) {
-        Ok((opcode_mapping, reverse_opcode_mapping)) => {
-            info!(
-                "Loaded opcode mapping table with {} entries",
-                opcode_mapping
-                    .iter()
-                    .filter(|&op| *op != Opcode::UNKNOWN)
-                    .count()
-            );
-            (opcode_mapping, reverse_opcode_mapping)
-        }
-        Err(e) => {
-            error!(
-                "Can't read opcode mapping file {}: {:?}",
-                &opts.config.display(),
-                e
-            );
-            return Err(e);
-        }
-    };
+    let config = read_configuration(&opts.config).context(format!(
+        "Can't read configuration file {}",
+        &opts.config.display(),
+    ))?;
+    let (opcode_mapping, _reverse_opcode_mapping) = load_opcode_mapping(&config.data.path)
+        .context(format!(
+            "Can't read opcode mapping file {}",
+            &opts.config.display(),
+        ))?;
+
+    info!(
+        "Loaded opcode mapping table with {} entries",
+        opcode_mapping
+            .iter()
+            .filter(|&op| *op != Opcode::UNKNOWN)
+            .count()
+    );
+
     info!("Start parsing stream.");
     for path in opts.files {
         let mut file = File::open(path.clone())?;
@@ -128,7 +115,7 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// Struct to parse the provided stream. Only usefull for this parser.
+/// Struct to parse the provided stream. Only useful for this parser.
 struct StreamParser {
     state: i8,
     num_unknown: usize,
@@ -159,8 +146,7 @@ impl StreamParser {
                 }
             }
             None => {
-                error!("Crypt session not initialized.");
-                return Err(Error::Unknown);
+                bail!("Crypt session not initialized");
             }
         }
 
@@ -208,46 +194,30 @@ impl StreamParser {
     fn init_crypt_session(&mut self, is_server: usize, mut payload: &[u8]) -> Result<()> {
         match self.state {
             -1 => {
-                if is_server != 1 {
-                    error!("Unexpected message from client!");
-                    return Err(Error::Unknown);
-                }
+                ensure!(is_server != 1, "Unexpected packet from client");
                 let magic_word = LittleEndian::read_u32(&payload[..4]);
                 if magic_word != 1 {
-                    error!("Missing magic byte in stream of file!");
-                    return Err(Error::NoMagicWord);
+                    bail!("No magic word found in stream");
                 }
                 self.state = 0;
             }
             0 => {
-                if is_server != 0 {
-                    error!("Unexpected packet from server!");
-                    return Err(Error::Unknown);
-                }
+                ensure!(is_server != 0, "Unexpected packet from server");
                 payload.read_exact(&mut self.client_key_1)?;
                 self.state = 1;
             }
             1 => {
-                if is_server != 1 {
-                    error!("Unexpected packet from client!");
-                    return Err(Error::Unknown);
-                }
+                ensure!(is_server != 1, "Unexpected packet from client");
                 payload.read_exact(&mut self.server_key_1)?;
                 self.state = 2;
             }
             2 => {
-                if is_server != 0 {
-                    error!("Unexpected packet from server!");
-                    return Err(Error::Unknown);
-                }
+                ensure!(is_server != 0, "Unexpected packet from server");
                 payload.read_exact(&mut self.client_key_2)?;
                 self.state = 3;
             }
             3 => {
-                if is_server != 1 {
-                    error!("Unexpected packet from client!");
-                    return Err(Error::Unknown);
-                }
+                ensure!(is_server != 1, "Unexpected packet from client");
                 payload.read_exact(&mut self.server_key_2)?;
 
                 debug!("ClientKey1 {}", encode(&self.client_key_1));
@@ -262,7 +232,7 @@ impl StreamParser {
                 self.state = 4;
                 info!("Crypt session initialized.");
             }
-            _ => return Err(Error::Unknown),
+            _ => bail!("Unexpected crypt init sequence"),
         }
         Ok(())
     }

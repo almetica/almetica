@@ -60,16 +60,18 @@ mod tests {
             channel: rx_channel,
         });
 
+        let entity = world.borrow::<EntitiesViewMut>().add_entity((), ());
+
         task::block_on(async {
             tx_channel
                 .send(Arc::new(Event::RequestCheckVersion {
-                    connection_id: None,
+                    connection_id: entity,
                     packet: CCheckVersion { version: vec![] },
                 }))
                 .await;
             tx_channel
                 .send(Arc::new(Event::RequestCheckVersion {
-                    connection_id: None,
+                    connection_id: entity,
                     packet: CCheckVersion { version: vec![] },
                 }))
                 .await;

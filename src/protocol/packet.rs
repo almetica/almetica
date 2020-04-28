@@ -12,7 +12,7 @@ macro_rules! packet_test {
         expected: $struct:expr
     ) => {
         #[test]
-        fn $name() -> Result<(), Error> {
+        fn $name() -> Result<()> {
             let org = $data;
             let data = org.clone();
             let expected = $struct;
@@ -33,7 +33,7 @@ macro_rules! print_packet_data_test {
         struct: $struct:expr
     ) => {
         #[test]
-        fn $name() -> Result<(), Error> {
+        fn $name() -> Result<()> {
             let structure = $struct;
             let data = to_vec(structure)?;
             println!("{}", format!("{:#x?}", data));

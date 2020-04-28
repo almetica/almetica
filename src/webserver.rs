@@ -2,13 +2,18 @@
 pub mod request;
 pub mod response;
 
+use anyhow::ensure;
+use async_std::task;
 use http_types::StatusCode;
 use sqlx::PgPool;
 use tide::{Request, Response, Server};
 use tracing::{error, info};
 
 use crate::config::Configuration;
-use crate::Result;
+use crate::crypt::password_hash::verify_hash;
+use crate::model::repository::{account, loginticket};
+use crate::model::PasswordHashAlgorithm;
+use crate::{AlmeticaError, Result};
 
 struct WebServerState {
     config: Configuration,
@@ -64,20 +69,60 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
         }
     };
 
-    // TODO query database and do the login
-    // TODO include proper ticket and other fields (chars_per_server and access_level/user_permission etc)
-    let _conn = &req.state().pool;
+    let pool = &req.state().pool;
+    let account_name = login_request.accountname;
+    let password = login_request.password;
 
-    // TODO when registering, only allow unicode letters (\p{Letter}) and numeric characters (\p{Number})
-    let account = login_request.accountname;
-    let ticket = "DEADDEADDEADDEAD".to_string();
+    let ticket: String = match login(pool, account_name.clone(), password).await {
+        Ok(token) => token,
+        Err(e) => {
+            return match e.downcast_ref::<AlmeticaError>() {
+                Some(AlmeticaError::InvalidLogin) => {
+                    info!("Invalid login for account {}", account_name);
+                    invalid_login(StatusCode::Unauthorized, account_name)
+                }
+                Some(..) | None => {
+                    error!("Can't verify login: {}", e);
+                    invalid_login(StatusCode::InternalServerError, account_name)
+                }
+            };
+        }
+    };
 
     info!(
         "Account {} created auth ticket: {}",
-        account.clone(),
+        account_name.clone(),
         ticket.clone()
     );
 
+    valid_login(account_name, ticket)
+}
+
+/// Tries to login with the given credentials. Returns the login ticket if successful.
+async fn login(pool: &PgPool, account_name: String, password: String) -> Result<String> {
+    let mut conn = pool.acquire().await?;
+    let (account_id, password_hash, password_algorithm) =
+        match account::get_by_name(&mut conn, &account_name).await {
+            Ok(acc) => (acc.id, acc.password, acc.algorithm),
+            Err(..) => (
+                0,
+                "dummy_hash_for_constant_time_operation".to_string(),
+                PasswordHashAlgorithm::Argon2,
+            ),
+        };
+
+    let is_valid = task::spawn_blocking(move || {
+        verify_hash(password.as_bytes(), &password_hash, password_algorithm)
+    })
+    .await?;
+    ensure!(is_valid, AlmeticaError::InvalidLogin);
+
+    let ticket = loginticket::upsert_ticket(&mut conn, account_id).await?;
+    Ok(ticket.ticket)
+}
+
+// TODO chars per server once user entity is implemented
+fn valid_login(account_name: String, ticket: String) -> Response {
     let resp = response::AuthResponse {
         last_connected_server_id: 1,
         chars_per_server: vec![],
@@ -87,11 +132,34 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
         access_level: 1,
         user_permission: 0,
         game_account_name: "TERA".to_string(),
-        master_account_name: account,
+        master_account_name: account_name,
         ticket,
     };
 
     match Response::new(StatusCode::Ok).body_json(&resp) {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!("Couldn't serialize auth response: {:?}", e);
+            return Response::new(StatusCode::InternalServerError);
+        }
+    }
+}
+
+fn invalid_login(status: StatusCode, account_name: String) -> Response {
+    let resp = response::AuthResponse {
+        last_connected_server_id: 0,
+        chars_per_server: vec![],
+        account_bits: "0x00000000".to_string(),
+        result_message: status.canonical_reason().to_string(),
+        result_code: status as i32,
+        access_level: 0,
+        user_permission: 0,
+        game_account_name: "TERA".to_string(),
+        master_account_name: account_name,
+        ticket: "".to_string(),
+    };
+
+    match Response::new(StatusCode::InternalServerError).body_json(&resp) {
         Ok(resp) => resp,
         Err(e) => {
             error!("Couldn't serialize auth response: {:?}", e);

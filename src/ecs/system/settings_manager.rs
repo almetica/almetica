@@ -1,5 +1,5 @@
 use shipyard::*;
-use tracing::{debug, error, info_span};
+use tracing::{debug, info_span};
 
 use crate::ecs::component::{IncomingEvent, Settings};
 use crate::ecs::event::Event;
@@ -22,7 +22,7 @@ pub fn settings_manager_system(
                 connection_id,
                 packet,
             } => {
-                handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
+                handle_set_visible_range(connection_id, &packet, &mut settings, &mut entities);
             }
             _ => { /* Ignore all other events */ }
         }
@@ -30,28 +30,24 @@ pub fn settings_manager_system(
 }
 
 fn handle_set_visible_range(
-    connection_id: Option<EntityId>,
+    connection_id: &EntityId,
     packet: &CSetVisibleRange,
     mut settings: &mut ViewMut<Settings>,
     entities: &mut EntitiesViewMut,
 ) {
-    if let Some(connection_id) = connection_id {
-        let span = info_span!("connection", connection = ?connection_id);
-        let _enter = span.enter();
+    let span = info_span!("connection", connection = ?connection_id);
+    let _enter = span.enter();
 
-        debug!("Set visible range event incoming");
+    debug!("Set visible range event incoming");
 
-        // TODO The local world need to know of this values. Send this value once the user enters the local world.
-        if let Ok(mut settings) = (&mut settings).try_get(connection_id) {
-            settings.visibility_range = packet.range;
-        } else {
-            let user_settings = Settings {
-                visibility_range: packet.range,
-            };
-            entities.add_entity(settings, user_settings);
-        }
+    // TODO The local world need to know of this values. Send this value once the user enters the local world.
+    if let Ok(mut settings) = (&mut settings).try_get(*connection_id) {
+        settings.visibility_range = packet.range;
     } else {
-        error!("Entity of the connection for set visible range event was not set");
+        let user_settings = Settings {
+            visibility_range: packet.range,
+        };
+        entities.add_entity(settings, user_settings);
     }
 }
 
@@ -98,7 +94,7 @@ mod tests {
                 entities.add_entity(
                     &mut events,
                     IncomingEvent(Arc::new(Event::RequestSetVisibleRange {
-                        connection_id: Some(connection_id),
+                        connection_id: connection_id,
                         packet: CSetVisibleRange { range: 4234 },
                     })),
                 );

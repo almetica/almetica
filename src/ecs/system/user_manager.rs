@@ -24,7 +24,7 @@ pub fn user_manager_system(
         // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
         match *event.0 {
             Event::RequestGetUserList { connection_id, .. } => {
-                handle_user_list(connection_id, &mut outgoing_events, &mut entities);
+                handle_user_list(&connection_id, &mut outgoing_events, &mut entities);
             }
             _ => { /* Ignore all other events */ }
         }
@@ -32,7 +32,7 @@ pub fn user_manager_system(
 }
 
 fn handle_user_list(
-    connection_id: Option<EntityId>,
+    connection_id: &EntityId,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
     entities: &mut EntitiesViewMut,
 ) {
@@ -40,7 +40,7 @@ fn handle_user_list(
 
     // TODO Just a mock. Proper DB handling comes later.
     let event = OutgoingEvent(Arc::new(Event::ResponseGetUserList {
-        connection_id,
+        connection_id: *connection_id,
         packet: SGetUserList {
             characters: vec![SGetUserListCharacter {
                 custom_strings: vec![SGetUserListCharacterCustomString {

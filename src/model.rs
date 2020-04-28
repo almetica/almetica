@@ -135,7 +135,7 @@ pub mod tests {
     use async_std::task;
     use hex::encode;
     use rand::{thread_rng, RngCore};
-    use sqlx::{Connect, PgConnection};
+    use sqlx::{Connect, PgConnection, PgPool};
     use std::future::Future;
     use tokio::runtime::Runtime;
     use tokio_postgres;
@@ -153,7 +153,7 @@ pub mod tests {
     pub fn db_test<'a, T, F>(test: F) -> Result<()>
     where
         T: Future<Output = Result<()>> + 'a,
-        F: FnOnce(PgConnection) -> T + panic::UnwindSafe,
+        F: FnOnce(PgPool) -> T + panic::UnwindSafe,
     {
         let _ = dotenv::dotenv();
         let db_url = &dotenv::var("TEST_DATABASE_CONNECTION")?;
@@ -174,8 +174,8 @@ pub mod tests {
         let result = panic::catch_unwind(|| {
             task::block_on(async {
                 let db_string = format!("{}/{}", db_url, db_name);
-                let conn = PgConnection::connect(db_string).await.unwrap();
-                if let Err(e) = test(conn).await {
+                let pool = PgPool::new(&db_string).await.unwrap();
+                if let Err(e) = test(pool).await {
                     panic!("Error while executing test: {}", e);
                 }
             });
