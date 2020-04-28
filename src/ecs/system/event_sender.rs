@@ -106,7 +106,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-                            connection_id: connection_id,
+                            connection_id,
                         })),
                     );
                 }
@@ -138,9 +138,7 @@ mod tests {
                 for _i in 0..1 {
                     entities.add_entity(
                         &mut events,
-                        OutgoingEvent(Arc::new(Event::ResponseDropConnection {
-                            connection_id: connection_id,
-                        })),
+                        OutgoingEvent(Arc::new(Event::ResponseDropConnection { connection_id })),
                     );
                 }
             },

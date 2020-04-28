@@ -22,7 +22,7 @@ pub fn settings_manager_system(
                 connection_id,
                 packet,
             } => {
-                handle_set_visible_range(connection_id, &packet, &mut settings, &mut entities);
+                handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
             }
             _ => { /* Ignore all other events */ }
         }
@@ -30,7 +30,7 @@ pub fn settings_manager_system(
 }
 
 fn handle_set_visible_range(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     packet: &CSetVisibleRange,
     mut settings: &mut ViewMut<Settings>,
     entities: &mut EntitiesViewMut,
@@ -41,7 +41,7 @@ fn handle_set_visible_range(
     debug!("Set visible range event incoming");
 
     // TODO The local world need to know of this values. Send this value once the user enters the local world.
-    if let Ok(mut settings) = (&mut settings).try_get(*connection_id) {
+    if let Ok(mut settings) = (&mut settings).try_get(connection_id) {
         settings.visibility_range = packet.range;
     } else {
         let user_settings = Settings {
@@ -94,7 +94,7 @@ mod tests {
                 entities.add_entity(
                     &mut events,
                     IncomingEvent(Arc::new(Event::RequestSetVisibleRange {
-                        connection_id: connection_id,
+                        connection_id,
                         packet: CSetVisibleRange { range: 4234 },
                     })),
                 );

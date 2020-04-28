@@ -138,7 +138,6 @@ pub mod tests {
     use sqlx::{Connect, PgConnection, PgPool};
     use std::future::Future;
     use tokio::runtime::Runtime;
-    use tokio_postgres;
 
     use crate::model::embedded::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
@@ -187,7 +186,8 @@ pub mod tests {
                 .unwrap();
         });
 
-        Ok(assert!(result.is_ok()))
+        assert!(result.is_ok());
+        Ok(())
     }
 
     /// Creates a randomly named test database.

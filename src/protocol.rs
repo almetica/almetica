@@ -142,7 +142,7 @@ impl<'a> GameSession<'a> {
         match message {
             Some(event) => match &*event {
                 Event::ResponseRegisterConnection { connection_id } => {
-                    return Ok(*connection_id);
+                    Ok(*connection_id)
                 }
                 _ => bail!("Wrong event received"),
             },

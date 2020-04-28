@@ -92,7 +92,7 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
     info!(
         "Account {} created auth ticket: {}",
         account_name.clone(),
-        ticket.clone()
+        ticket
     );
 
     valid_login(account_name, ticket)
@@ -140,7 +140,7 @@ fn valid_login(account_name: String, ticket: String) -> Response {
         Ok(resp) => resp,
         Err(e) => {
             error!("Couldn't serialize auth response: {:?}", e);
-            return Response::new(StatusCode::InternalServerError);
+            Response::new(StatusCode::InternalServerError)
         }
     }
 }
@@ -163,7 +163,7 @@ fn invalid_login(status: StatusCode, account_name: String) -> Response {
         Ok(resp) => resp,
         Err(e) => {
             error!("Couldn't serialize auth response: {:?}", e);
-            return Response::new(StatusCode::InternalServerError);
+            Response::new(StatusCode::InternalServerError)
         }
     }
 }

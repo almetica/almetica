@@ -1,3 +1,4 @@
 # These are up to discussion.
+too-many-arguments-threshold = 10
 single-char-binding-names-threshold = 6
 cognitive-complexity-threshold = 50

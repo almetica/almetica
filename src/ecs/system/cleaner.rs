@@ -33,7 +33,7 @@ pub fn cleaner_system(mut all_storages: AllStoragesViewMut) {
         .collect();
     deletion_list.append(&mut list);
 
-    if deletion_list.len() > 0 {
+    if !deletion_list.is_empty() {
         trace!("Deleting {} entities", deletion_list.len());
     }
 

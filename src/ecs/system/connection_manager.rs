@@ -48,7 +48,7 @@ pub fn connection_manager_system(
             packet,
         } => {
             if let Err(e) = handle_request_check_version(
-                connection_id,
+                *connection_id,
                 &packet,
                 &mut connections,
                 &mut outgoing_events,
@@ -56,12 +56,12 @@ pub fn connection_manager_system(
             ) {
                 error!("Rejecting request check version event: {:?}", e);
                 send_event(
-                    reject_check_version(connection_id),
+                    reject_check_version(*connection_id),
                     &mut outgoing_events,
                     &mut entities,
                 );
                 drop_connection(
-                    connection_id,
+                    *connection_id,
                     &mut outgoing_events,
                     &mut entities,
                     &mut deletion_list,
@@ -73,7 +73,7 @@ pub fn connection_manager_system(
             packet,
         } => {
             if let Err(e) = handle_request_login_arbiter(
-                connection_id,
+                *connection_id,
                 &packet,
                 &mut connections,
                 &pool,
@@ -82,19 +82,19 @@ pub fn connection_manager_system(
             ) {
                 error!("Rejecting login arbiter event: {:?}", e);
                 send_event(
-                    reject_login_arbiter(connection_id, packet.region),
+                    reject_login_arbiter(*connection_id, packet.region),
                     &mut outgoing_events,
                     &mut entities,
                 );
                 drop_connection(
-                    connection_id,
+                    *connection_id,
                     &mut outgoing_events,
                     &mut entities,
                     &mut deletion_list,
                 );
             }
         }
-        Event::RequestPong { connection_id, .. } => handle_pong(connection_id, &mut connections),
+        Event::RequestPong { connection_id, .. } => handle_pong(*connection_id, &mut connections),
         _ => { /* Ignore all other packets */ }
     });
 
@@ -106,13 +106,13 @@ pub fn connection_manager_system(
         .for_each(|(connection_id, mut connection)| {
             if handle_ping(
                 &now,
-                &connection_id,
+                connection_id,
                 &mut connection,
                 &mut outgoing_events,
                 &mut entities,
             ) {
                 drop_connection(
-                    &connection_id,
+                    connection_id,
                     &mut outgoing_events,
                     &mut entities,
                     &mut deletion_list,
@@ -150,14 +150,14 @@ fn handle_connection_registration(
     debug!("Registered connection as {:?}", connection_id);
 
     send_event(
-        accept_connection_registration(&connection_id),
+        accept_connection_registration(connection_id),
         outgoing_events,
         entities,
     );
 }
 
 fn handle_request_check_version(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     packet: &CCheckVersion,
     mut connections: &mut ViewMut<Connection>,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
@@ -184,7 +184,7 @@ fn handle_request_check_version(
     );
 
     let mut connection = (&mut connections)
-        .try_get(*connection_id)
+        .try_get(connection_id)
         .context("Could not find connection component for entity")?;
     connection.version_checked = true;
 
@@ -194,7 +194,7 @@ fn handle_request_check_version(
 }
 
 fn handle_request_login_arbiter(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     packet: &CLoginArbiter,
     mut connections: &mut ViewMut<Connection>,
     pool: &PgPool,
@@ -235,7 +235,7 @@ fn handle_request_login_arbiter(
         );
 
         let mut connection = (&mut connections)
-            .try_get(*connection_id)
+            .try_get(connection_id)
             .context("Could not find connection component for entity")?;
 
         connection.verified = true;
@@ -250,7 +250,7 @@ fn handle_request_login_arbiter(
 // Returns true if connection didn't return a ping in time.
 fn handle_ping(
     now: &Instant,
-    connection_id: &EntityId,
+    connection_id: EntityId,
     mut connection: &mut Connection,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
     entities: &mut EntitiesViewMut,
@@ -273,13 +273,13 @@ fn handle_ping(
     }
 }
 
-fn handle_pong(connection_id: &EntityId, mut connections: &mut ViewMut<Connection>) {
+fn handle_pong(connection_id: EntityId, mut connections: &mut ViewMut<Connection>) {
     debug!("Pong event incoming");
 
     let span = info_span!("connection", connection = ?connection_id);
     let _enter = span.enter();
 
-    if let Ok(mut connection) = (&mut connections).try_get(*connection_id) {
+    if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
         connection.last_pong = Instant::now();
         connection.waiting_for_pong = false;
     } else {
@@ -288,7 +288,7 @@ fn handle_pong(connection_id: &EntityId, mut connections: &mut ViewMut<Connectio
 }
 
 fn drop_connection(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
     entities: &mut EntitiesViewMut,
     deletion_list: &mut UniqueViewMut<DeletionList>,
@@ -298,11 +298,11 @@ fn drop_connection(
         outgoing_events,
         entities,
     );
-    deletion_list.0.push(*connection_id);
+    deletion_list.0.push(connection_id);
 }
 
 fn check_and_handle_post_initialization(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     connection: &Connection,
     outgoing_events: &mut ViewMut<OutgoingEvent>,
     entities: &mut EntitiesViewMut,
@@ -344,18 +344,18 @@ fn check_and_handle_post_initialization(
     }
 }
 
-fn assemble_loading_screen_info(connection_id: &EntityId) -> OutgoingEvent {
+fn assemble_loading_screen_info(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseLoadingScreenControlInfo {
-        connection_id: *connection_id,
+        connection_id,
         packet: SLoadingScreenControlInfo {
             custom_screen_enabled: false,
         },
     }))
 }
 
-fn assemble_remain_play_time(connection_id: &EntityId) -> OutgoingEvent {
+fn assemble_remain_play_time(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseRemainPlayTime {
-        connection_id: *connection_id,
+        connection_id,
         packet: SRemainPlayTime {
             account_type: 6,
             minutes_left: 0,
@@ -364,12 +364,12 @@ fn assemble_remain_play_time(connection_id: &EntityId) -> OutgoingEvent {
 }
 
 fn assemble_login_account_info(
-    connection_id: &EntityId,
+    connection_id: EntityId,
     server_name: String,
     account_id: u64,
 ) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseLoginAccountInfo {
-        connection_id: *connection_id,
+        connection_id,
         packet: SLoginAccountInfo {
             server_name,
             account_id,
@@ -377,43 +377,41 @@ fn assemble_login_account_info(
     }))
 }
 
-fn assemble_ping(connection_id: &EntityId) -> OutgoingEvent {
+fn assemble_ping(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponsePing {
-        connection_id: *connection_id,
+        connection_id,
         packet: SPing {},
     }))
 }
 
-fn assemble_drop_connection(connection_id: &EntityId) -> OutgoingEvent {
-    OutgoingEvent(Arc::new(Event::ResponseDropConnection {
-        connection_id: *connection_id,
-    }))
+fn assemble_drop_connection(connection_id: EntityId) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseDropConnection { connection_id }))
 }
 
-fn accept_connection_registration(connection_id: &EntityId) -> OutgoingEvent {
+fn accept_connection_registration(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-        connection_id: *connection_id,
+        connection_id,
     }))
 }
 
-fn accept_check_version(connection_id: &EntityId) -> OutgoingEvent {
+fn accept_check_version(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseCheckVersion {
-        connection_id: *connection_id,
+        connection_id,
         packet: SCheckVersion { ok: true },
     }))
 }
 
-fn reject_check_version(connection_id: &EntityId) -> OutgoingEvent {
+fn reject_check_version(connection_id: EntityId) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseCheckVersion {
-        connection_id: *connection_id,
+        connection_id,
         packet: SCheckVersion { ok: false },
     }))
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection_id: &EntityId, region: Region) -> OutgoingEvent {
+fn accept_login_arbiter(connection_id: EntityId, region: Region) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseLoginArbiter {
-        connection_id: *connection_id,
+        connection_id,
         packet: SLoginArbiter {
             success: true,
             login_queue: false,
@@ -428,9 +426,9 @@ fn accept_login_arbiter(connection_id: &EntityId, region: Region) -> OutgoingEve
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection_id: &EntityId, region: Region) -> OutgoingEvent {
+fn reject_login_arbiter(connection_id: EntityId, region: Region) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseLoginArbiter {
-        connection_id: *connection_id,
+        connection_id,
         packet: SLoginArbiter {
             success: false,
             login_queue: false,
@@ -703,7 +701,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         IncomingEvent(Arc::new(Event::RequestLoginArbiter {
-                            connection_id: connection_id,
+                            connection_id,
                             packet: CLoginArbiter {
                                 master_account_name: account_name,
                                 ticket: ticket.as_bytes().to_vec(),
@@ -940,7 +938,7 @@ mod tests {
                     entities.add_entity(
                         &mut events,
                         IncomingEvent(Arc::new(Event::RequestPong {
-                            connection_id: connection_id,
+                            connection_id,
                             packet: CPong {},
                         })),
                     )
