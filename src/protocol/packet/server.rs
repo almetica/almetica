@@ -15,6 +15,11 @@ pub struct SAccountPackageListEntry {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SCanCreateUser {
+    pub ok: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SCheckVersion {
     pub ok: bool,
 }
@@ -231,6 +236,16 @@ mod tests {
                 package_id: 434,
                 expiration_date: 2_147_483_647,
             }]
+        }
+    );
+
+    packet_test!(
+        name: test_can_create_user,
+        data: vec![
+            0x1,
+        ],
+        expected: SCanCreateUser {
+            ok: true,
         }
     );
 

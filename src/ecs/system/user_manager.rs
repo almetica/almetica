@@ -23,6 +23,9 @@ pub fn user_manager_system(
     (&incoming_events).iter().for_each(|event| {
         // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
         match *event.0 {
+            Event::RequestCanCreateUser { connection_id, .. } => {
+                handle_can_create_user(connection_id, &mut outgoing_events, &mut entities);
+            }
             Event::RequestGetUserList { connection_id, .. } => {
                 handle_user_list(connection_id, &mut outgoing_events, &mut entities);
             }
@@ -188,4 +191,107 @@ fn handle_user_list(
     }));
 
     send_event(event, outgoing_events, entities);
+}
+
+fn handle_can_create_user(
+    connection_id: EntityId,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut EntitiesViewMut,
+) {
+    debug!("Can create user event incoming");
+
+    // TODO check the database for current count of users once user table is implemented (hardwired max of 20).
+
+    send_event(
+        OutgoingEvent(Arc::new(Event::ResponseCanCreateUser {
+            connection_id,
+            packet: SCanCreateUser { ok: true },
+        })),
+        outgoing_events,
+        entities,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    use shipyard::*;
+    use sqlx::PgPool;
+
+    use crate::ecs::component::{Connection, IncomingEvent, OutgoingEvent};
+    use crate::ecs::event::Event;
+    use crate::ecs::resource::ConnectionMapping;
+    use crate::model::tests::db_test;
+    use crate::Result;
+
+    use super::*;
+
+    fn setup_with_connection(pool: PgPool) -> (World, EntityId) {
+        let world = World::new();
+        world.add_unique(WorldId(0));
+
+        let connection_id = world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
+                entities.add_entity(
+                    &mut connections,
+                    Connection {
+                        verified: false,
+                        version_checked: false,
+                        region: None,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
+            },
+        );
+
+        let map = HashMap::new();
+        world.add_unique(ConnectionMapping(map));
+        world.add_unique(pool);
+
+        (world, connection_id)
+    }
+
+    #[test]
+    fn test_can_create_user() -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let (world, connection_id) = setup_with_connection(pool);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                    for _i in 0..5 {
+                        entities.add_entity(
+                            &mut events,
+                            IncomingEvent(Arc::new(Event::RequestCanCreateUser {
+                                connection_id,
+                                packet: CCanCreateUser {},
+                            })),
+                        );
+                    }
+                },
+            );
+
+            world.run(user_manager_system);
+
+            world.run(|events: ViewMut<OutgoingEvent>| {
+                let count = (&events)
+                    .iter()
+                    .filter(|event| match &*event.0 {
+                        Event::ResponseCanCreateUser { packet, .. } => packet.ok,
+                        _ => false,
+                    })
+                    .count();
+                assert_eq!(count, 5);
+            });
+
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    // TODO write test can_create_user_false() once user table is finished
+    // TODO write handle_user_list
 }

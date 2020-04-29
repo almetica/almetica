@@ -132,6 +132,8 @@ assemble_event! {
         ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Global;
         RequestPong{packet: CPong}, C_PONG, Global;
         ResponsePing{packet: SPing}, S_PING, Connection;
+        RequestCanCreateUser{packet: CCanCreateUser}, C_CAN_CREATE_USER, Global;
+        ResponseCanCreateUser{packet: SCanCreateUser}, S_CAN_CREATE_USER, Connection;
     }
     System Events {
         // The connection will get it's uid returned with this message after registration.

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::model::Region;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CCanCreateUser {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {
     pub version: Vec<CCheckVersionEntry>,
 }
@@ -50,6 +53,12 @@ mod tests {
     use crate::protocol::serde::{from_vec, to_vec, Result};
 
     use super::*;
+
+    packet_test!(
+        name: test_c_can_create_user,
+        data: vec![],
+        expected: CCanCreateUser {}
+    );
 
     packet_test!(
         name: test_c_check_version,
