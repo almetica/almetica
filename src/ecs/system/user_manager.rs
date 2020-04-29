@@ -232,6 +232,7 @@ mod tests {
     fn setup_with_connection(pool: PgPool) -> (World, EntityId) {
         let world = World::new();
         world.add_unique(WorldId(0));
+        world.add_unique(pool);
 
         let connection_id = world.run(
             |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
@@ -247,10 +248,6 @@ mod tests {
                 )
             },
         );
-
-        let map = HashMap::new();
-        world.add_unique(ConnectionMapping(map));
-        world.add_unique(pool);
 
         (world, connection_id)
     }
