@@ -134,11 +134,13 @@ assemble_event! {
         ResponsePing{packet: SPing}, S_PING, Connection;
         RequestCanCreateUser{packet: CCanCreateUser}, C_CAN_CREATE_USER, Global;
         ResponseCanCreateUser{packet: SCanCreateUser}, S_CAN_CREATE_USER, Connection;
+        RequestCheckUserName{packet: CCheckUserName}, C_CHECK_USERNAME, Global;
+        ResponseCheckUserName{packet: SCheckUserName}, S_CHECK_USERNAME, Connection;
     }
     System Events {
-        // The connection will get it's uid returned with this message after registration.
+        // The connection will get it's EntityId returned with this message after registration.
         ResponseRegisterConnection{}, Connection;
-        // The connection will be dropped after it receive this message.
+        // The connection will be dropped after it receives this message.
         ResponseDropConnection{}, Connection;
     }
 }

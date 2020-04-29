@@ -102,8 +102,13 @@ fn init_logging(matches: &ArgMatches) {
     let fmt_layer = Layer::default().with_target(true);
     let filter_layer = EnvFilter::from_default_env()
         .add_directive(level.into())
-        .add_directive("async_std::task::builder=warn".parse().unwrap())
-        .add_directive("async_std::task::block_on=warn".parse().unwrap());
+        .add_directive("async_h1=info".parse().unwrap())
+        .add_directive("async_std=warn".parse().unwrap())
+        .add_directive("mio=info".parse().unwrap())
+        .add_directive("tide=info".parse().unwrap())
+        .add_directive("tokio_postgres=info".parse().unwrap())
+        .add_directive("tokio_util=info".parse().unwrap())
+        .add_directive("tokio_postgres=info".parse().unwrap());
 
     let subscriber = Registry::default().with(filter_layer).with(fmt_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();

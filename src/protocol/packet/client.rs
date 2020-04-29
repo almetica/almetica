@@ -18,6 +18,11 @@ pub struct CCheckVersionEntry {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CCheckUserName {
+    pub name: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CGetUserList {}
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -55,13 +60,13 @@ mod tests {
     use super::*;
 
     packet_test!(
-        name: test_c_can_create_user,
+        name: test_can_create_user,
         data: vec![],
         expected: CCanCreateUser {}
     );
 
     packet_test!(
-        name: test_c_check_version,
+        name: test_check_version,
         data: vec![
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8e, 0x96, 0x5, 0x0, 0x14, 0x0, 0x0, 0x0,
             0x1, 0x0, 0x0, 0x0, 0xdf, 0x93, 0x5, 0x0,
@@ -81,7 +86,18 @@ mod tests {
     );
 
     packet_test!(
-        name: test_c_get_user_guild_logo,
+        name: test_check_user_name,
+        data: vec![
+            0x6, 0x0, 0x54, 0x0, 0x68, 0x0, 0x65, 0x0, 0x42, 0x0, 0x65, 0x0, 0x73, 0x0,
+            0x74, 0x0, 0x4e, 0x0, 0x61, 0x0, 0x6d, 0x0, 0x65, 0x0, 0x0, 0x0,
+        ],
+        expected: CCheckUserName {
+            name: "TheBestName".to_string(),
+        }
+    );
+
+    packet_test!(
+        name: test_get_user_guild_logo,
         data: vec![0x1, 0x2f, 0x31, 0x1, 0x75, 0xe, 0x0, 0x0],
         expected: CGetUserGuildLogo {
             player_id: 20_000_513,
@@ -90,13 +106,13 @@ mod tests {
     );
 
     packet_test!(
-        name: test_c_get_user_list,
+        name: test_get_user_list,
         data: vec![],
         expected: CGetUserList {}
     );
 
     packet_test!(
-        name: test_c_login_arbiter,
+        name: test_login_arbiter,
         data: vec![
             0x17, 0x0, 0x33, 0x0, 0x32, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x2a,
             0x23, 0x0, 0x0, 0x72, 0x0, 0x6f, 0x0, 0x79, 0x0, 0x61, 0x0, 0x6c, 0x0, 0x42, 0x0, 0x75,
@@ -121,13 +137,13 @@ mod tests {
     );
 
     packet_test!(
-        name: test_c_pong,
+        name: test_pong,
         data: vec![],
         expected: CPong {}
     );
 
     packet_test!(
-        name: test_c_set_visible_range,
+        name: test_set_visible_range,
         data: vec![0xd0, 0x7, 0x0, 0x0],
         expected: CSetVisibleRange {
             range: 2000,

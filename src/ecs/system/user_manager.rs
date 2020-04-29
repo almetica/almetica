@@ -1,8 +1,11 @@
 /// Handles the users of an account. Users in TERA terminology are the player characters of an account.
 use std::sync::Arc;
 
+use anyhow::ensure;
+use lazy_static::lazy_static;
+use regex::Regex;
 use shipyard::*;
-use tracing::{debug, info_span};
+use tracing::{debug, error, info_span};
 
 use crate::ecs::component::{IncomingEvent, OutgoingEvent};
 use crate::ecs::event::Event;
@@ -10,6 +13,7 @@ use crate::ecs::resource::WorldId;
 use crate::ecs::system::send_event;
 use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
 use crate::protocol::packet::*;
+use crate::Result;
 
 pub fn user_manager_system(
     incoming_events: View<IncomingEvent>,
@@ -20,17 +24,30 @@ pub fn user_manager_system(
     let span = info_span!("world", world_id = world_id.0);
     let _enter = span.enter();
 
-    (&incoming_events).iter().for_each(|event| {
-        // TODO The user manager should listen to the "Drop Connection" event and persist the state of the user
-        match *event.0 {
-            Event::RequestCanCreateUser { connection_id, .. } => {
-                handle_can_create_user(connection_id, &mut outgoing_events, &mut entities);
-            }
-            Event::RequestGetUserList { connection_id, .. } => {
-                handle_user_list(connection_id, &mut outgoing_events, &mut entities);
-            }
-            _ => { /* Ignore all other events */ }
+    // TODO We need to persist users that are dropped. Create a field in a component to listen to (after X seconds after disconnect?)
+    (&incoming_events).iter().for_each(|event| match &*event.0 {
+        Event::RequestCanCreateUser { connection_id, .. } => {
+            handle_can_create_user(*connection_id, &mut outgoing_events, &mut entities);
         }
+        Event::RequestGetUserList { connection_id, .. } => {
+            handle_user_list(*connection_id, &mut outgoing_events, &mut entities);
+        }
+        Event::RequestCheckUserName {
+            connection_id,
+            packet,
+        } => {
+            if let Err(e) =
+                handle_check_user_name(&packet, *connection_id, &mut outgoing_events, &mut entities)
+            {
+                error!("Rejecting check user name request: {:?}", e);
+                send_event(
+                    assemble_check_user_name_response(*connection_id, false),
+                    &mut outgoing_events,
+                    &mut entities,
+                );
+            }
+        }
+        _ => { /* Ignore all other events */ }
     });
 }
 
@@ -203,13 +220,56 @@ fn handle_can_create_user(
     // TODO check the database for current count of users once user table is implemented (hardwired max of 20).
 
     send_event(
-        OutgoingEvent(Arc::new(Event::ResponseCanCreateUser {
-            connection_id,
-            packet: SCanCreateUser { ok: true },
-        })),
+        assemble_can_create_user_response(connection_id, true),
         outgoing_events,
         entities,
     );
+}
+
+fn handle_check_user_name(
+    packet: &CCheckUserName,
+    connection_id: EntityId,
+    outgoing_events: &mut ViewMut<OutgoingEvent>,
+    entities: &mut EntitiesViewMut,
+) -> Result<()> {
+    debug!("Check user name event incoming");
+
+    ensure!(
+        is_valid_user_name(&packet.name),
+        "Invalid username provided"
+    );
+
+    // TODO check if the username is already present in the database
+
+    send_event(
+        assemble_check_user_name_response(connection_id, true),
+        outgoing_events,
+        entities,
+    );
+
+    Ok(())
+}
+
+/// Only alphanumeric characters are currently allowed. The client in rather limited with it's font.
+fn is_valid_user_name(text: &str) -> bool {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r#"^[[:alnum:]]+$"#).unwrap();
+    }
+    RE.is_match(text)
+}
+
+fn assemble_can_create_user_response(connection_id: EntityId, ok: bool) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseCanCreateUser {
+        connection_id,
+        packet: SCanCreateUser { ok },
+    }))
+}
+
+fn assemble_check_user_name_response(connection_id: EntityId, ok: bool) -> OutgoingEvent {
+    OutgoingEvent(Arc::new(Event::ResponseCheckUserName {
+        connection_id,
+        packet: SCheckUserName { ok },
+    }))
 }
 
 #[cfg(test)]
@@ -251,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn test_can_create_user() -> Result<()> {
+    fn test_can_create_user_true() -> Result<()> {
         async fn test(pool: PgPool) -> Result<()> {
             let (world, connection_id) = setup_with_connection(pool);
 
@@ -287,6 +347,108 @@ mod tests {
         db_test(test)
     }
 
+    #[test]
+    fn test_is_valid_user_name() {
+        // Valid user names
+        assert!(is_valid_user_name("Simple"));
+        assert!(is_valid_user_name("Simple123"));
+        assert!(is_valid_user_name("654562312"));
+
+        // Invalid user names
+        assert!(!is_valid_user_name("Simp le"));
+        assert!(!is_valid_user_name("Simple!"));
+        assert!(!is_valid_user_name("Simple "));
+        assert!(!is_valid_user_name(" Simple"));
+        assert!(!is_valid_user_name("´test`"));
+        assert!(!is_valid_user_name(""));
+        assert!(!is_valid_user_name(" "));
+        assert!(!is_valid_user_name("\n"));
+        assert!(!is_valid_user_name("\t"));
+        assert!(!is_valid_user_name("기브스"));
+        assert!(!is_valid_user_name("ダース"));
+        assert!(!is_valid_user_name("การเดินทาง"));
+        assert!(!is_valid_user_name("العربية"));
+    }
+
+    #[test]
+    fn test_check_user_name_available() -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let (world, connection_id) = setup_with_connection(pool);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                    for i in 0..5 {
+                        entities.add_entity(
+                            &mut events,
+                            IncomingEvent(Arc::new(Event::RequestCheckUserName {
+                                connection_id,
+                                packet: CCheckUserName {
+                                    name: format!("NotTakenUserName{}", i),
+                                },
+                            })),
+                        );
+                    }
+                },
+            );
+
+            world.run(user_manager_system);
+
+            world.run(|events: ViewMut<OutgoingEvent>| {
+                let count = (&events)
+                    .iter()
+                    .filter(|event| match &*event.0 {
+                        Event::ResponseCheckUserName { packet, .. } => packet.ok,
+                        _ => false,
+                    })
+                    .count();
+                assert_eq!(count, 5);
+            });
+
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_check_user_name_invalid_username() -> Result<()> {
+        async fn test(pool: PgPool) -> Result<()> {
+            let (world, connection_id) = setup_with_connection(pool);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                    for i in 0..5 {
+                        entities.add_entity(
+                            &mut events,
+                            IncomingEvent(Arc::new(Event::RequestCheckUserName {
+                                connection_id,
+                                packet: CCheckUserName {
+                                    name: format!("H!x?or{}", i),
+                                },
+                            })),
+                        );
+                    }
+                },
+            );
+
+            world.run(user_manager_system);
+
+            world.run(|events: ViewMut<OutgoingEvent>| {
+                let count = (&events)
+                    .iter()
+                    .filter(|event| match &*event.0 {
+                        Event::ResponseCheckUserName { packet, .. } => !packet.ok,
+                        _ => false,
+                    })
+                    .count();
+                assert_eq!(count, 5);
+            });
+
+            Ok(())
+        }
+        db_test(test)
+    }
+
     // TODO write test can_create_user_false() once user table is finished
+    // TODO write test check_user_name_double_username once user table is finished
     // TODO write handle_user_list
 }

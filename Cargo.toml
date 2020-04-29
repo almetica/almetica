@@ -18,6 +18,7 @@ dotenv = "0.15"
 flate2 = "1.0"
 hex = "0.4"
 http-types = "1.2"
+lazy_static = "1.4"
 rand = "0.7"
 rand_core = "0.5"
 refinery = { version = "0.2", features = ["tokio-postgres"]}
