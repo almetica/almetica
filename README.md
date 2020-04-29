@@ -1,6 +1,6 @@
 # Almetica
 
-![Discord Shield](https://discordapp.com/api/guilds/694792322952462387/widget.png?style=shield)
+[![Gitter](https://badges.gitter.im/almetica-server/community.svg)](https://gitter.im/almetica-server/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 93.02.
 
