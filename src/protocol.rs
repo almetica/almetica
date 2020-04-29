@@ -262,7 +262,6 @@ impl<'a> GameSession<'a> {
                         opcode, len
                     );
                 } else {
-                    debug!("Opcode value: {}", opcode_value);
                     let mut buffer = Vec::with_capacity(4 + data.len());
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, len as u16)?;
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, *opcode_value)?;

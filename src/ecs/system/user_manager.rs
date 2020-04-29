@@ -214,7 +214,6 @@ fn handle_can_create_user(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -223,7 +222,6 @@ mod tests {
 
     use crate::ecs::component::{Connection, IncomingEvent, OutgoingEvent};
     use crate::ecs::event::Event;
-    use crate::ecs::resource::ConnectionMapping;
     use crate::model::tests::db_test;
     use crate::Result;
 
