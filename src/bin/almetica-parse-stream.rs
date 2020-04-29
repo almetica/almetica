@@ -194,7 +194,7 @@ impl StreamParser {
     fn init_crypt_session(&mut self, is_server: usize, mut payload: &[u8]) -> Result<()> {
         match self.state {
             -1 => {
-                ensure!(is_server != 1, "Unexpected packet from client");
+                ensure!(is_server == 1, "Unexpected packet from client");
                 let magic_word = LittleEndian::read_u32(&payload[..4]);
                 if magic_word != 1 {
                     bail!("No magic word found in stream");
@@ -202,22 +202,22 @@ impl StreamParser {
                 self.state = 0;
             }
             0 => {
-                ensure!(is_server != 0, "Unexpected packet from server");
+                ensure!(is_server == 0, "Unexpected packet from server");
                 payload.read_exact(&mut self.client_key_1)?;
                 self.state = 1;
             }
             1 => {
-                ensure!(is_server != 1, "Unexpected packet from client");
+                ensure!(is_server == 1, "Unexpected packet from client");
                 payload.read_exact(&mut self.server_key_1)?;
                 self.state = 2;
             }
             2 => {
-                ensure!(is_server != 0, "Unexpected packet from server");
+                ensure!(is_server == 0, "Unexpected packet from server");
                 payload.read_exact(&mut self.client_key_2)?;
                 self.state = 3;
             }
             3 => {
-                ensure!(is_server != 1, "Unexpected packet from client");
+                ensure!(is_server == 1, "Unexpected packet from client");
                 payload.read_exact(&mut self.server_key_2)?;
 
                 debug!("ClientKey1 {}", encode(&self.client_key_1));

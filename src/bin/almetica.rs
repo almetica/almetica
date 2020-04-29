@@ -44,7 +44,7 @@ async fn main() {
                 .short('c')
                 .long("config")
                 .value_name("FILE")
-                .help("Sets a custom config file")
+                .about("Sets a custom config file")
                 .default_value("config.yaml")
                 .takes_value(true),
         )
@@ -53,7 +53,7 @@ async fn main() {
                 .short('l')
                 .long("log")
                 .value_name("LEVEL")
-                .help("Sets the log level")
+                .about("Sets the log level")
                 .default_value("INFO")
                 .possible_values(&["ERROR", "WARN", "INFO", "DEBUG", "TRACE"])
                 .takes_value(true),
@@ -66,7 +66,7 @@ async fn main() {
                     Arg::with_name("name")
                         .short('n')
                         .long("name")
-                        .help("name of the account")
+                        .about("name of the account")
                         .required(true)
                         .takes_value(true),
                 )
@@ -74,7 +74,7 @@ async fn main() {
                     Arg::with_name("password")
                         .short('p')
                         .long("password")
-                        .help("password of the account")
+                        .about("password of the account")
                         .required(true)
                         .takes_value(true),
                 ),

@@ -2,7 +2,7 @@
 
 ![Discord Shield](https://discordapp.com/api/guilds/694792322952462387/widget.png?style=shield)
 
-This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 92.04.
+This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 93.02.
 
 ## Requirements
 
@@ -40,6 +40,8 @@ Configure the server with the help of the provided configuration template
  * opcocode.yaml
    (A YAML hashmap with the packet name as key and the opcode value as the value
    as defined in the client.)
+ * integrity.yaml
+   (A YAML list with all packet names that need the integrity check (>= version 93))
 
 The configuration file also need the key and IV of the TERA datacenter file you
 are using. You need to extract the information out of the TERA client file you

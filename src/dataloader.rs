@@ -60,7 +60,7 @@ where
     T: Read,
 {
     let opcode_map: HashMap<Opcode, u16> = serde_yaml::from_reader(reader)?;
-    let mut opcode_table: Vec<Opcode> = vec![Opcode::UNKNOWN; std::u16::MAX as usize];
+    let mut opcode_table: Vec<Opcode> = vec![Opcode::UNKNOWN; std::u16::MAX as usize + 1];
     for (key, value) in opcode_map.iter() {
         opcode_table[*value as usize] = *key;
     }
@@ -101,23 +101,23 @@ mod tests {
         let mut file = Vec::new();
         file.write_all(
             "
-        C_UNEQUIP_ITEM: 1
-        S_ANNOUNCE_MESSAGE: 5
-        C_ADD_FRIEND: 2
-        "
+                C_UNEQUIP_ITEM: 1
+                S_ANNOUNCE_MESSAGE: 100
+                C_ADD_FRIEND: 65535
+                "
             .as_bytes(),
         )?;
 
         let table = read_opcode_table(&mut file.as_slice())?;
         let reverse_map = calculate_reverse_map(table.as_slice());
 
-        assert_eq!(Opcode::C_UNEQUIP_ITEM, table[1]);
-        assert_eq!(Opcode::S_ANNOUNCE_MESSAGE, table[5]);
-        assert_eq!(Opcode::C_ADD_FRIEND, table[2]);
+        assert_eq!(table[1], Opcode::C_UNEQUIP_ITEM);
+        assert_eq!(table[100], Opcode::S_ANNOUNCE_MESSAGE);
+        assert_eq!(table[65535], Opcode::C_ADD_FRIEND);
 
-        assert_eq!(reverse_map[&Opcode::S_ANNOUNCE_MESSAGE], 5);
-        assert_eq!(reverse_map[&Opcode::C_ADD_FRIEND], 2);
-        assert_eq!(reverse_map[&Opcode::C_UNEQUIP_ITEM], 1);
+        assert_eq!(1, reverse_map[&Opcode::C_UNEQUIP_ITEM]);
+        assert_eq!(100, reverse_map[&Opcode::S_ANNOUNCE_MESSAGE]);
+        assert_eq!(65535, reverse_map[&Opcode::C_ADD_FRIEND]);
 
         Ok(())
     }
@@ -131,7 +131,7 @@ mod tests {
         let test_data = create_test_data(key.as_slice(), iv.as_slice(), size)?;
         let data = read_datacenter_file(key.as_slice(), iv.as_slice(), test_data)?;
 
-        assert_eq!(data.len(), size);
+        assert_eq!(size, data.len());
         Ok(())
     }
 

@@ -141,9 +141,7 @@ impl<'a> GameSession<'a> {
     async fn parse_connection(message: Option<EcsEvent>) -> Result<EntityId> {
         match message {
             Some(event) => match &*event {
-                Event::ResponseRegisterConnection { connection_id } => {
-                    Ok(*connection_id)
-                }
+                Event::ResponseRegisterConnection { connection_id } => Ok(*connection_id),
                 _ => bail!("Wrong event received"),
             },
             None => bail!("No sender open when waiting for connection entity"),
@@ -185,6 +183,9 @@ impl<'a> GameSession<'a> {
                         self.cipher.crypt_client_data(&mut header_buf);
                         let packet_length = LittleEndian::read_u16(&header_buf[0..2]) as usize - 4;
                         let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
+
+                        // TODO handle the integrity bytes on some client packets (implement once need). Ignore the value, since it's broken anyhow.
+
                         let mut data_buf = vec![0u8; packet_length];
                         if packet_length != 0 {
                             timeout(self.read_timeout_dur, self.stream.read_exact(&mut data_buf))
@@ -261,6 +262,7 @@ impl<'a> GameSession<'a> {
                         opcode, len
                     );
                 } else {
+                    debug!("Opcode value: {}", opcode_value);
                     let mut buffer = Vec::with_capacity(4 + data.len());
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, len as u16)?;
                     WriteBytesExt::write_u16::<LittleEndian>(&mut buffer, *opcode_value)?;

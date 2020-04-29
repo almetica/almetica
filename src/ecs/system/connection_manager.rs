@@ -176,11 +176,10 @@ fn handle_request_check_version(
         )
     );
 
-    // TODO properly do the version verification
-    trace!(
+    // TODO properly do the version verification? Define version 0 and 1 in the config file?
+    debug!(
         "Version 1: {} version 2: {}",
-        packet.version[0].value,
-        packet.version[1].value
+        packet.version[0].value, packet.version[1].value
     );
 
     let mut connection = (&mut connections)
@@ -312,7 +311,7 @@ fn check_and_handle_post_initialization(
             // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
             debug!("Sending connection post initialization commands");
 
-            // TODO get from configuration and database
+            // FIXME get from configuration (server name and PVP setting) and database (account_id). Set the account_id in the connection component!
             send_event(
                 accept_check_version(connection_id),
                 outgoing_events,
@@ -373,6 +372,7 @@ fn assemble_login_account_info(
         packet: SLoginAccountInfo {
             server_name,
             account_id,
+            integrity_iv: 0x00000000, // We don't care for the integrity hash, since it's broken anyhow.
         },
     }))
 }
