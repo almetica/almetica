@@ -65,7 +65,7 @@ jobs:
         env:
           POSTGRES_USER: almetica
           POSTGRES_PASSWORD: almetica
-          POSTGRES_DB: almetica
+          POSTGRES_DB: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -77,7 +77,7 @@ jobs:
 
       - name: Set .env file
         run: |
-          echo "TEST_DATABASE_CONNECTION="postgres://almetica:almetica@postgres:5432/almetica"" >> .env
+          echo "TEST_DATABASE_CONNECTION="postgres://almetica:almetica@postgres:5432"" >> .env
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
