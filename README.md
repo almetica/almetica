@@ -67,7 +67,7 @@ The tests will create a randomly named test database so that they can run in
 parallel.
 
 To configure the database access, please create a .env file in the project root
-and add a DATABASE_CONNECTION variable.
+and add a TEST_DATABASE_CONNECTION variable.
 
 Use the format that is documented here:
 
