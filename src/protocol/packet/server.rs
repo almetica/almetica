@@ -30,6 +30,11 @@ pub struct SCheckUserName {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SCreateUser {
+    pub ok: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SGetUserList {
     pub characters: Vec<SGetUserListCharacter>,
     pub veteran: bool,
@@ -139,7 +144,7 @@ pub struct SGetUserListCharacter {
     pub tutorial_state: i32,
     // TODO research what it does
     pub show_style: bool,
-    pub appearance2: i32,
+    pub appearance2: u32,
     pub achievement_points: i32,
     pub laurel: i32,
     // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
@@ -275,6 +280,16 @@ mod tests {
     );
 
     packet_test!(
+        name: test_create_user,
+        data: vec![
+            0x1
+        ],
+        expected: SCreateUser {
+            ok: true,
+        }
+    );
+
+    packet_test!(
         name: test_item_custom_string1,
         data: vec![
             0x0, 0x0, 0x0, 0x0, 0x11, 0x7f, 0x1c, 0x0, 0x0, 0x80, 0x0, 0x2,
@@ -379,7 +394,7 @@ mod tests {
                 underwear: 179_035,
                 head: 50056,
                 face: 0,
-                appearance: Customization{data: [1,2,3,4,5,6,7,8]},
+                appearance: Customization{data: vec![1,2,3,4,5,6,7,8]},
                 is_second_character: false,
                 admin_level: 0,
                 is_banned: false,

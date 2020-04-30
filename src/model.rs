@@ -25,49 +25,73 @@ pub enum Region {
     Russia = 8,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
+#[sqlx(rename = "gender")]
 pub enum Gender {
+    #[sqlx(rename = "male")]
     Male = 0,
+    #[sqlx(rename = "female")]
     Female = 1,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
+#[sqlx(rename = "race")]
 pub enum Race {
+    #[sqlx(rename = "human")]
     Human = 0,
+    #[sqlx(rename = "castanic")]
     Castanic = 1,
+    #[sqlx(rename = "aman")]
     Aman = 2,
+    #[sqlx(rename = "high elf")]
     HighElf = 3,
+    #[sqlx(rename = "elin popori")]
     ElinPopori = 4,
+    #[sqlx(rename = "baraka")]
     Baraka = 5,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
+#[sqlx(rename = "user_class")]
 pub enum Class {
+    #[sqlx(rename = "warrior")]
     Warrior = 0,
+    #[sqlx(rename = "lancer")]
     Lancer = 1,
+    #[sqlx(rename = "slayer")]
     Slayer = 2,
+    #[sqlx(rename = "berserker")]
     Berserker = 3,
+    #[sqlx(rename = "sorcerer")]
     Sorcerer = 4,
+    #[sqlx(rename = "archer")]
     Archer = 5,
+    #[sqlx(rename = "priest")]
     Priest = 6,
+    #[sqlx(rename = "elementalist")]
     Elementalist = 7,
+    #[sqlx(rename = "soulless")]
     Soulless = 8,
+    #[sqlx(rename = "engineer")]
     Engineer = 9,
+    #[sqlx(rename = "fighter")]
     Fighter = 10,
+    #[sqlx(rename = "ninja")]
     Ninja = 11,
+    #[sqlx(rename = "valkyrie")]
     Valkyrie = 12,
 }
 
 pub type Angle = i16;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
 pub struct Vec3a {
     pub x: i32,
     pub y: i32,
@@ -77,9 +101,9 @@ pub struct Vec3a {
 // type skill_id = [u8; 4]; // Patch < 74
 // type skill_id = [u8; 8]; // Path >= 74
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, sqlx::Type, PartialEq)]
 pub struct Customization {
-    pub data: [u8; 8],
+    pub data: Vec<u8>,
 }
 
 impl Serialize for Customization {
@@ -96,7 +120,7 @@ impl<'de> Deserialize<'de> for Customization {
     where
         D: Deserializer<'de>,
     {
-        let mut data: [u8; 8] = [0u8; 8];
+        let mut data = vec![0u8; 8];
         let value = deserializer.deserialize_u64(U64Visitor)?;
         LittleEndian::write_u64(&mut data, value);
         Ok(Customization { data })
@@ -122,7 +146,7 @@ impl<'de> Visitor<'de> for U64Visitor {
 
 /// Supported password hash algorithms.
 #[derive(Debug, sqlx::Type, PartialEq)]
-#[sqlx(rename = "PASSWORD_HASH_ALGORITHM")]
+#[sqlx(rename = "password_hash_algorithm")]
 pub enum PasswordHashAlgorithm {
     #[sqlx(rename = "argon2")]
     Argon2,
@@ -252,10 +276,10 @@ pub mod tests {
     #[test]
     fn test_customization_serialization() -> Result<()> {
         let value = Customization {
-            data: [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8],
+            data: vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8],
         };
         let data = to_vec(&value)?;
-        assert_eq!(data.as_slice(), &value.data);
+        assert_eq!(&data, &value.data);
         Ok(())
     }
 

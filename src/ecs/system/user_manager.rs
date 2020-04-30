@@ -105,7 +105,7 @@ fn handle_user_list(
                 head: 50056,
                 face: 5,
                 appearance: Customization {
-                    data: [0, 0, 0, 0, 0, 0, 0, 0],
+                    data: vec![0, 0, 0, 0, 0, 0, 0, 0],
                 },
                 is_second_character: false,
                 admin_level: 0,

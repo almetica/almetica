@@ -136,6 +136,8 @@ assemble_event! {
         ResponseCanCreateUser{packet: SCanCreateUser}, S_CAN_CREATE_USER, Connection;
         RequestCheckUserName{packet: CCheckUserName}, C_CHECK_USERNAME, Global;
         ResponseCheckUserName{packet: SCheckUserName}, S_CHECK_USERNAME, Connection;
+        RequestCreateUser{packet: CCreateUser}, C_CREATE_USER, Global;
+        ResponseCreateUser{packet: SCreateUser}, S_CREATE_USER, Connection;
     }
     System Events {
         // The connection will get it's EntityId returned with this message after registration.

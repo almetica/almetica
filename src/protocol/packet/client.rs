@@ -1,7 +1,7 @@
 /// Module for client network packages.
 use serde::{Deserialize, Serialize};
 
-use crate::model::Region;
+use crate::model::{Class, Customization, Gender, Race, Region};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCanCreateUser {}
@@ -23,6 +23,21 @@ pub struct CCheckUserName {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CCreateUser {
+    pub name: String,
+    #[serde(with = "serde_bytes")]
+    pub details: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub shape: Vec<u8>,
+    pub gender: Gender,
+    pub race: Race,
+    pub class: Class,
+    pub appearance: Customization,
+    pub is_second_character: bool, // Unused
+    pub appearance2: u32,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CGetUserList {}
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -36,7 +51,6 @@ pub struct CLoginArbiter {
     pub master_account_name: String,
     #[serde(with = "serde_bytes")]
     pub ticket: Vec<u8>,
-
     pub unk1: i32,
     pub unk2: u8,
     pub region: Region,
@@ -54,7 +68,7 @@ pub struct CSetVisibleRange {
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use crate::model::Region;
+    use crate::model::{Class, Customization, Gender, Race, Region};
     use crate::protocol::serde::{from_vec, to_vec, Result};
 
     use super::*;
@@ -93,6 +107,41 @@ mod tests {
         ],
         expected: CCheckUserName {
             name: "TheBestName".to_string(),
+        }
+    );
+
+    packet_test!(
+        name: test_create_user,
+        data: vec![
+            0x27, 0x0, 0x33, 0x0, 0x20, 0x0, 0x53, 0x0, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x4, 0x0,
+            0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0x65, 0x1e, 0xb, 0x1, 0x9, 0x19, 0x4, 0x0, 0x0, 0x64,
+            0x0, 0x0, 0x0, 0x41, 0x0, 0x73, 0x0, 0x75, 0x0, 0x6e, 0x0, 0x61, 0x0, 0x0, 0x0, 0xd,
+            0x13, 0x1a, 0x8, 0x0, 0x0, 0x0, 0x0, 0x1f, 0xa, 0x4, 0x0, 0x17, 0xa, 0x0, 0x0, 0x9,
+            0x0, 0xc, 0xd, 0x0, 0x0, 0x0, 0x0, 0x15, 0x1f, 0xe, 0x16, 0x1d, 0x10, 0x10, 0x0, 0x1,
+            0x13, 0x10, 0x13, 0x13, 0x10, 0x13, 0x13, 0x13, 0xf, 0xf, 0xf, 0xf, 0xf, 0xf, 0xf,
+            0x10, 0x13, 0xa, 0x0, 0x5, 0xb, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        ],
+        expected: CCreateUser {
+            name: "Asuna".to_string(),
+            details: vec![
+                13, 19, 26, 8, 0, 0, 0, 0, 31, 10, 4, 0, 23, 10, 0, 0, 9, 0, 12, 13, 0, 0, 0, 0,
+                21, 31, 14, 22, 29, 16, 16, 0,
+            ],
+            shape: vec![
+                1, 19, 16, 19, 19, 16, 19, 19, 19, 15, 15, 15, 15, 15, 15, 15, 16, 19, 10, 0, 5,
+                11, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            gender: Gender::Female,
+            race: Race::ElinPopori,
+            class: Class::Valkyrie,
+            appearance: Customization {
+                data: vec![101, 30, 11, 1, 9, 25, 4, 0],
+            },
+            is_second_character: false,
+            appearance2: 100,
         }
     );
 

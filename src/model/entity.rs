@@ -1,7 +1,7 @@
 /// Holds all database entities.
 use chrono::{DateTime, Utc};
 
-use crate::model::PasswordHashAlgorithm;
+use crate::model::*;
 
 /// Account that holds the login information of a player.
 #[derive(Debug, sqlx::FromRow)]
@@ -22,5 +22,24 @@ pub struct LoginTicket {
     pub account_id: i64,
     pub ticket: String,
     pub used: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+#[sqlx(rename = "account_user")]
+#[sqlx(rename_all = "lowercase")]
+pub struct User {
+    pub id: i64,
+    pub account_id: i64,
+    pub name: String,
+    pub gender: Gender,
+    pub race: Race,
+    #[sqlx(rename = "user_class")]
+    pub class: Class,
+    pub shape: Vec<u8>,
+    pub details: Vec<u8>,
+    pub appearance: Customization,
+    pub appearance2: u32,
+    pub playtime: i64, // Playtime in seconds.
     pub created_at: DateTime<Utc>,
 }
