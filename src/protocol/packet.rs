@@ -6,7 +6,8 @@
 ///
 /// Since we are working with a Postgres Database, prefer the i8, i16, i32, i64 data types. Only the
 /// GameId in some packets (which is the EntityId of the ECS) should be u64. Data parsed from the
-/// datacenter files is also parsed with the signed variants.
+/// datacenter files is also parsed with the signed variants. Unisgned should only be used when the
+/// field is not used inside the database (for example the integrity IV).
 ///
 pub use client::*;
 pub use server::*;

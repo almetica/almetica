@@ -57,7 +57,7 @@ pub struct SGetUserListCharacter {
     #[serde(with = "serde_bytes")]
     pub shape: Vec<u8>,
     pub guild_name: String,
-    pub id: i32,
+    pub db_id: i32,
     pub gender: Gender,
     pub race: Race,
     pub class: Class,
@@ -85,14 +85,11 @@ pub struct SGetUserListCharacter {
     pub face: i32,
     pub appearance: Customization,
     pub is_second_character: bool,
-    pub admin_level: i32,
-    // >0 = [GM] tag added to name
+    pub admin_level: i32, // >0 = [GM] tag added to name
     pub is_banned: bool,
     pub ban_end_time: i64,
-    pub ban_remain_sec: i32,
-    // -1 = Permanent
-    pub rename_needed: i32,
-    // 0 = no, 1 = yes. Client will ask the player to rename the character once selected.
+    pub ban_remain_sec: i32, // -1 = Permanent
+    pub rename_needed: i32, // 0 = no, 1 = yes. Client will ask the player to rename the character once selected.
     pub weapon_model: i32,
     pub unk_model2: i32,
     pub unk_model3: i32,
@@ -199,7 +196,7 @@ pub struct SLoadingScreenControlInfo {
 pub struct SLoginAccountInfo {
     pub server_name: String,
     pub account_id: i64,
-    pub integrity_iv: i32, // IV for the custom hash function of some client packets
+    pub integrity_iv: u32, // IV for the custom hash function of some client packets
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -207,11 +204,11 @@ pub struct SLoginArbiter {
     pub success: bool,
     pub login_queue: bool,
     pub status: i32,
-    pub unk1: i32,      // ignored by client
+    pub unk1: u32,      // ignored by client
     pub region: Region, // must match CLoginArbiter.region
     pub pvp_disabled: bool,
-    pub unk2: i16, // 0
-    pub unk3: i16, // 0
+    pub unk2: u16, // 0
+    pub unk3: u16, // 0
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -224,8 +221,8 @@ pub struct SRemainPlayTime {
     // 3 = F2P (free-play event)
     // 4 = F2P (legacy restriction),
     // 5 = Premium, 6 = Basic
-    pub account_type: i32,
-    pub minutes_left: i32,
+    pub account_type: u32,
+    pub minutes_left: u32,
 }
 
 #[cfg(test)]
@@ -368,7 +365,7 @@ mod tests {
                     0, 0,
                 ],
                 guild_name: "Unlimited Power".to_string(),
-                id: 2_000_131,
+                db_id: 2_000_131,
                 gender: Gender::Female,
                 race: Race::ElinPopori,
                 class: Class::Lancer,
@@ -562,7 +559,7 @@ mod tests {
         expected: SLoginAccountInfo {
             server_name: "PlanetDB_27".to_string(),
             account_id: 482_558,
-            integrity_iv: 123456,
+            integrity_iv: 4278124286,
         }
     );
 }

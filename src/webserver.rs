@@ -28,7 +28,7 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
 
     let mut webserver = Server::with_state(WebServerState { config, pool });
     webserver.middleware(tide::middleware::RequestLogger::new());
-    webserver.at("/server/list.uk").get(server_list_endpoint); // FIXME: wildcard!
+    webserver.at("/server/*").get(server_list_endpoint);
     webserver.at("/auth").post(auth_endpoint);
     webserver.listen(listen_string).await?;
     Ok(())

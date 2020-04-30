@@ -78,7 +78,7 @@ fn handle_user_list(
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 ],
                 guild_name: "".to_string(),
-                id: 2_000_131,
+                db_id: 2_000_131,
                 gender: Gender::Female,
                 race: Race::ElinPopori,
                 class: Class::Lancer,
