@@ -31,7 +31,7 @@ RUSTFLAGS="-C target-cpu=native" cargo build
 
 Remember to use the ```--release``` flag if you want to activate all compiler optimizations.
 
-## Running
+## Configuration
 
 Configure the server with the help of the provided configuration template
 (config.yaml.tmpl). 
