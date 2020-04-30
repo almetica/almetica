@@ -4,7 +4,7 @@ CREATE TYPE user_class AS ENUM ('warrior', 'lancer', 'slayer', 'berserker', 'sor
 
 CREATE TABLE account_user
 (
-    id          BIGSERIAL PRIMARY KEY,
+    id          SERIAL     PRIMARY KEY,
     account_id  BIGINT     NOT NULL REFERENCES account ON DELETE CASCADE,
     name        TEXT       NOT NULL UNIQUE,
     gender      gender     NOT NULL,

@@ -38,7 +38,7 @@ pub struct LoginTicket {
 #[sqlx(rename = "account_user")]
 #[sqlx(rename_all = "lowercase")]
 pub struct User {
-    pub id: i64,
+    pub id: i32,
     pub account_id: i64,
     pub name: String,
     pub gender: Gender,
