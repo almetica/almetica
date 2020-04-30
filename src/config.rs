@@ -35,8 +35,6 @@ pub struct DatabaseConfiguration {
 #[derive(Clone, Debug, Deserialize)]
 pub struct DataConfiguration {
     pub path: PathBuf,
-    pub key: String,
-    pub iv: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

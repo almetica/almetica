@@ -34,20 +34,58 @@ Remember to use the ```--release``` flag if you want to activate all compiler op
 ## Running
 
 Configure the server with the help of the provided configuration template
-(config.yaml.tmpl). In your data folder you need currently following files:
- * messages.yaml 
-   (A YAML list with all system messages in the same order as the client.)
- * opcocode.yaml
-   (A YAML hashmap with the packet name as key and the opcode value as the value
-   as defined in the client.)
- * integrity.yaml
-   (A YAML list with all packet names that need the integrity check (>= version 93))
+(config.yaml.tmpl). 
 
-The configuration file also need the key and IV of the TERA datacenter file you
-are using. You need to extract the information out of the TERA client file you
-are targeting.
+You also need some additional files that you need to extract yourself from the
+TERA client. We will provide tools / instructions how to do so in the future.
 
-We will provide tools / instructions how to do so in the future.
+You can find these tools yourself though on Github.
+
+### integrity.yaml
+
+A YAML file with a list of all packet names that need the integrity check (>= version 93).
+
+Format:
+```yaml
+- C_CAST_FISHING_ROD
+- C_DIALOG
+...
+```
+
+### key.yaml
+A YAML file with two keys: "key" and "iv". These are the parts of the AES256 key
+which is used to decrypt the datacenter file. Extracted from the memory while
+the TERA client is runnig.
+
+Format:
+```yaml
+key: E1B1C4666F64681889BC8A5594387E2D
+iv: 1F494C6BB424C916CA44BB1C64CEAA41
+...
+```
+
+### messages.yaml 
+A YAML file with a list of all system messages in the same order as the client.
+
+Format:
+```yaml
+- SMT_UNDEFINED
+- SMT_LOBBY_CANNOT_CONNECT
+...
+```
+
+### opcocode.yaml
+A YAML file with a hashmap of the packet name as key and the opcode value as the
+value as defined in the client.
+
+Format:
+```yaml
+C_ACCEPT_CONTRACT: 12345
+C_ACCEPT_FRIEND: 67890
+...
+```
+
+## Running
 
 You can run the server with the following commands:
 
