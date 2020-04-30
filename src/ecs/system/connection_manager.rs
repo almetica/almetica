@@ -365,7 +365,7 @@ fn assemble_remain_play_time(connection_id: EntityId) -> OutgoingEvent {
 fn assemble_login_account_info(
     connection_id: EntityId,
     server_name: String,
-    account_id: u64,
+    account_id: i64,
 ) -> OutgoingEvent {
     OutgoingEvent(Arc::new(Event::ResponseLoginAccountInfo {
         connection_id,

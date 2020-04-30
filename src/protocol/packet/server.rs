@@ -57,7 +57,7 @@ pub struct SGetUserListCharacter {
     #[serde(with = "serde_bytes")]
     pub shape: Vec<u8>,
     pub guild_name: String,
-    pub id: u32,
+    pub id: i32,
     pub gender: Gender,
     pub race: Race,
     pub class: Class,
@@ -96,34 +96,34 @@ pub struct SGetUserListCharacter {
     pub weapon_model: i32,
     pub unk_model2: i32,
     pub unk_model3: i32,
-    pub body_model: u32,
-    pub hand_model: u32,
-    pub feet_model: u32,
+    pub body_model: i32,
+    pub hand_model: i32,
+    pub feet_model: i32,
     pub unk_model7: i32,
     pub unk_model8: i32,
     pub unk_model9: i32,
     pub unk_model10: i32,
-    pub unk_dye1: u32,
-    pub unk_dye2: u32,
-    pub weapon_dye: u32,
-    pub body_dye: u32,
-    pub hand_dye: u32,
-    pub feet_dye: u32,
-    pub unk_dye7: u32,
-    pub unk_dye8: u32,
-    pub unk_dye9: u32,
-    pub underwear_dye: u32,
-    pub style_back_dye: u32,
-    pub style_head_dye: u32,
-    pub style_face_dye: u32,
+    pub unk_dye1: i32,
+    pub unk_dye2: i32,
+    pub weapon_dye: i32,
+    pub body_dye: i32,
+    pub hand_dye: i32,
+    pub feet_dye: i32,
+    pub unk_dye7: i32,
+    pub unk_dye8: i32,
+    pub unk_dye9: i32,
+    pub underwear_dye: i32,
+    pub style_back_dye: i32,
+    pub style_head_dye: i32,
+    pub style_face_dye: i32,
     pub style_head: i32,
     pub style_face: i32,
     pub style_back: i32,
     pub style_weapon: i32,
     pub style_body: i32,
     pub style_footprint: i32,
-    pub style_body_dye: u32,
-    pub weapon_enchant: u32,
+    pub style_body_dye: i32,
+    pub weapon_enchant: i32,
     pub rest_bonus_xp: i64,
     pub max_rest_bonus_xp: i64,
     pub show_face: bool,
@@ -144,7 +144,7 @@ pub struct SGetUserListCharacter {
     pub tutorial_state: i32,
     // TODO research what it does
     pub show_style: bool,
-    pub appearance2: u32,
+    pub appearance2: i32,
     pub achievement_points: i32,
     pub laurel: i32,
     // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
@@ -187,7 +187,7 @@ pub struct SItemCustomString {
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SItemCustomStringEntry {
     pub string: String,
-    pub id: u32,
+    pub id: i32,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -198,20 +198,20 @@ pub struct SLoadingScreenControlInfo {
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginAccountInfo {
     pub server_name: String,
-    pub account_id: u64,
-    pub integrity_iv: u32, // IV for the custom hash function of some client packets
+    pub account_id: i64,
+    pub integrity_iv: i32, // IV for the custom hash function of some client packets
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginArbiter {
     pub success: bool,
     pub login_queue: bool,
-    pub status: u32,
-    pub unk1: u32,      // ignored by client
+    pub status: i32,
+    pub unk1: i32,      // ignored by client
     pub region: Region, // must match CLoginArbiter.region
     pub pvp_disabled: bool,
-    pub unk2: u16, // 0
-    pub unk3: u16, // 0
+    pub unk2: i16, // 0
+    pub unk3: i16, // 0
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -562,7 +562,7 @@ mod tests {
         expected: SLoginAccountInfo {
             server_name: "PlanetDB_27".to_string(),
             account_id: 482_558,
-            integrity_iv: 0xfefefefe,
+            integrity_iv: 123456,
         }
     );
 }

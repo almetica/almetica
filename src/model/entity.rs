@@ -1,4 +1,13 @@
 /// Holds all database entities.
+///
+/// Supported data types:
+///    * ```i8```, ```i16```, ```i32```, ```i64```
+///    * ```String```
+///    * ```Vec```
+///    * ```Bool```
+///    * ```Customization```
+///    * Custom types / ```enum``` based on the above.
+///    * DateTime<Utc>
 use chrono::{DateTime, Utc};
 
 use crate::model::*;
@@ -39,7 +48,7 @@ pub struct User {
     pub shape: Vec<u8>,
     pub details: Vec<u8>,
     pub appearance: Customization,
-    pub appearance2: u32,
+    pub appearance2: i32,
     pub playtime: i64, // Playtime in seconds.
     pub created_at: DateTime<Utc>,
 }
