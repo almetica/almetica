@@ -42,13 +42,13 @@ async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
 <id>1</id>
 <ip>{}</ip>
 <port>{}</port>
-<category sort="1">Almetica</category>
+<category sort="1">PVE</category>
 <name raw_name="Almetica">Almetica</name>
 <crowdness sort="1">None</crowdness>
 <open sort="1">Recommended</open>
 <permission_mask>0x00000000</permission_mask>
 <server_stat>0x00000000</server_stat>
-<popup> This server isn't up yet! </popup>
+<popup>This server isn't up yet!</popup>
 <language>en</language>
 </server>
 </serverlist>"###,
@@ -79,11 +79,11 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
             return match e.downcast_ref::<AlmeticaError>() {
                 Some(AlmeticaError::InvalidLogin) => {
                     info!("Invalid login for account {}", account_name);
-                    invalid_login(StatusCode::Unauthorized, account_name)
+                    invalid_login_response(StatusCode::Unauthorized, account_name)
                 }
                 Some(..) | None => {
                     error!("Can't verify login: {}", e);
-                    invalid_login(StatusCode::InternalServerError, account_name)
+                    invalid_login_response(StatusCode::InternalServerError, account_name)
                 }
             };
         }
@@ -95,7 +95,7 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
         ticket
     );
 
-    valid_login(account_name, ticket)
+    valid_login_response(account_name, ticket)
 }
 
 /// Tries to login with the given credentials. Returns the login ticket if successful.
@@ -122,7 +122,7 @@ async fn login(pool: &PgPool, account_name: String, password: String) -> Result<
 }
 
 // TODO chars per server once user entity is implemented
-fn valid_login(account_name: String, ticket: String) -> Response {
+fn valid_login_response(account_name: String, ticket: String) -> Response {
     let resp = response::AuthResponse {
         last_connected_server_id: 1,
         chars_per_server: vec![],
@@ -136,16 +136,10 @@ fn valid_login(account_name: String, ticket: String) -> Response {
         ticket,
     };
 
-    match Response::new(StatusCode::Ok).body_json(&resp) {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("Couldn't serialize auth response: {:?}", e);
-            Response::new(StatusCode::InternalServerError)
-        }
-    }
+    create_response(&resp, StatusCode::Ok)
 }
 
-fn invalid_login(status: StatusCode, account_name: String) -> Response {
+fn invalid_login_response(status: StatusCode, account_name: String) -> Response {
     let resp = response::AuthResponse {
         last_connected_server_id: 0,
         chars_per_server: vec![],
@@ -159,7 +153,11 @@ fn invalid_login(status: StatusCode, account_name: String) -> Response {
         ticket: "".to_string(),
     };
 
-    match Response::new(StatusCode::InternalServerError).body_json(&resp) {
+    create_response(&resp, StatusCode::InternalServerError)
+}
+
+fn create_response(resp: &AuthResponse, status_code: StatusCode) -> Response {
+    match Response::new(status_code).body_json(&resp) {
         Ok(resp) => resp,
         Err(e) => {
             error!("Couldn't serialize auth response: {:?}", e);
