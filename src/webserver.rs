@@ -5,6 +5,7 @@ pub mod response;
 use anyhow::ensure;
 use async_std::task;
 use http_types::StatusCode;
+use serde::Serialize;
 use sqlx::PgPool;
 use tide::{Request, Response, Server};
 use tracing::{error, info};
@@ -13,6 +14,7 @@ use crate::config::Configuration;
 use crate::crypt::password_hash::verify_hash;
 use crate::model::repository::{account, loginticket};
 use crate::model::PasswordHashAlgorithm;
+use crate::webserver::response::{AuthResponse, ServerListEntry, ServerListResponse};
 use crate::{AlmeticaError, Result};
 
 struct WebServerState {
@@ -22,7 +24,7 @@ struct WebServerState {
 
 /// Main loop of the web server.
 pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
-    let listen_string = format!("{}:{}", config.server.hostname, config.server.web_port);
+    let listen_string = format!("{}:{}", config.server.ip, config.server.web_port);
 
     // FIXME: Add a body length limiting middleware once official implemented: https://github.com/http-rs/tide/issues/448
 
@@ -34,29 +36,31 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
     Ok(())
 }
 
-/// Handles the sever listing
+/// Handles the server listing
 async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
-    let server_list_template = format!(
-        r###"<serverlist>
-<server>
-<id>1</id>
-<ip>{}</ip>
-<port>{}</port>
-<category sort="1">PVE</category>
-<name raw_name="Almetica">Almetica</name>
-<crowdness sort="1">None</crowdness>
-<open sort="1">Recommended</open>
-<permission_mask>0x00000000</permission_mask>
-<server_stat>0x00000000</server_stat>
-<popup>This server isn't up yet!</popup>
-<language>en</language>
-</server>
-</serverlist>"###,
-        req.state().config.server.hostname,
-        req.state().config.server.game_port
-    );
+    let category = if req.state().config.game.pvp {
+        "PVP"
+    } else {
+        "PVE"
+    };
 
-    Response::new(StatusCode::Ok).body_string(server_list_template)
+    let server_list = ServerListResponse {
+        // TODO make the name and raw_name configurable
+        servers: vec![ServerListEntry {
+            id: 1,
+            category: category.to_string(),
+            raw_name: "Almetica".to_string(),
+            name: "Almetica".to_string(),
+            crowdness: "None".to_string(),
+            open: "Recommended".to_string(),
+            ip: req.state().config.server.ip,
+            port: req.state().config.server.game_port,
+            lang: 1,
+            popup: "This server isn't up yet".to_string(),
+        }],
+    };
+
+    create_response(&server_list, StatusCode::Ok)
 }
 
 /// Handles the client authentication.
@@ -73,36 +77,32 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
     let account_name = login_request.accountname;
     let password = login_request.password;
 
-    let ticket: String = match login(pool, account_name.clone(), password).await {
+    let ticket = match login(pool, &account_name, password).await {
         Ok(token) => token,
         Err(e) => {
             return match e.downcast_ref::<AlmeticaError>() {
                 Some(AlmeticaError::InvalidLogin) => {
                     info!("Invalid login for account {}", account_name);
-                    invalid_login_response(StatusCode::Unauthorized, account_name)
+                    invalid_login_response(StatusCode::Unauthorized)
                 }
                 Some(..) | None => {
                     error!("Can't verify login: {}", e);
-                    invalid_login_response(StatusCode::InternalServerError, account_name)
+                    invalid_login_response(StatusCode::InternalServerError)
                 }
             };
         }
     };
 
-    info!(
-        "Account {} created auth ticket: {}",
-        account_name.clone(),
-        ticket
-    );
+    info!("Account {} created an auth ticket", account_name);
 
-    valid_login_response(account_name, ticket)
+    valid_login_response(ticket)
 }
 
 /// Tries to login with the given credentials. Returns the login ticket if successful.
-async fn login(pool: &PgPool, account_name: String, password: String) -> Result<String> {
+async fn login(pool: &PgPool, account_name: &str, password: String) -> Result<Vec<u8>> {
     let mut conn = pool.acquire().await?;
     let (account_id, password_hash, password_algorithm) =
-        match account::get_by_name(&mut conn, &account_name).await {
+        match account::get_by_name(&mut conn, account_name).await {
             Ok(acc) => (acc.id, acc.password, acc.algorithm),
             Err(..) => (
                 0,
@@ -121,47 +121,27 @@ async fn login(pool: &PgPool, account_name: String, password: String) -> Result<
     Ok(ticket.ticket)
 }
 
-// TODO chars per server once user entity is implemented
-fn valid_login_response(account_name: String, ticket: String) -> Response {
-    let resp = response::AuthResponse {
-        last_connected_server_id: 1,
-        chars_per_server: vec![],
-        account_bits: "0x00000000".to_string(),
-        result_message: "OK".to_string(),
-        result_code: 200,
-        access_level: 1,
-        user_permission: 0,
-        game_account_name: "TERA".to_string(),
-        master_account_name: account_name,
-        ticket,
-    };
-
-    create_response(&resp, StatusCode::Ok)
-}
-
-fn invalid_login_response(status: StatusCode, account_name: String) -> Response {
-    let resp = response::AuthResponse {
-        last_connected_server_id: 0,
-        chars_per_server: vec![],
-        account_bits: "0x00000000".to_string(),
-        result_message: status.canonical_reason().to_string(),
-        result_code: status as i32,
-        access_level: 0,
-        user_permission: 0,
-        game_account_name: "TERA".to_string(),
-        master_account_name: account_name,
-        ticket: "".to_string(),
-    };
-
-    create_response(&resp, StatusCode::InternalServerError)
-}
-
-fn create_response(resp: &response::AuthResponse, status_code: StatusCode) -> Response {
-    match Response::new(status_code).body_json(&resp) {
+fn create_response(resp: &impl Serialize, status_code: StatusCode) -> Response {
+    match Response::new(status_code).body_json(resp) {
         Ok(resp) => resp,
         Err(e) => {
             error!("Couldn't serialize auth response: {:?}", e);
             Response::new(StatusCode::InternalServerError)
         }
     }
+}
+
+fn invalid_login_response(status_code: StatusCode) -> Response {
+    let auth_resp = AuthResponse {
+        ticket: "".to_string(),
+    };
+    create_response(&auth_resp, status_code)
+}
+
+fn valid_login_response(ticket: Vec<u8>) -> Response {
+    let encoded_ticket = base64::encode(ticket);
+    let auth_resp = AuthResponse {
+        ticket: encoded_ticket,
+    };
+    create_response(&auth_resp, StatusCode::Ok)
 }

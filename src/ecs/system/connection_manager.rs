@@ -1,4 +1,3 @@
-use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -209,10 +208,9 @@ fn handle_request_login_arbiter(
     );
 
     Ok(task::block_on(async {
-        let ticket = from_utf8(&packet.ticket).context("Ticket is not a valid UTF-8 string")?;
-        trace!("Ticket value: {}", ticket);
+        trace!("Ticket value: {}", base64::encode(&packet.ticket));
 
-        if ticket.trim().is_empty() {
+        if packet.ticket.is_empty() {
             return Err(anyhow!("Ticket was empty"));
         }
 
@@ -221,7 +219,7 @@ fn handle_request_login_arbiter(
             .await
             .context("Couldn't acquire connection from pool")?;
 
-        if !loginticket::is_ticket_valid(&mut conn, &packet.master_account_name, &ticket)
+        if !loginticket::is_ticket_valid(&mut conn, &packet.master_account_name, &packet.ticket)
             .await
             .context("Error while executing query for account")?
         {
@@ -229,8 +227,8 @@ fn handle_request_login_arbiter(
         }
 
         info!(
-            "Account {} provided a valid ticket {}",
-            packet.master_account_name, ticket
+            "Account {} provided a valid ticket",
+            packet.master_account_name
         );
 
         let mut connection = (&mut connections)
@@ -372,7 +370,7 @@ fn assemble_login_account_info(
         packet: SLoginAccountInfo {
             server_name,
             account_id,
-            integrity_iv: 0x00000000, // We don't care for the integrity hash, since it's broken anyhow.
+            integrity_iv: 0x0, // We don't care for the integrity hash, since it's broken anyhow.
         },
     }))
 }
@@ -505,7 +503,7 @@ mod tests {
         (world, connection_id)
     }
 
-    async fn create_login(conn: &mut PgConnection) -> Result<(String, String)> {
+    async fn create_login(conn: &mut PgConnection) -> Result<(String, Vec<u8>)> {
         let acc = account::create(
             conn,
             &Account {
@@ -662,7 +660,7 @@ mod tests {
                             connection_id,
                             packet: CLoginArbiter {
                                 master_account_name: account_name,
-                                ticket: ticket.as_bytes().to_vec(),
+                                ticket,
                                 unk1: 0,
                                 unk2: 0,
                                 region: Region::Europe,
@@ -704,7 +702,7 @@ mod tests {
                             connection_id,
                             packet: CLoginArbiter {
                                 master_account_name: account_name,
-                                ticket: ticket.as_bytes().to_vec(),
+                                ticket,
                                 unk1: 0,
                                 unk2: 0,
                                 region: Region::Europe,
@@ -800,7 +798,7 @@ mod tests {
                             connection_id: con,
                             packet: CLoginArbiter {
                                 master_account_name: account_name,
-                                ticket: ticket.as_bytes().to_vec(),
+                                ticket,
                                 unk1: 0,
                                 unk2: 0,
                                 region: Region::Europe,

@@ -21,7 +21,7 @@ pub async fn run(
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,
 ) -> Result<()> {
-    let listen_string = format!("{}:{}", config.server.hostname, config.server.game_port);
+    let listen_string = format!("{}:{}", config.server.ip, config.server.game_port);
     info!("listening on tcp://{}", listen_string);
     let listener = TcpListener::bind(listen_string).await?;
 

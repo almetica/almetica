@@ -29,7 +29,7 @@ pub struct Account {
 #[sqlx(rename_all = "lowercase")]
 pub struct LoginTicket {
     pub account_id: i64,
-    pub ticket: String,
+    pub ticket: Vec<u8>,
     pub used: bool,
     pub created_at: DateTime<Utc>,
 }

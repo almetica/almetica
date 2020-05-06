@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use crate::*;
+use std::net::Ipv4Addr;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Configuration {
@@ -16,7 +17,7 @@ pub struct Configuration {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ServerConfiguration {
-    pub hostname: String,
+    pub ip: Ipv4Addr,
     #[serde(alias = "web-port")]
     pub web_port: u16,
     #[serde(alias = "game-port")]

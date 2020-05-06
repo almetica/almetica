@@ -1,5 +1,4 @@
 /// Handles the login ticket of client connections.
-use hex::encode;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sqlx::prelude::*;
@@ -8,9 +7,9 @@ use sqlx::PgConnection;
 use crate::model::entity::LoginTicket;
 use crate::Result;
 
-/// Upserts a ticket (randomly generated 64 bytes encoded as hex). Tickets are valid for 5 minutes and can only be used once.
+/// Upserts a ticket (randomly generated 128 bytes). Tickets are valid for 5 minutes and can only be used once.
 pub async fn upsert_ticket(conn: &mut PgConnection, account_id: i64) -> Result<LoginTicket> {
-    let mut ticket = vec![0u8; 64];
+    let mut ticket = vec![0u8; 128];
     OsRng.fill_bytes(&mut ticket);
 
     Ok(sqlx::query_as::<_, LoginTicket>(
@@ -19,13 +18,13 @@ pub async fn upsert_ticket(conn: &mut PgConnection, account_id: i64) -> Result<L
         RETURNING *"#,
     )
     .bind(account_id)
-    .bind(encode(ticket))
+    .bind(ticket)
     .fetch_one(conn)
     .await?)
 }
 
 /// Tests if the given ticket is valid. A ticket can only be used one time. Should be called in a transaction.
-pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &str) -> Result<bool> {
+pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &[u8]) -> Result<bool> {
     // We have to manually re-borrow the transaction. &mut *conn will take a &mut PgConnection and
     // produce a &mut PgConnection that is held for the lifetime required by the function.
     // This is normally done implicitly by Rust. It's not in this case due to fetch_*() being
@@ -153,7 +152,7 @@ pub mod tests {
             .await?;
 
             upsert_ticket(&mut conn, account.id).await?;
-            assert!(!is_ticket_valid(&mut conn, &account.name, "not a valid ticket").await?);
+            assert!(!is_ticket_valid(&mut conn, &account.name, "123456789".as_bytes()).await?);
 
             Ok(())
         }
