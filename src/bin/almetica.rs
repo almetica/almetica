@@ -105,7 +105,7 @@ fn init_logging(matches: &ArgMatches) {
         .add_directive("async_h1=info".parse().unwrap())
         .add_directive("async_std=warn".parse().unwrap())
         .add_directive("mio=info".parse().unwrap())
-        .add_directive("tide=info".parse().unwrap())
+        .add_directive("tide=debug".parse().unwrap())
         .add_directive("tokio_postgres=info".parse().unwrap())
         .add_directive("tokio_util=info".parse().unwrap())
         .add_directive("tokio_postgres=info".parse().unwrap());

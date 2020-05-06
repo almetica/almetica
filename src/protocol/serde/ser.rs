@@ -131,10 +131,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    fn serialize_unit(self) -> Result<()> {
-        Ok(())
-    }
-
     fn serialize_bool(self, value: bool) -> Result<()> {
         let val: u8 = if value { 0x1 } else { 0x0 };
         self.nodes
@@ -142,15 +138,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             .unwrap()
             .data
             .push(val);
-        Ok(())
-    }
-
-    fn serialize_u8(self, value: u8) -> Result<()> {
-        self.nodes
-            .get_mut(&self.current_node)
-            .unwrap()
-            .data
-            .push(value);
         Ok(())
     }
 
@@ -163,6 +150,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
+    fn serialize_u8(self, value: u8) -> Result<()> {
+        self.nodes
+            .get_mut(&self.current_node)
+            .unwrap()
+            .data
+            .push(value);
+        Ok(())
+    }
+
+    fn serialize_char(self, _value: char) -> Result<()> {
+        Err(Error::NotImplemented())
+    }
+
     impl_nums!(u16, serialize_u16, write_u16, 2);
     impl_nums!(u32, serialize_u32, write_u32, 4);
     impl_nums!(u64, serialize_u64, write_u64, 8);
@@ -171,10 +171,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     impl_nums!(i64, serialize_i64, write_i64, 8);
     impl_nums!(f32, serialize_f32, write_f32, 4);
     impl_nums!(f64, serialize_f64, write_f64, 8);
-
-    fn serialize_char(self, _value: char) -> Result<()> {
-        Err(Error::NotImplemented())
-    }
 
     fn serialize_str(self, value: &str) -> Result<()> {
         let num_node = self.nodes.len();
@@ -247,6 +243,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         T: ?Sized + Serialize,
     {
         Err(Error::NotImplemented())
+    }
+
+    fn serialize_unit(self) -> Result<()> {
+        Ok(())
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {

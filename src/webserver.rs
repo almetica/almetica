@@ -156,7 +156,7 @@ fn invalid_login_response(status: StatusCode, account_name: String) -> Response 
     create_response(&resp, StatusCode::InternalServerError)
 }
 
-fn create_response(resp: &AuthResponse, status_code: StatusCode) -> Response {
+fn create_response(resp: &response::AuthResponse, status_code: StatusCode) -> Response {
     match Response::new(status_code).body_json(&resp) {
         Ok(resp) => resp,
         Err(e) => {

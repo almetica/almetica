@@ -82,21 +82,21 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     }
 
     #[inline]
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        self.pos += 1;
-        visitor.visit_u8(self.data[self.pos - 1])
-    }
-
-    #[inline]
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
         self.pos += 1;
         visitor.visit_i8(self.data[self.pos - 1] as i8)
+    }
+
+    #[inline]
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.pos += 1;
+        visitor.visit_u8(self.data[self.pos - 1])
     }
 
     impl_nums!(u16, deserialize_u16, visit_u16, read_u16, 2);
@@ -107,14 +107,6 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     impl_nums!(i64, deserialize_i64, visit_i64, read_i64, 8);
     impl_nums!(f32, deserialize_f32, visit_f32, read_f32, 4);
     impl_nums!(f64, deserialize_f64, visit_f64, read_f64, 8);
-
-    #[inline]
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_unit()
-    }
 
     #[inline]
     fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
@@ -191,75 +183,33 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_byte_buf(b.to_vec())
     }
 
-    fn deserialize_enum<V>(
-        self,
-        _enum: &'static str,
-        _variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        impl<'de, 'a> serde::de::EnumAccess<'de> for &'a mut Deserializer {
-            type Error = Error;
-            type Variant = Self;
-
-            fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
-            where
-                V: serde::de::DeserializeSeed<'de>,
-            {
-                // Enums in packets have to be a u32!
-                let idx: u32 = serde::de::Deserialize::deserialize(&mut *self)?;
-                let val: Result<_> = seed.deserialize(idx.into_deserializer());
-                Ok((val?, self))
-            }
-        }
-
-        visitor.visit_enum(self)
-    }
-
-    fn deserialize_tuple<V>(self, count: usize, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        struct Access<'a> {
-            deserializer: &'a mut Deserializer,
-            count: usize,
-        }
-
-        impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
-            type Error = Error;
-
-            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-            where
-                T: serde::de::DeserializeSeed<'de>,
-            {
-                if self.count > 0 {
-                    self.count -= 1;
-                    let value =
-                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
-                    Ok(Some(value))
-                } else {
-                    Ok(None)
-                }
-            }
-
-            fn size_hint(&self) -> Option<usize> {
-                Some(self.count)
-            }
-        }
-
-        visitor.visit_seq(Access {
-            deserializer: self,
-            count,
-        })
-    }
-
     fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
         Err(Error::DeserializeOptionNotSupported(self.pos))
+    }
+
+    #[inline]
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        visitor.visit_unit()
+    }
+
+    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        visitor.visit_unit()
+    }
+
+    fn deserialize_newtype_struct<V>(self, _name: &str, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
@@ -343,6 +293,55 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         })
     }
 
+    fn deserialize_tuple<V>(self, count: usize, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        struct Access<'a> {
+            deserializer: &'a mut Deserializer,
+            count: usize,
+        }
+
+        impl<'de, 'a, 'b: 'a> serde::de::SeqAccess<'de> for Access<'a> {
+            type Error = Error;
+
+            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+            where
+                T: serde::de::DeserializeSeed<'de>,
+            {
+                if self.count > 0 {
+                    self.count -= 1;
+                    let value =
+                        serde::de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
+            }
+
+            fn size_hint(&self) -> Option<usize> {
+                Some(self.count)
+            }
+        }
+
+        visitor.visit_seq(Access {
+            deserializer: self,
+            count,
+        })
+    }
+
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_tuple(len, visitor)
+    }
+
     fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
@@ -362,37 +361,38 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         self.deserialize_tuple(fields.len(), visitor)
     }
 
-    fn deserialize_identifier<V>(self, _visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        Err(Error::DeserializeIdentifierNotSupported(self.pos))
-    }
-
-    fn deserialize_newtype_struct<V>(self, _name: &str, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_newtype_struct(self)
-    }
-
-    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_unit()
-    }
-
-    fn deserialize_tuple_struct<V>(
+    fn deserialize_enum<V>(
         self,
-        _name: &'static str,
-        len: usize,
+        _enum: &'static str,
+        _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: serde::de::Visitor<'de>,
     {
-        self.deserialize_tuple(len, visitor)
+        impl<'de, 'a> serde::de::EnumAccess<'de> for &'a mut Deserializer {
+            type Error = Error;
+            type Variant = Self;
+
+            fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+            where
+                V: serde::de::DeserializeSeed<'de>,
+            {
+                // Enums in packets have to be a u32!
+                let idx: u32 = serde::de::Deserialize::deserialize(&mut *self)?;
+                let val: Result<_> = seed.deserialize(idx.into_deserializer());
+                Ok((val?, self))
+            }
+        }
+
+        visitor.visit_enum(self)
+    }
+
+    fn deserialize_identifier<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        Err(Error::DeserializeIdentifierNotSupported(self.pos))
     }
 
     fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
