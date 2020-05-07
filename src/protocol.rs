@@ -185,6 +185,7 @@ impl<'a> GameSession<'a> {
                         let opcode = LittleEndian::read_u16(&header_buf[2..4]) as usize;
 
                         // TODO handle the integrity bytes on some client packets (implement once need). Ignore the value, since it's broken anyhow.
+                        // The header for a packet with an integrity check has 8 extra bytes. One i32 count and one i32 hash value.
 
                         let mut data_buf = vec![0u8; packet_length];
                         if packet_length != 0 {
