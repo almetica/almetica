@@ -4,8 +4,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::crypt::sha1::Sha1;
 
 // Provides a struct for the stream cipher used by TERA.
-// Direct port the the JS implementation of tera-toolbox to rust (MIT).
-// https://github.com/tera-toolbox/tera-network-crypto/blob/master/fallback.js
 pub struct StreamCipher {
     generators: [KeyGenerator; 3],
     change_data: u32,
