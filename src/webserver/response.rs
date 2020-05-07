@@ -3,7 +3,7 @@ use std::net::Ipv4Addr;
 
 #[derive(Serialize)]
 pub struct ServerListEntry {
-    pub id: i64,
+    pub id: i32,
     pub category: String,
     pub raw_name: String,
     pub name: String,
