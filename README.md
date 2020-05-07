@@ -154,11 +154,21 @@ network to receive the source for that program. We recommend that people
 consider using the GNU AGPL for any software which will commonly be run over a
 network.
 
+## Legal
+
+This software contains no code from the original game. We are developing an
+alternative server implementation like the open source server implementation
+for Lineage 2: L2J, or Ragnarok Online: rathena.
+
+The cryptography algorithm used by by Bluehole in their network protocol is a
+direct implementation of the freely available stream cipher Pike published 
+in Ross Anderson's 1994 paper "On Fibonacci Keystream Generators".
+
 ## Credits
 
 It's pretty hard to trace the origin of some of the achievements. So I will just
 credit people without their specific contributions. Most of them did discover
 specific issues while reverse engineering the TERA network protocol or did some
-other kind of groundwork that this sever is based on (ordered alphabetically):
+other kind of groundwork that this server is based on (ordered alphabetically):
 
 alexrp, caali-hackerman, mirrawrs, meishu, P5yl0, pinkiepie
