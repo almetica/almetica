@@ -56,7 +56,7 @@ async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
             ip: req.state().config.server.ip,
             port: req.state().config.server.game_port,
             lang: 1,
-            popup: "This server isn't up yet".to_string(),
+            popup: "This server isn't up yet!".to_string(),
         }],
     };
 
