@@ -1,11 +1,10 @@
 /// Handles the login ticket of client connections.
+use crate::model::entity::LoginTicket;
+use crate::Result;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sqlx::prelude::*;
 use sqlx::PgConnection;
-
-use crate::model::entity::LoginTicket;
-use crate::Result;
 
 /// Upserts a ticket (randomly generated 128 bytes). Tickets are valid for 5 minutes and can only be used once.
 pub async fn upsert_ticket(conn: &mut PgConnection, account_id: i64) -> Result<LoginTicket> {

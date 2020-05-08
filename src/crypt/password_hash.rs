@@ -1,11 +1,10 @@
 /// Implements helper functions for the password hasher.
+use crate::model::PasswordHashAlgorithm;
+use crate::{AlmeticaError, Result};
 use anyhow::bail;
 use argon2::{hash_encoded, verify_encoded, Config, ThreadMode, Variant, Version};
 use rand::rngs::OsRng;
 use rand_core::RngCore;
-
-use crate::model::PasswordHashAlgorithm;
-use crate::{AlmeticaError, Result};
 
 /// Creates a String that contains the hash of the given password hashed with the chosen password
 /// hash algorithm. Creates a random salt, which is saved alongside the password hash and the used

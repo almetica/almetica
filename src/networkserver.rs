@@ -1,18 +1,16 @@
 /// The module of the network server that handles the TCP connections to the clients.
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use async_std::net::TcpListener;
-use async_std::sync::Sender;
-use async_std::task;
-use tracing::{error, info, info_span, warn};
-use tracing_futures::Instrument;
-
 use crate::config::Configuration;
 use crate::ecs::event::EcsEvent;
 use crate::protocol::opcode::Opcode;
 use crate::protocol::GameSession;
-use crate::Result;
+use crate::{AlmeticaError, Result};
+use async_std::net::TcpListener;
+use async_std::sync::Sender;
+use async_std::task;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::{error, info, info_span, warn};
+use tracing_futures::Instrument;
 
 /// Main loop for the network server
 pub async fn run(
@@ -56,7 +54,14 @@ pub async fn run(
                                     .await
                                 {
                                     Ok(_) => info!("Connection closed"),
-                                    Err(e) => warn!("Error while handling game session: {:?}", e),
+                                    Err(e) => match e.downcast_ref::<AlmeticaError>() {
+                                        Some(AlmeticaError::ConnectionClosed) => {
+                                            info!("Connection closed");
+                                        }
+                                        Some(..) | None => {
+                                            warn!("Error while handling game session: {:?}", e)
+                                        }
+                                    },
                                 }
                             }
                             Err(e) => error!("Failed create game session: {:?}", e),

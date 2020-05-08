@@ -1,7 +1,6 @@
 /// Custom errors used by the TERA network (de-)serializer.
-use std::fmt::Display;
-
 use serde::{de, ser};
+use std::fmt::Display;
 use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

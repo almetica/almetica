@@ -8,9 +8,8 @@
 ///    * ```Customization```
 ///    * Custom types / ```enum``` based on the above.
 ///    * DateTime<Utc>
-use chrono::{DateTime, Utc};
-
 use crate::model::*;
+use chrono::{DateTime, Utc};
 
 /// Account that holds the login information of a player.
 #[derive(Debug, sqlx::FromRow)]

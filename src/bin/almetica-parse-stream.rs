@@ -1,25 +1,22 @@
 #![warn(clippy::all)]
-
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
-use std::process;
-
-use anyhow::{bail, ensure, Context};
-use byteorder::{ByteOrder, LittleEndian};
-use clap::Clap;
-use hex::encode;
-use tracing::{debug, error, info, warn};
-use tracing_subscriber::filter::EnvFilter;
-use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::registry::Registry;
-
 use almetica::config::read_configuration;
 use almetica::crypt::CryptSession;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::protocol::opcode::Opcode;
 use almetica::Result;
+use anyhow::{bail, ensure, Context};
+use byteorder::{ByteOrder, LittleEndian};
+use clap::Clap;
+use hex::encode;
+use std::fs::File;
+use std::io::Read;
+use std::path::PathBuf;
+use std::process;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
 
 #[derive(Clap)]
 #[clap(version = "0.0.1", author = "Almetica <almetica@protonmail.com>")]

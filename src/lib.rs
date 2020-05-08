@@ -8,7 +8,6 @@ pub mod model;
 pub mod networkserver;
 pub mod protocol;
 pub mod webserver;
-
 use thiserror::Error;
 
 pub type Result<T, E = anyhow::Error> = std::result::Result<T, E>;

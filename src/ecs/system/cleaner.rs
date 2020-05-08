@@ -1,10 +1,9 @@
+use crate::ecs::event::EcsEvent;
+use crate::ecs::resource::{DeletionList, WorldId};
 use shipyard::*;
 use tracing::{info_span, trace};
 
-use crate::ecs::component::{IncomingEvent, OutgoingEvent};
-use crate::ecs::resource::{DeletionList, WorldId};
-
-/// The event cleaner cleans up all events in the current ECS.
+/// The event cleaner cleans up all incoming events amd other entities marked for deletion.
 pub fn cleaner_system(mut all_storages: AllStoragesViewMut) {
     let world_id = all_storages.borrow::<UniqueView<WorldId>>().0;
     let span = info_span!("world", world_id = world_id);
@@ -17,16 +16,7 @@ pub fn cleaner_system(mut all_storages: AllStoragesViewMut) {
 
     // Incoming event
     let mut list: Vec<EntityId> = all_storages
-        .borrow::<View<IncomingEvent>>()
-        .iter()
-        .with_id()
-        .map(|(id, _)| id)
-        .collect();
-    deletion_list.append(&mut list);
-
-    // Outgoing event
-    let mut list: Vec<EntityId> = all_storages
-        .borrow::<View<OutgoingEvent>>()
+        .borrow::<View<EcsEvent>>()
         .iter()
         .with_id()
         .map(|(id, _)| id)
@@ -51,15 +41,9 @@ pub fn cleaner_system(mut all_storages: AllStoragesViewMut) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use shipyard::*;
-
-    use crate::ecs::component::IncomingEvent;
+    use super::*;
     use crate::ecs::event::Event;
     use crate::protocol::packet::CPong;
-
-    use super::*;
 
     fn setup() -> World {
         let world = World::new();
@@ -74,52 +58,25 @@ mod tests {
         let connection_id = world.borrow::<EntitiesViewMut>().add_entity((), ());
 
         world.run(
-            |(mut entities, mut events): (EntitiesViewMut, ViewMut<IncomingEvent>)| {
+            |(mut entities, mut events): (EntitiesViewMut, ViewMut<EcsEvent>)| {
                 for _i in 0..10 {
                     entities.add_entity(
                         &mut events,
-                        IncomingEvent(Arc::new(Event::RequestPong {
+                        Box::new(Event::RequestPong {
                             connection_id,
                             packet: CPong {},
-                        })),
+                        }),
                     );
                 }
             },
         );
 
-        let old_count = world.borrow::<View<IncomingEvent>>().iter().count();
+        let old_count = world.borrow::<View<EcsEvent>>().iter().count();
         assert_eq!(old_count, 10);
 
         world.run(cleaner_system);
 
-        let new_count = world.borrow::<View<IncomingEvent>>().iter().count();
-        assert_eq!(new_count, 0);
-    }
-
-    #[test]
-    fn test_clean_outgoing_event() {
-        let world = setup();
-        let connection_id = world.borrow::<EntitiesViewMut>().add_entity((), ());
-
-        world.run(
-            |(mut entities, mut events): (EntitiesViewMut, ViewMut<OutgoingEvent>)| {
-                for _i in 0..10 {
-                    entities.add_entity(
-                        &mut events,
-                        OutgoingEvent(Arc::new(Event::ResponseRegisterConnection {
-                            connection_id,
-                        })),
-                    );
-                }
-            },
-        );
-
-        let old_count = world.borrow::<View<OutgoingEvent>>().iter().count();
-        assert_eq!(old_count, 10);
-
-        world.run(cleaner_system);
-
-        let new_count = world.borrow::<View<OutgoingEvent>>().iter().count();
+        let new_count = world.borrow::<View<EcsEvent>>().iter().count();
         assert_eq!(new_count, 0);
     }
 }

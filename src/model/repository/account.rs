@@ -1,10 +1,9 @@
 /// Handles the accounts of the player.
-use sqlx::prelude::*;
-use sqlx::PgConnection;
-
 use crate::model::entity::Account;
 use crate::model::PasswordHashAlgorithm;
 use crate::Result;
+use sqlx::prelude::*;
+use sqlx::PgConnection;
 
 /// Creates an new account.
 pub async fn create(conn: &mut PgConnection, account: &Account) -> Result<Account> {

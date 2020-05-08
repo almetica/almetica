@@ -1,19 +1,13 @@
 /// Module holds the components that the ECS use.
-use std::time::Instant;
-
-use shipyard::EntityId;
-
 use crate::ecs::event::EcsEvent;
 use crate::model::Region;
-
-/// Incoming event.
-pub struct IncomingEvent(pub EcsEvent);
-
-/// Outgoing event.
-pub struct OutgoingEvent(pub EcsEvent);
+use async_std::sync::Sender;
+use shipyard::EntityId;
+use std::time::Instant;
 
 /// Tracks the connection and login information of an user.
 pub struct Connection {
+    pub channel: Sender<EcsEvent>,
     pub verified: bool,
     pub version_checked: bool,
     pub region: Option<Region>,

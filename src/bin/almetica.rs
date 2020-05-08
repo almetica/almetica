@@ -1,27 +1,8 @@
 #![warn(clippy::all)]
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process;
-use std::sync::Arc;
-
-use anyhow::{bail, Context};
-use async_macros::join;
-use async_std::sync::Sender;
-use async_std::task::{self, JoinHandle};
-use clap::{App, Arg, ArgMatches};
-use sqlx::PgPool;
-use tokio::runtime::Runtime;
-use tracing::{error, info, warn};
-use tracing_log::LogTracer;
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
-use tracing_subscriber::fmt::Layer;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::registry::Registry;
-
 use almetica::config::{read_configuration, Configuration};
 use almetica::crypt::password_hash;
 use almetica::dataloader::load_opcode_mapping;
-use almetica::ecs::event::Event;
+use almetica::ecs::event::EcsEvent;
 use almetica::ecs::world::Multiverse;
 use almetica::model::embedded::migrations;
 use almetica::model::entity::Account;
@@ -31,7 +12,23 @@ use almetica::networkserver;
 use almetica::protocol::opcode::Opcode;
 use almetica::webserver;
 use almetica::Result;
+use anyhow::{bail, Context};
+use async_macros::join;
+use async_std::sync::Sender;
+use async_std::task::{self, JoinHandle};
 use chrono::Utc;
+use clap::{App, Arg, ArgMatches};
+use sqlx::PgPool;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process;
+use tokio::runtime::Runtime;
+use tracing::{error, info, warn};
+use tracing_log::LogTracer;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing_subscriber::fmt::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
 
 #[async_std::main]
 async fn main() {
@@ -194,7 +191,7 @@ fn run_db_migrations(config: &Configuration) -> Result<()> {
 fn start_multiverse(
     config: Configuration,
     pool: PgPool,
-) -> (JoinHandle<Result<()>>, Sender<Arc<Event>>) {
+) -> (JoinHandle<Result<()>>, Sender<EcsEvent>) {
     let mut multiverse = Multiverse::new();
     let rx = multiverse.get_global_input_event_channel();
 
@@ -217,7 +214,7 @@ fn start_web_server(pool: PgPool, config: Configuration) -> JoinHandle<Result<()
 
 /// Starts the network server that handles all TCP game client connections.
 fn start_network_server(
-    global_channel: Sender<Arc<Event>>,
+    global_channel: Sender<EcsEvent>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,

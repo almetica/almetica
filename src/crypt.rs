@@ -22,7 +22,6 @@
 pub mod password_hash;
 pub mod sha1;
 pub mod streamcipher;
-
 use streamcipher::StreamCipher;
 
 // Represents the cryptography session between a client and a server.

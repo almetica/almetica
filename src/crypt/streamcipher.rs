@@ -1,9 +1,8 @@
 /// Module that implements the Pike stream cipher used in TERA.
+use crate::crypt::sha1::Sha1;
 use byteorder::{ByteOrder, LittleEndian};
 
-use crate::crypt::sha1::Sha1;
-
-// Provides a struct for the stream cipher used by TERA.
+/// Provides a struct for the stream cipher used by TERA.
 pub struct StreamCipher {
     generators: [KeyGenerator; 3],
     change_data: u32,

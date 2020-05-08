@@ -6,11 +6,10 @@ pub mod embedded {
     embed_migrations!("./src/model/migrations");
 }
 
-use std::fmt;
-
 use byteorder::{ByteOrder, LittleEndian};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Region {

@@ -1,7 +1,6 @@
 /// Module for server network packages.
-use serde::{Deserialize, Serialize};
-
 use crate::model::{Class, Customization, Gender, Race, Region, Vec3, Vec3a};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageList {

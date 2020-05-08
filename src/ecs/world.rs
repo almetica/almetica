@@ -1,16 +1,14 @@
 /// Module that handles the world generation and handling
-use std::collections::HashMap;
-use std::{thread, time};
-
-use async_std::sync::{channel, Sender};
-use shipyard::*;
-use sqlx::PgPool;
-use tracing::debug;
-
 use crate::config::Configuration;
 use crate::ecs::event::EcsEvent;
 use crate::ecs::resource::*;
 use crate::ecs::system::*;
+use async_std::sync::{channel, Sender};
+use shipyard::*;
+use sqlx::PgPool;
+use std::collections::HashMap;
+use std::{thread, time};
+use tracing::debug;
 
 /// Holds the ECS for the global world and all instanced worlds.
 pub struct Multiverse {
@@ -40,7 +38,6 @@ impl Multiverse {
             .with_system(system!(connection_manager_system))
             .with_system(system!(settings_manager_system))
             .with_system(system!(user_manager_system))
-            .with_system(system!(event_sender_system))
             .with_system(system!(cleaner_system))
             .build();
 
@@ -71,16 +68,13 @@ impl Default for Multiverse {
         debug!("Global world created with ID {}", id);
 
         // Create channels to send data to and from the global world.
-        // At most 1024 events can be queued between server ticks
-        let (tx_channel, rx_channel) = channel(1024);
+        // At most 4096 events can be queued between server ticks
+        let (tx_channel, rx_channel) = channel(4096);
 
         world.add_unique(WorldId(id));
         world.add_unique(EventRxChannel {
             channel: rx_channel,
         });
-
-        let map: HashMap<EntityId, Sender<EcsEvent>> = HashMap::with_capacity(512);
-        world.add_unique(ConnectionMapping(map));
 
         let vec: Vec<EntityId> = Vec::with_capacity(512);
         world.add_unique(DeletionList(vec));
@@ -106,16 +100,12 @@ pub struct WorldHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use async_std::future::timeout;
-    use async_std::sync::channel;
-
+    use super::*;
     use crate::ecs::event::Event;
     use crate::Result;
-
-    use super::*;
+    use async_std::future::timeout;
+    use async_std::sync::channel;
+    use std::time::Duration;
 
     #[async_std::test]
     async fn test_multiverse_creation() -> Result<()> {
@@ -125,7 +115,7 @@ mod tests {
         let future = m
             .global_handle
             .tx_channel
-            .send(Arc::new(Event::RequestRegisterConnection {
+            .send(Box::new(Event::RequestRegisterConnection {
                 response_channel: tx,
             }));
 

@@ -1,11 +1,9 @@
 /// Implements the de-serialization of the TERA network protocol using serde.
-use std::str;
-
+use super::error::{Error, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use serde::de::IntoDeserializer;
 use serde::{self, Deserialize};
-
-use super::error::{Error, Result};
+use std::str;
 
 /// A Deserializer that reads bytes from a vector.
 #[derive(Clone, Debug)]

@@ -1,7 +1,7 @@
 /// Events that are handled / emitted by the ECS.
 ///
 /// Events are only to be used for communication between
-/// ECS and connections (and ECS to ECS). They are not to be used for ECS internal communcation.
+/// ECS and connections (and ECS to ECS). They are not to be used for ECS internal communication.
 /// For this, you should use other components.
 ///
 /// There are packet and system events.
@@ -14,20 +14,19 @@
 /// Messages from the ECS to the Connections are always responses.
 /// Messages between the ECS can be either request or response.
 ///
-use std::fmt;
-use std::sync::Arc;
-
-use anyhow::bail;
-use async_std::sync::Sender;
-use shipyard::*;
-
+/// Network connections and ECS have a channel to write events into.
+///
 use crate::protocol::opcode::Opcode;
 use crate::protocol::packet::*;
 use crate::protocol::serde::{from_vec, to_vec};
 use crate::{AlmeticaError, Result};
+use anyhow::bail;
+use async_std::sync::Sender;
+use shipyard::*;
+use std::fmt;
 
-/// EcsEvent events. We use `Arc` so that we don't need to copy packet data around.
-pub type EcsEvent = Arc<Event>;
+/// ECS events. We use `Box` so that we don't need to copy packet data around.
+pub type EcsEvent = Box<Event>;
 
 /// The target of the event.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,7 +48,7 @@ macro_rules! assemble_event {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
-            RequestRegisterConnection{response_channel: Sender<Arc<Event>>},
+            RequestRegisterConnection{response_channel: Sender<Box<Event>>},
             $($p_ty {connection_id: EntityId, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
             $($e_ty {connection_id: EntityId, $($e_arg_name: $e_arg_type),*},)*
         }

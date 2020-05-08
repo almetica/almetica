@@ -1,18 +1,16 @@
 /// Module to read data files
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, Read};
-use std::path::PathBuf;
-
+use crate::protocol::opcode::Opcode;
+use crate::*;
 use aes::Aes128;
 use anyhow::ensure;
 use byteorder::{ByteOrder, LittleEndian};
 use cfb_mode::stream_cipher::{NewStreamCipher, StreamCipher};
 use cfb_mode::Cfb;
 use flate2::{Decompress, FlushDecompress};
-
-use crate::protocol::opcode::Opcode;
-use crate::*;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::path::PathBuf;
 
 /// Read the encrypted data of a data center file and decrypt/decompress it.
 pub fn read_datacenter_file(key: &[u8], iv: &[u8], mut data: Vec<u8>) -> Result<Vec<u8>> {

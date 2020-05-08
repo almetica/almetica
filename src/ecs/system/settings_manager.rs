@@ -1,14 +1,13 @@
+use crate::ecs::component::Settings;
+use crate::ecs::event::{EcsEvent, Event};
+use crate::ecs::resource::WorldId;
+use crate::protocol::packet::CSetVisibleRange;
 use shipyard::*;
 use tracing::{debug, info_span};
 
-use crate::ecs::component::{IncomingEvent, Settings};
-use crate::ecs::event::Event;
-use crate::ecs::resource::WorldId;
-use crate::protocol::packet::CSetVisibleRange;
-
 /// The settings manager handles the settings of an account (UI/Chat/Visibility etc.).
 pub fn settings_manager_system(
-    events: View<IncomingEvent>,
+    events: View<EcsEvent>,
     mut settings: ViewMut<Settings>,
     mut entities: EntitiesViewMut,
     world_id: UniqueView<WorldId>,
@@ -17,7 +16,7 @@ pub fn settings_manager_system(
     let _enter = span.enter();
 
     (&events).iter().for_each(|event| {
-        match &*event.0 {
+        match &**event {
             Event::RequestSetVisibleRange {
                 connection_id,
                 packet,
@@ -53,25 +52,24 @@ fn handle_set_visible_range(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    use shipyard::*;
-
+    use super::*;
     use crate::ecs::component::Connection;
     use crate::ecs::event::Event;
+    use async_std::sync::{channel, Receiver};
+    use std::time::Instant;
 
-    use super::*;
-
-    fn setup() -> (World, EntityId) {
+    fn setup_with_connection() -> (World, EntityId, Receiver<EcsEvent>) {
         let world = World::new();
         world.add_unique(WorldId(0));
+
+        let (tx_channel, rx_channel) = channel(1024);
 
         let connection_id = world.run(
             |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
                 entities.add_entity(
                     &mut connections,
                     Connection {
+                        channel: tx_channel,
                         verified: false,
                         version_checked: false,
                         region: None,
@@ -82,21 +80,21 @@ mod tests {
             },
         );
 
-        (world, connection_id)
+        (world, connection_id, rx_channel)
     }
 
     #[test]
     fn test_set_visible_range() {
-        let (world, connection_id) = setup();
+        let (world, connection_id, _rx_channel) = setup_with_connection();
 
         world.run(
-            |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+            |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                 entities.add_entity(
                     &mut events,
-                    IncomingEvent(Arc::new(Event::RequestSetVisibleRange {
+                    Box::new(Event::RequestSetVisibleRange {
                         connection_id,
                         packet: CSetVisibleRange { range: 4234 },
-                    })),
+                    }),
                 );
             },
         );

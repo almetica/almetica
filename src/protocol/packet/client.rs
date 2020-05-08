@@ -1,7 +1,6 @@
 /// Module for client network packages.
-use serde::{Deserialize, Serialize};
-
 use crate::model::{Class, Customization, Gender, Race, Region};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCanCreateUser {}

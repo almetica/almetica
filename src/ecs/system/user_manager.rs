@@ -1,49 +1,42 @@
 /// Handles the users of an account. Users in TERA terminology are the player characters of an account.
-use std::sync::Arc;
-
+use crate::ecs::component::Connection;
+use crate::ecs::event::{EcsEvent, Event};
+use crate::ecs::resource::WorldId;
+use crate::ecs::system::send_event;
+use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
+use crate::protocol::packet::*;
+use crate::Result;
 use anyhow::ensure;
 use lazy_static::lazy_static;
 use regex::Regex;
 use shipyard::*;
 use tracing::{debug, error, info_span};
 
-use crate::ecs::component::{IncomingEvent, OutgoingEvent};
-use crate::ecs::event::Event;
-use crate::ecs::resource::WorldId;
-use crate::ecs::system::send_event;
-use crate::model::{Class, Customization, Gender, Race, Vec3, Vec3a};
-use crate::protocol::packet::*;
-use crate::Result;
-
 pub fn user_manager_system(
-    incoming_events: View<IncomingEvent>,
-    mut outgoing_events: ViewMut<OutgoingEvent>,
-    mut entities: EntitiesViewMut,
+    incoming_events: View<EcsEvent>,
+    connections: View<Connection>,
     world_id: UniqueView<WorldId>,
 ) {
     let span = info_span!("world", world_id = world_id.0);
     let _enter = span.enter();
 
-    // TODO We need to persist users that are dropped. Create a field in a component to listen to (after X seconds after disconnect?)
-    (&incoming_events).iter().for_each(|event| match &*event.0 {
+    // TODO Look for users without a connection component. Set their "deletion time" and persist them then.
+    (&incoming_events).iter().for_each(|event| match &**event {
         Event::RequestCanCreateUser { connection_id, .. } => {
-            handle_can_create_user(*connection_id, &mut outgoing_events, &mut entities);
+            handle_can_create_user(*connection_id, &connections);
         }
         Event::RequestGetUserList { connection_id, .. } => {
-            handle_user_list(*connection_id, &mut outgoing_events, &mut entities);
+            handle_user_list(*connection_id, &connections);
         }
         Event::RequestCheckUserName {
             connection_id,
             packet,
         } => {
-            if let Err(e) =
-                handle_check_user_name(&packet, *connection_id, &mut outgoing_events, &mut entities)
-            {
+            if let Err(e) = handle_check_user_name(&packet, *connection_id, &connections) {
                 error!("Rejecting check user name request: {:?}", e);
                 send_event(
                     assemble_check_user_name_response(*connection_id, false),
-                    &mut outgoing_events,
-                    &mut entities,
+                    &connections,
                 );
             }
         }
@@ -51,15 +44,11 @@ pub fn user_manager_system(
     });
 }
 
-fn handle_user_list(
-    connection_id: EntityId,
-    outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut EntitiesViewMut,
-) {
+fn handle_user_list(connection_id: EntityId, connections: &View<Connection>) {
     debug!("Get user list event incoming");
 
     // TODO Just a mock. Proper DB handling comes later.
-    let event = OutgoingEvent(Arc::new(Event::ResponseGetUserList {
+    let event = Box::new(Event::ResponseGetUserList {
         connection_id,
         packet: SGetUserList {
             characters: vec![SGetUserListCharacter {
@@ -205,32 +194,26 @@ fn handle_user_list(
             delete_character_expire_hour1: 0,
             delete_character_expire_hour2: 24,
         },
-    }));
+    });
 
-    send_event(event, outgoing_events, entities);
+    send_event(event, connections);
 }
 
-fn handle_can_create_user(
-    connection_id: EntityId,
-    outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut EntitiesViewMut,
-) {
+fn handle_can_create_user(connection_id: EntityId, connections: &View<Connection>) {
     debug!("Can create user event incoming");
 
     // TODO check the database for current count of users once user table is implemented (hardwired max of 20).
 
     send_event(
         assemble_can_create_user_response(connection_id, true),
-        outgoing_events,
-        entities,
+        connections,
     );
 }
 
 fn handle_check_user_name(
     packet: &CCheckUserName,
     connection_id: EntityId,
-    outgoing_events: &mut ViewMut<OutgoingEvent>,
-    entities: &mut EntitiesViewMut,
+    connections: &View<Connection>,
 ) -> Result<()> {
     debug!("Check user name event incoming");
 
@@ -243,8 +226,7 @@ fn handle_check_user_name(
 
     send_event(
         assemble_check_user_name_response(connection_id, true),
-        outgoing_events,
-        entities,
+        connections,
     );
 
     Ok(())
@@ -258,45 +240,44 @@ fn is_valid_user_name(text: &str) -> bool {
     RE.is_match(text)
 }
 
-fn assemble_can_create_user_response(connection_id: EntityId, ok: bool) -> OutgoingEvent {
-    OutgoingEvent(Arc::new(Event::ResponseCanCreateUser {
+fn assemble_can_create_user_response(connection_id: EntityId, ok: bool) -> EcsEvent {
+    Box::new(Event::ResponseCanCreateUser {
         connection_id,
         packet: SCanCreateUser { ok },
-    }))
+    })
 }
 
-fn assemble_check_user_name_response(connection_id: EntityId, ok: bool) -> OutgoingEvent {
-    OutgoingEvent(Arc::new(Event::ResponseCheckUserName {
+fn assemble_check_user_name_response(connection_id: EntityId, ok: bool) -> EcsEvent {
+    Box::new(Event::ResponseCheckUserName {
         connection_id,
         packet: SCheckUserName { ok },
-    }))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    use shipyard::*;
-    use sqlx::PgPool;
-
-    use crate::ecs::component::{Connection, IncomingEvent, OutgoingEvent};
+    use super::*;
+    use crate::ecs::component::Connection;
     use crate::ecs::event::Event;
     use crate::model::tests::db_test;
     use crate::Result;
+    use async_std::sync::{channel, Receiver};
+    use sqlx::PgPool;
+    use std::time::Instant;
 
-    use super::*;
-
-    fn setup_with_connection(pool: PgPool) -> (World, EntityId) {
+    fn setup_with_connection(pool: PgPool) -> (World, EntityId, Receiver<EcsEvent>) {
         let world = World::new();
         world.add_unique(WorldId(0));
         world.add_unique(pool);
+
+        let (tx_channel, rx_channel) = channel(1024);
 
         let connection_id = world.run(
             |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
                 entities.add_entity(
                     &mut connections,
                     Connection {
+                        channel: tx_channel,
                         verified: false,
                         version_checked: false,
                         region: None,
@@ -307,23 +288,23 @@ mod tests {
             },
         );
 
-        (world, connection_id)
+        (world, connection_id, rx_channel)
     }
 
     #[test]
     fn test_can_create_user_true() -> Result<()> {
         async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id) = setup_with_connection(pool);
+            let (world, connection_id, rx_channel) = setup_with_connection(pool);
 
             world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                     for _i in 0..5 {
                         entities.add_entity(
                             &mut events,
-                            IncomingEvent(Arc::new(Event::RequestCanCreateUser {
+                            Box::new(Event::RequestCanCreateUser {
                                 connection_id,
                                 packet: CCanCreateUser {},
-                            })),
+                            }),
                         );
                     }
                 },
@@ -331,16 +312,22 @@ mod tests {
 
             world.run(user_manager_system);
 
-            world.run(|events: ViewMut<OutgoingEvent>| {
-                let count = (&events)
-                    .iter()
-                    .filter(|event| match &*event.0 {
-                        Event::ResponseCanCreateUser { packet, .. } => packet.ok,
-                        _ => false,
-                    })
-                    .count();
-                assert_eq!(count, 5);
-            });
+            let mut count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    match *event {
+                        Event::ResponseCanCreateUser { packet, .. } => {
+                            if packet.ok {
+                                count += 1
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+            assert_eq!(count, 5);
 
             Ok(())
         }
@@ -373,19 +360,19 @@ mod tests {
     #[test]
     fn test_check_user_name_available() -> Result<()> {
         async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id) = setup_with_connection(pool);
+            let (world, connection_id, rx_channel) = setup_with_connection(pool);
 
             world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                     for i in 0..5 {
                         entities.add_entity(
                             &mut events,
-                            IncomingEvent(Arc::new(Event::RequestCheckUserName {
+                            Box::new(Event::RequestCheckUserName {
                                 connection_id,
                                 packet: CCheckUserName {
                                     name: format!("NotTakenUserName{}", i),
                                 },
-                            })),
+                            }),
                         );
                     }
                 },
@@ -393,16 +380,22 @@ mod tests {
 
             world.run(user_manager_system);
 
-            world.run(|events: ViewMut<OutgoingEvent>| {
-                let count = (&events)
-                    .iter()
-                    .filter(|event| match &*event.0 {
-                        Event::ResponseCheckUserName { packet, .. } => packet.ok,
-                        _ => false,
-                    })
-                    .count();
-                assert_eq!(count, 5);
-            });
+            let mut count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    match *event {
+                        Event::ResponseCheckUserName { packet, .. } => {
+                            if packet.ok {
+                                count += 1
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+            assert_eq!(count, 5);
 
             Ok(())
         }
@@ -412,19 +405,19 @@ mod tests {
     #[test]
     fn test_check_user_name_invalid_username() -> Result<()> {
         async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id) = setup_with_connection(pool);
+            let (world, connection_id, rx_channel) = setup_with_connection(pool);
 
             world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<IncomingEvent>| {
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                     for i in 0..5 {
                         entities.add_entity(
                             &mut events,
-                            IncomingEvent(Arc::new(Event::RequestCheckUserName {
+                            Box::new(Event::RequestCheckUserName {
                                 connection_id,
                                 packet: CCheckUserName {
                                     name: format!("H!x?or{}", i),
                                 },
-                            })),
+                            }),
                         );
                     }
                 },
@@ -432,16 +425,22 @@ mod tests {
 
             world.run(user_manager_system);
 
-            world.run(|events: ViewMut<OutgoingEvent>| {
-                let count = (&events)
-                    .iter()
-                    .filter(|event| match &*event.0 {
-                        Event::ResponseCheckUserName { packet, .. } => !packet.ok,
-                        _ => false,
-                    })
-                    .count();
-                assert_eq!(count, 5);
-            });
+            let mut count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    match *event {
+                        Event::ResponseCheckUserName { packet, .. } => {
+                            if !packet.ok {
+                                count += 1
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+            assert_eq!(count, 5);
 
             Ok(())
         }

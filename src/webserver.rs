@@ -1,7 +1,12 @@
 /// This modules implements the web server interface.
 pub mod request;
 pub mod response;
-
+use crate::config::Configuration;
+use crate::crypt::password_hash::verify_hash;
+use crate::model::repository::{account, loginticket};
+use crate::model::PasswordHashAlgorithm;
+use crate::webserver::response::{AuthResponse, ServerListEntry, ServerListResponse};
+use crate::{AlmeticaError, Result};
 use anyhow::ensure;
 use async_std::task;
 use http_types::StatusCode;
@@ -9,13 +14,6 @@ use serde::Serialize;
 use sqlx::PgPool;
 use tide::{Request, Response, Server};
 use tracing::{error, info};
-
-use crate::config::Configuration;
-use crate::crypt::password_hash::verify_hash;
-use crate::model::repository::{account, loginticket};
-use crate::model::PasswordHashAlgorithm;
-use crate::webserver::response::{AuthResponse, ServerListEntry, ServerListResponse};
-use crate::{AlmeticaError, Result};
 
 struct WebServerState {
     config: Configuration,
@@ -29,7 +27,7 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
     // FIXME: Add a body length limiting middleware once official implemented: https://github.com/http-rs/tide/issues/448
 
     let mut webserver = Server::with_state(WebServerState { config, pool });
-    webserver.middleware(tide::middleware::RequestLogger::new());
+    webserver.middleware(tide::log::LogMiddleware::new());
     webserver.at("/server/*").get(server_list_endpoint);
     webserver.at("/auth").post(auth_endpoint);
     webserver.listen(listen_string).await?;
@@ -37,7 +35,7 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
 }
 
 /// Handles the server listing
-async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
+async fn server_list_endpoint(req: Request<WebServerState>) -> tide::Result<Response> {
     let category = if req.state().config.game.pvp {
         "PVP"
     } else {
@@ -60,16 +58,16 @@ async fn server_list_endpoint(req: Request<WebServerState>) -> Response {
         }],
     };
 
-    create_response(&server_list, StatusCode::Ok)
+    Ok(create_response(&server_list, StatusCode::Ok))
 }
 
 /// Handles the client authentication.
-async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
+async fn auth_endpoint(mut req: Request<WebServerState>) -> tide::Result<Response> {
     let login_request: request::Login = match req.body_form().await {
         Ok(login) => login,
         Err(e) => {
             error!("Couldn't deserialize login request: {:?}", e);
-            return Response::new(StatusCode::BadRequest);
+            return Ok(Response::new(StatusCode::BadRequest));
         }
     };
 
@@ -83,11 +81,11 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
             return match e.downcast_ref::<AlmeticaError>() {
                 Some(AlmeticaError::InvalidLogin) => {
                     info!("Invalid login for account {}", account_name);
-                    invalid_login_response(StatusCode::Unauthorized)
+                    Ok(invalid_login_response(StatusCode::Unauthorized))
                 }
                 Some(..) | None => {
                     error!("Can't verify login: {}", e);
-                    invalid_login_response(StatusCode::InternalServerError)
+                    Ok(invalid_login_response(StatusCode::InternalServerError))
                 }
             };
         }
@@ -95,7 +93,7 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> Response {
 
     info!("Account {} created an auth ticket", account_name);
 
-    valid_login_response(ticket)
+    Ok(valid_login_response(ticket))
 }
 
 /// Tries to login with the given credentials. Returns the login ticket if successful.

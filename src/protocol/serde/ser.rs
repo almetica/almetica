@@ -1,8 +1,7 @@
 /// Implements the serialization of the TERA network protocol using serde.
-use std::collections::HashMap;
-
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 use serde::{ser, Serialize};
+use std::collections::HashMap;
 
 use super::{Error, Result};
 

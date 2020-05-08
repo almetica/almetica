@@ -1,11 +1,9 @@
 /// Module for the configuration handling.
-use std::fs::File;
-use std::path::PathBuf;
-
-use serde::Deserialize;
-
 use crate::*;
+use serde::Deserialize;
+use std::fs::File;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Configuration {
