@@ -27,7 +27,6 @@ pub async fn run(pool: PgPool, config: Configuration) -> Result<()> {
     // FIXME: Add a body length limiting middleware once official implemented: https://github.com/http-rs/tide/issues/448
 
     let mut webserver = Server::with_state(WebServerState { config, pool });
-    webserver.middleware(tide::log::LogMiddleware::new());
     webserver.at("/server/*").get(server_list_endpoint);
     webserver.at("/auth").post(auth_endpoint);
     webserver.listen(listen_string).await?;
