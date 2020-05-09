@@ -4,6 +4,8 @@
 
 This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 93.02.
 
+To connect to the server you need to use the [custom client launcher](https://github.com/almetica/almetica-launcher). It's a direct replacement for the publisher launcher and Tl.exe.
+
 ## Requirements
 
 A stable rust installation (version 1.42+).
