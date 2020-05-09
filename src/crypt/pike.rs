@@ -1,18 +1,18 @@
-/// Module that implements the Pike stream cipher used in TERA.
+/// Module that implements the Pike stream cipher used for the TERA network protocol.
 use crate::crypt::sha1::Sha1;
 use byteorder::{ByteOrder, LittleEndian};
 
-/// Provides a struct for the stream cipher used by TERA.
-pub struct StreamCipher {
+/// Implements the Pike stream cipher.
+pub struct Pike {
     generators: [KeyGenerator; 3],
     change_data: u32,
     change_len: usize,
 }
 
-impl StreamCipher {
-    /// Construct a `StreamCipher` object. Key must be 128 byte in size.
-    pub fn new(key: &[u8]) -> StreamCipher {
-        let mut sc = StreamCipher {
+impl Pike {
+    /// Construct a `Pike` stream cipher object. Key must be 128 byte in size.
+    pub fn new(key: &[u8]) -> Pike {
+        let mut sc = Pike {
             generators: [
                 KeyGenerator::new(55, 31),
                 KeyGenerator::new(57, 50),
@@ -22,7 +22,7 @@ impl StreamCipher {
             change_len: 0,
         };
 
-        // Expand the given key using the botched SHA1 implementation.
+        // Expand the given key using the botched (wrong) SHA1 implementation.
         let mut expanded_key = [0; 680];
         expanded_key[0] = 128;
         for i in 1..680 {
@@ -50,7 +50,7 @@ impl StreamCipher {
         sc
     }
 
-    /// Applies the StreamCipher on the data. The data needs to be at least 4 bytes in size.
+    /// Applies the Pike stream cipher on the data. The data needs to be at least 4 bytes in size.
     #[inline]
     pub fn apply_keystream(&mut self, data: &mut [u8]) {
         let size = data.len();
@@ -144,11 +144,11 @@ impl KeyGenerator {
 mod tests {
     use hex::encode;
 
-    use super::StreamCipher;
+    use super::Pike;
 
-    fn setup_cipher() -> StreamCipher {
+    fn setup_cipher() -> Pike {
         let key: [u8; 128] = [0x12; 128];
-        StreamCipher::new(&key)
+        Pike::new(&key)
     }
 
     #[test]

@@ -1,7 +1,7 @@
 /// Module that implements the cryptography used in TERA.
 ///
-/// The stream cipher used by TERA is an implementation of the Pike streamcipher
-/// as proposed by Ross Anderson in this paper:
+/// The stream cipher used by TERA is an implementation of the Pike stream cipher
+/// as designed by Ross Anderson in this paper:
 ///     https://www.cl.cam.ac.uk/~rja14/Papers/fibonacci.pdf
 ///
 /// In this paper he explains the generation of the three lagged fibonacci key
@@ -20,20 +20,20 @@
 ///
 /// The stream cipher output is the XOR of the three sums.
 pub mod password_hash;
+pub mod pike;
 pub mod sha1;
-pub mod streamcipher;
-use streamcipher::StreamCipher;
+use pike::Pike;
 
 // Represents the cryptography session between a client and a server.
-// Direct port of the tera-network-proxy JS implementation to rust (GPL3).
+// Direct port of the tera-network-proxy JS implementation to Rust (GPL3).
 // https://github.com/tera-toolbox/tera-network-proxy/blob/master/lib/connection/encryption/index.js
 pub struct CryptSession {
-    server_packet_cipher: StreamCipher,
-    client_packet_cipher: StreamCipher,
+    server_packet_cipher: Pike,
+    client_packet_cipher: Pike,
 }
 
 impl CryptSession {
-    /// Construct a `StreamCipherSession` object. Needs client and server keys.
+    /// Construct a `CryptSession` object. Needs client and server keys.
     pub fn new(client_keys: [Vec<u8>; 2], server_keys: [Vec<u8>; 2]) -> CryptSession {
         let mut tmp1 = vec![0; 128];
         let mut tmp2 = vec![0; 128];
@@ -44,11 +44,11 @@ impl CryptSession {
 
         shift_key(&mut tmp1, &client_keys[1], 29);
         xor_key(&mut tmp3, &tmp1, &tmp2);
-        let mut client_packet_cipher = StreamCipher::new(&tmp3);
+        let mut client_packet_cipher = Pike::new(&tmp3);
 
         shift_key(&mut tmp1, &server_keys[1], -41);
         client_packet_cipher.apply_keystream(&mut tmp1);
-        let server_packet_cipher = StreamCipher::new(&tmp1);
+        let server_packet_cipher = Pike::new(&tmp1);
 
         CryptSession {
             server_packet_cipher,
@@ -56,15 +56,15 @@ impl CryptSession {
         }
     }
 
-    /// Applies the StreamCipher for client packets on the given data and advances the state of the StreamCipher.
-    /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
+    /// Applies the stream cipher for client packets on the given data and advances the state of the stream cipher.
+    /// To decrypt, you need to use a stream cipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_client_data(&mut self, data: &mut [u8]) {
         self.client_packet_cipher.apply_keystream(data);
     }
 
-    /// Applies the StreamCipher for server packets on the given data and advances the state of the StreamCipher.
-    /// To decrypt, you need to use a StreamCipher in the same state (look at the tests for an explanation).
+    /// Applies the stream cipher for server packets on the given data and advances the state of the stream cipher.
+    /// To decrypt, you need to use a stream cipher in the same state (look at the tests for an explanation).
     #[inline]
     pub fn crypt_server_data(&mut self, data: &mut [u8]) {
         self.server_packet_cipher.apply_keystream(data);
