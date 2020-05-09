@@ -143,7 +143,7 @@ impl<'de> Visitor<'de> for U64Visitor {
 }
 
 /// Supported password hash algorithms.
-#[derive(Debug, sqlx::Type, PartialEq)]
+#[derive(Clone, Debug, sqlx::Type, PartialEq)]
 #[sqlx(rename = "password_hash_algorithm")]
 pub enum PasswordHashAlgorithm {
     #[sqlx(rename = "argon2")]

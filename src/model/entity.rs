@@ -12,7 +12,7 @@ use crate::model::*;
 use chrono::{DateTime, Utc};
 
 /// Account that holds the login information of a player.
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 #[sqlx(rename = "account")]
 #[sqlx(rename_all = "lowercase")]
 pub struct Account {
@@ -25,7 +25,7 @@ pub struct Account {
 }
 
 /// Ticket that is used to authenticate the client connection.
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 #[sqlx(rename = "login_ticket")]
 #[sqlx(rename_all = "lowercase")]
 pub struct LoginTicket {
@@ -36,7 +36,7 @@ pub struct LoginTicket {
 }
 
 // An account user. TERA calls a character an user.
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 #[sqlx(rename = "user")]
 #[sqlx(rename_all = "lowercase")]
 pub struct User {

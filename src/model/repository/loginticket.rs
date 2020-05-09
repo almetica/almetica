@@ -12,8 +12,8 @@ pub async fn upsert_ticket(conn: &mut PgConnection, account_id: i64) -> Result<L
     OsRng.fill_bytes(&mut ticket);
 
     Ok(sqlx::query_as::<_, LoginTicket>(
-        r#"INSERT INTO login_ticket VALUES ($1, $2, DEFAULT, DEFAULT)
-        ON CONFLICT (account_id) DO UPDATE SET ticket = $2, used = DEFAULT, created_at = DEFAULT
+        r#"INSERT INTO "login_ticket" VALUES ($1, $2, DEFAULT, DEFAULT)
+        ON CONFLICT ("account_id") DO UPDATE SET "ticket" = $2, "used" = DEFAULT, "created_at" = DEFAULT
         RETURNING *"#,
     )
     .bind(account_id)
@@ -30,15 +30,14 @@ pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &[u8])
     // generic over its parameter (allowing both connection, a pool or a transaction to be passed in).
 
     let account_id: i64 = match sqlx::query_as(
-        r#" 
-               SELECT l.account_id
-               FROM login_ticket l
-               INNER JOIN account a
-               ON l.account_id = a.id
-               WHERE a.name = $1
-               AND l.ticket = $2
-               AND l.used = 'false'
-               AND age(CURRENT_TIMESTAMP, l.created_at) < INTERVAL '5 minutes'"#,
+        r#"SELECT l."account_id"
+               FROM "login_ticket" l
+               INNER JOIN "account" a
+               ON l."account_id" = a."id"
+               WHERE a."name" = $1
+               AND l."ticket" = $2
+               AND l."used" = 'FALSE'
+               AND age(CURRENT_TIMESTAMP, l."created_at") < INTERVAL '5 minutes'"#,
     )
     .bind(name)
     .bind(ticket)
@@ -49,7 +48,7 @@ pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &[u8])
         None => return Ok(false),
     };
 
-    sqlx::query("UPDATE login_ticket SET used = 'true' WHERE account_id = $1")
+    sqlx::query(r#"UPDATE "login_ticket" SET "used" = 'true' WHERE "account_id" = $1"#)
         .bind(account_id)
         .execute(&mut *conn)
         .await?;

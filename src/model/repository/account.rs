@@ -8,7 +8,7 @@ use sqlx::PgConnection;
 /// Creates a new account.
 pub async fn create(conn: &mut PgConnection, account: &Account) -> Result<Account> {
     Ok(sqlx::query_as::<_, Account>(
-        "INSERT INTO account (name, password, algorithm) VALUES ($1, $2, $3) RETURNING *",
+        r#"INSERT INTO "account" ("name", "password", "algorithm") VALUES ($1, $2, $3) RETURNING *"#,
     )
     .bind(&account.name)
     .bind(&account.password)
@@ -24,7 +24,7 @@ pub async fn update_password(
     password: &str,
     algorithm: PasswordHashAlgorithm,
 ) -> Result<()> {
-    sqlx::query("UPDATE account SET password = $1, algorithm = $2 WHERE name = $3")
+    sqlx::query(r#"UPDATE "account" SET "password" = $1, "algorithm" = $2 WHERE "name" = $3"#)
         .bind(password)
         .bind(algorithm)
         .bind(name)
@@ -36,7 +36,7 @@ pub async fn update_password(
 /// Finds an account by id.
 pub async fn get_by_id(conn: &mut PgConnection, id: i64) -> Result<Account> {
     Ok(
-        sqlx::query_as::<_, Account>("SELECT * FROM account WHERE id = $1")
+        sqlx::query_as::<_, Account>(r#"SELECT * FROM "account" WHERE "id" = $1"#)
             .bind(id)
             .fetch_one(conn)
             .await?,
@@ -46,7 +46,7 @@ pub async fn get_by_id(conn: &mut PgConnection, id: i64) -> Result<Account> {
 /// Finds an account by name.
 pub async fn get_by_name(conn: &mut PgConnection, name: &str) -> Result<Account> {
     Ok(
-        sqlx::query_as::<_, Account>("SELECT * FROM account WHERE name = $1")
+        sqlx::query_as::<_, Account>(r#"SELECT * FROM "account" WHERE "name" = $1"#)
             .bind(name)
             .fetch_one(conn)
             .await?,
@@ -55,7 +55,7 @@ pub async fn get_by_name(conn: &mut PgConnection, name: &str) -> Result<Account>
 
 /// Deletes an account with the given id.
 pub async fn delete_by_id(conn: &mut PgConnection, id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM account WHERE id = $1")
+    sqlx::query(r#"DELETE FROM "account" WHERE "id" = $1"#)
         .bind(id)
         .execute(conn)
         .await?;
@@ -64,7 +64,7 @@ pub async fn delete_by_id(conn: &mut PgConnection, id: i64) -> Result<()> {
 
 /// Deletes an account with the given name.
 pub async fn delete_by_name(conn: &mut PgConnection, name: &str) -> Result<()> {
-    sqlx::query("DELETE FROM account WHERE name = $1")
+    sqlx::query(r#"DELETE FROM "account" WHERE "name" = $1"#)
         .bind(name)
         .execute(conn)
         .await?;
@@ -84,7 +84,7 @@ pub mod tests {
     fn get_default_account(num: i32) -> Account {
         Account {
             id: -1,
-            name: format!("testuser-{}", num),
+            name: format!("testaccount-{}", num),
             password: format!("testpassword-{}", num),
             algorithm: PasswordHashAlgorithm::Argon2,
             created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
@@ -150,14 +150,13 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = get_default_account(i);
-                create(&mut conn, &org_account).await?;
+                create(&mut conn, &get_default_account(i)).await?;
             }
 
             let get_db_account = get_by_id(&mut conn, 5).await?;
 
             assert_eq!(get_db_account.id, 5);
-            assert_eq!(get_db_account.name, "testuser-5");
+            assert_eq!(get_db_account.name, "testaccount-5");
             assert_eq!(get_db_account.password, "testpassword-5");
             assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
             Ok(())
@@ -172,14 +171,13 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = get_default_account(i);
-                create(&mut conn, &org_account).await?;
+                create(&mut conn, &get_default_account(i)).await?;
             }
 
-            let get_db_account = get_by_name(&mut conn, "testuser-2").await?;
+            let get_db_account = get_by_name(&mut conn, "testaccount-2").await?;
 
             assert_eq!(get_db_account.id, 2);
-            assert_eq!(get_db_account.name, "testuser-2");
+            assert_eq!(get_db_account.name, "testaccount-2");
             assert_eq!(get_db_account.password, "testpassword-2");
             assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
             Ok(())
@@ -206,7 +204,7 @@ pub mod tests {
                     None => Err(e),
                 }?
             } else {
-                panic!("record was not deleted");
+                panic!("Record was not deleted");
             }
             Ok(())
         }
@@ -220,11 +218,10 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = get_default_account(i);
-                create(&mut conn, &org_account).await?;
+                create(&mut conn, &get_default_account(i)).await?;
             }
 
-            delete_by_name(&mut conn, "testuser-5").await?;
+            delete_by_name(&mut conn, "testaccount-5").await?;
             if let Err(e) = get_by_id(&mut conn, 5).await {
                 match e.downcast_ref::<sqlx::Error>() {
                     Some(sqlx::Error::RowNotFound) => Ok(()),
@@ -232,7 +229,7 @@ pub mod tests {
                     None => Err(e),
                 }?
             } else {
-                panic!("record was not deleted");
+                panic!("Record was not deleted");
             }
             Ok(())
         }

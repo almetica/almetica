@@ -45,34 +45,34 @@ pub async fn create(conn: &mut PgConnection, user: &User) -> Result<User> {
 /// Updates an user.
 pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
     Ok(sqlx::query_as(
-        r#"UPDATE account_user SET
-                    name = $1,
-                    gender = $2,
-                    race = $3,
-                    class = $4,
-                    shape = $5,
-                    details = $6,
-                    appearance = $7,
-                    appearance2 = $8,
-                    world_id = $9,
-                    guard_id = $10,
-                    section_id = $11,
-                    level = $12,
-                    awakening_level = $13,
-                    laurel = $14,
-                    achievement_points = $15,
-                    playtime = $16,
-                    rest_bonus_xp = $17,
-                    show_face = $18,
-                    show_style = $19,
-                    position = $20,
-                    is_new_character = $21,
-                    tutorial_state = $22,
-                    is_deleting = $23,
-                    delete_at = $24,
-                    last_logout_at = $25,
-                    WHERE id = $26,
-                    RETURNING *"#,
+        r#"UPDATE "user" SET
+            "name" = $1,
+            "gender" = $2,
+            "race" = $3,
+            "class" = $4,
+            "shape" = $5,
+            "details" = $6,
+            "appearance" = $7,
+            "appearance2" = $8,
+            "world_id" = $9,
+            "guard_id" = $10,
+            "section_id" = $11,
+            "level" = $12,
+            "awakening_level" = $13,
+            "laurel" = $14,
+            "achievement_points" = $15,
+            "playtime" = $16,
+            "rest_bonus_xp" = $17,
+            "show_face" = $18,
+            "show_style" = $19,
+            "position" = $20,
+            "is_new_character" = $21,
+            "tutorial_state" = $22,
+            "is_deleting" = $23,
+            "delete_at" = $24,
+            "last_logout_at" = $25
+            WHERE "id" = $26
+            RETURNING *"#,
     )
     .bind(&user.name)
     .bind(&user.gender)
@@ -106,7 +106,7 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
 
 /// Updates the position of an user with the given ID.
 pub async fn update_position(conn: &mut PgConnection, id: i32, position: i32) -> Result<()> {
-    sqlx::query("UPDATE account_user SET position = $1 WHERE id = $2")
+    sqlx::query(r#"UPDATE "user" SET "position" = $1 WHERE "id" = $2"#)
         .bind(&position)
         .bind(&id)
         .execute(conn)
@@ -115,31 +115,37 @@ pub async fn update_position(conn: &mut PgConnection, id: i32, position: i32) ->
 }
 
 /// Finds an user by id.
-pub async fn get_by_id(conn: &mut PgConnection, id: i64) -> Result<User> {
+pub async fn get_by_id(conn: &mut PgConnection, id: i32) -> Result<User> {
     Ok(
-        sqlx::query_as::<_, User>("SELECT * FROM user WHERE id = $1")
+        sqlx::query_as::<_, User>(r#"SELECT * FROM "user" WHERE "id" = $1"#)
             .bind(id)
             .fetch_one(conn)
             .await?,
     )
 }
 
+/// Get the user count of an account.
+pub async fn get_user_count(conn: &mut PgConnection, account_id: i64) -> Result<i64> {
+    let (count,): (i64,) = sqlx::query_as(r#"SELECT COUNT(1) FROM "user" WHERE "account_id" = $1"#)
+        .bind(account_id)
+        .fetch_one(conn)
+        .await?;
+    Ok(count)
+}
+
 /// Checks if an user with the given name already exists.
 pub async fn is_user_name_taken(conn: &mut PgConnection, name: &str) -> Result<bool> {
-    let found = sqlx::query("SELECT 1 FROM account_user WHERE name=$1")
-        .bind(name)
-        .execute(conn)
-        .await?;
-    if found == 0 {
-        Ok(false)
-    } else {
-        Ok(true)
-    }
+    let (found,): (bool,) =
+        sqlx::query_as(r#"SELECT EXISTS(SELECT 1 FROM "user" WHERE "name" = $1)"#)
+            .bind(name)
+            .fetch_one(conn)
+            .await?;
+    Ok(found)
 }
 
 /// Deletes an user with the given id.
-pub async fn delete_by_id(conn: &mut PgConnection, id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM account_user WHERE id = $1")
+pub async fn delete_by_id(conn: &mut PgConnection, id: i32) -> Result<()> {
+    sqlx::query(r#"DELETE FROM "user" WHERE "id" = $1"#)
         .bind(id)
         .execute(conn)
         .await?;
@@ -160,7 +166,7 @@ pub mod tests {
     async fn create_account(pool: &mut PgConnection) -> Result<Account> {
         let account = Account {
             id: -1,
-            name: "testuser".to_string(),
+            name: "testaccount".to_string(),
             password: "not-a-real-password-hash".to_string(),
             algorithm: PasswordHashAlgorithm::Argon2,
             created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
@@ -173,7 +179,7 @@ pub mod tests {
         User {
             id: -1,
             account_id: account.id,
-            name: format!("testpassword-{}", num),
+            name: format!("testuser-{}", num),
             gender: Gender::Female,
             race: Race::Human,
             class: Class::Warrior,
@@ -246,5 +252,136 @@ pub mod tests {
         db_test(test)
     }
 
-    // TODO all other tests
+    #[test]
+    fn test_update_user() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+            let mut db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+            let org_user = db_user.clone();
+
+            assert_ne!(db_user.id, -1);
+
+            db_user.account_id = 12312;
+            db_user.name = "new_user_name".to_string();
+            db_user.class = Class::Archer;
+            db_user.world_id = 100;
+            db_user.created_at = Utc.ymd(2003, 7, 8).and_hms(11, 40, 20);
+
+            let updated_db_user = update(&mut conn, &db_user).await?;
+
+            assert_eq!(updated_db_user.id, db_user.id);
+            assert_eq!(updated_db_user.account_id, org_user.account_id);
+            assert_ne!(updated_db_user.name, org_user.name);
+            assert_eq!(updated_db_user.name, "new_user_name");
+            assert_ne!(updated_db_user.class, org_user.class);
+            assert_eq!(updated_db_user.class, Class::Archer);
+            assert_ne!(updated_db_user.world_id, org_user.world_id);
+            assert_eq!(updated_db_user.world_id, 100);
+            assert_eq!(updated_db_user.created_at, org_user.created_at);
+
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_update_user_position() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+            let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+            assert_ne!(db_user.id, -1);
+
+            update_position(&mut conn, db_user.id, 15).await?;
+            let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
+
+            assert_ne!(updated_db_user.position, 0);
+            assert_eq!(updated_db_user.position, 15);
+            assert_eq!(updated_db_user.id, db_user.id);
+            assert_eq!(updated_db_user.account_id, db_user.account_id);
+            assert_eq!(updated_db_user.created_at, db_user.created_at);
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_update_get_by_id() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+            let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+            assert_ne!(db_user.id, -1);
+
+            let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
+
+            assert_eq!(updated_db_user.id, db_user.id);
+            assert_eq!(updated_db_user.account_id, db_user.account_id);
+            assert_eq!(updated_db_user.created_at, db_user.created_at);
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_update_get_user_count() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+
+            for i in 1..=10i32 {
+                create(&mut conn, &get_default_user(&account, i)).await?;
+            }
+            let count = get_user_count(&mut conn, account.id).await?;
+
+            assert_eq!(count, 10);
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_update_is_user_name_taken() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+            let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
+            assert_ne!(db_user.id, -1);
+
+            assert!(is_user_name_taken(&mut conn, "testuser-99").await?);
+            assert!(!is_user_name_taken(&mut conn, "not-taken").await?);
+
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_delete_user() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+            let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
+            assert_ne!(db_user.id, -1);
+
+            delete_by_id(&mut conn, db_user.id).await?;
+
+            match get_by_id(&mut conn, db_user.id).await {
+                Ok(..) => panic!("Found user that we expected to delete"),
+                Err(e) => match e.downcast_ref::<sqlx::Error>() {
+                    Some(sqlx::Error::RowNotFound) => { /* Expected result */ }
+                    Some(..) | None => panic!(e),
+                },
+            }
+            Ok(())
+        }
+        db_test(test)
+    }
 }
