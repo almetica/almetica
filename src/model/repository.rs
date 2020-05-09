@@ -2,3 +2,4 @@
 /// or a ```sqlx::Transaction``` by using ```&mut *tx```.
 pub mod account;
 pub mod loginticket;
+pub mod user;

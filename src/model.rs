@@ -101,16 +101,15 @@ pub struct Vec3a {
 // type skill_id = [u8; 8]; // Path >= 74
 
 #[derive(Clone, Debug, sqlx::Type, PartialEq)]
-pub struct Customization {
-    pub data: Vec<u8>,
-}
+#[sqlx(transparent)]
+pub struct Customization(pub Vec<u8>);
 
 impl Serialize for Customization {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_u64(LittleEndian::read_u64(&self.data))
+        serializer.serialize_u64(LittleEndian::read_u64(&self.0))
     }
 }
 
@@ -122,7 +121,7 @@ impl<'de> Deserialize<'de> for Customization {
         let mut data = vec![0u8; 8];
         let value = deserializer.deserialize_u64(U64Visitor)?;
         LittleEndian::write_u64(&mut data, value);
-        Ok(Customization { data })
+        Ok(Customization(data))
     }
 }
 
@@ -198,7 +197,7 @@ pub mod tests {
                 let db_string = format!("{}/{}", db_url, db_name);
                 let pool = PgPool::new(&db_string).await.unwrap();
                 if let Err(e) = test(pool).await {
-                    panic!("Error while executing test: {}", e);
+                    panic!("Error while executing test: {:?}", e);
                 }
             });
         });
@@ -274,11 +273,9 @@ pub mod tests {
 
     #[test]
     fn test_customization_serialization() -> Result<()> {
-        let value = Customization {
-            data: vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8],
-        };
+        let value = Customization(vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
         let data = to_vec(&value)?;
-        assert_eq!(&data, &value.data);
+        assert_eq!(&data, &value.0);
         Ok(())
     }
 
@@ -286,7 +283,7 @@ pub mod tests {
     fn test_customization_deserialization() -> Result<()> {
         let data = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
         let value: Customization = from_vec(data)?;
-        assert_eq!(value.data, [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
+        assert_eq!(value.0, [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
         Ok(())
     }
 }

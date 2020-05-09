@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 
 /// Account that holds the login information of a player.
 #[derive(Debug, sqlx::FromRow)]
+#[sqlx(rename = "account")]
 #[sqlx(rename_all = "lowercase")]
 pub struct Account {
     pub id: i64,
@@ -25,6 +26,7 @@ pub struct Account {
 
 /// Ticket that is used to authenticate the client connection.
 #[derive(Debug, sqlx::FromRow)]
+#[sqlx(rename = "login_ticket")]
 #[sqlx(rename_all = "lowercase")]
 pub struct LoginTicket {
     pub account_id: i64,
@@ -33,8 +35,9 @@ pub struct LoginTicket {
     pub created_at: DateTime<Utc>,
 }
 
+// An account user. TERA calls a character an user.
 #[derive(Debug, sqlx::FromRow)]
-#[sqlx(rename = "account_user")]
+#[sqlx(rename = "user")]
 #[sqlx(rename_all = "lowercase")]
 pub struct User {
     pub id: i32,
@@ -42,12 +45,27 @@ pub struct User {
     pub name: String,
     pub gender: Gender,
     pub race: Race,
-    #[sqlx(rename = "user_class")]
     pub class: Class,
     pub shape: Vec<u8>,
     pub details: Vec<u8>,
     pub appearance: Customization,
     pub appearance2: i32,
+    pub world_id: i32,
+    pub guard_id: i32,
+    pub section_id: i32,
+    pub level: i32,
+    pub awakening_level: i32,
+    pub laurel: i32,
+    pub achievement_points: i32,
     pub playtime: i64, // Playtime in seconds.
+    pub rest_bonus_xp: i64,
+    pub show_face: bool,
+    pub show_style: bool,
+    pub position: i32,
+    pub is_new_character: bool,
+    pub tutorial_state: i32,
+    pub is_deleting: bool,
+    pub delete_at: Option<DateTime<Utc>>,
+    pub last_logout_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }

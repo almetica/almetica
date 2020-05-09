@@ -136,9 +136,7 @@ mod tests {
             gender: Gender::Female,
             race: Race::ElinPopori,
             class: Class::Valkyrie,
-            appearance: Customization {
-                data: vec![101, 30, 11, 1, 9, 25, 4, 0],
-            },
+            appearance: Customization(vec![101, 30, 11, 1, 9, 25, 4, 0]),
             is_second_character: false,
             appearance2: 100,
         }

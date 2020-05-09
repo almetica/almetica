@@ -93,9 +93,7 @@ fn handle_user_list(connection_id: EntityId, connections: &View<Connection>) {
                 underwear: 179_035,
                 head: 50056,
                 face: 5,
-                appearance: Customization {
-                    data: vec![0, 0, 0, 0, 0, 0, 0, 0],
-                },
+                appearance: Customization(vec![0, 0, 0, 0, 0, 0, 0, 0]),
                 is_second_character: false,
                 admin_level: 0,
                 is_banned: false,

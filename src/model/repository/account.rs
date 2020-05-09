@@ -5,7 +5,7 @@ use crate::Result;
 use sqlx::prelude::*;
 use sqlx::PgConnection;
 
-/// Creates an new account.
+/// Creates a new account.
 pub async fn create(conn: &mut PgConnection, account: &Account) -> Result<Account> {
     Ok(sqlx::query_as::<_, Account>(
         "INSERT INTO account (name, password, algorithm) VALUES ($1, $2, $3) RETURNING *",
@@ -73,15 +73,24 @@ pub async fn delete_by_name(conn: &mut PgConnection, name: &str) -> Result<()> {
 
 #[cfg(test)]
 pub mod tests {
-    use chrono::prelude::*;
-    use sqlx::PgPool;
-
+    use super::*;
     use crate::model::entity::Account;
     use crate::model::tests::db_test;
     use crate::model::PasswordHashAlgorithm;
     use crate::Result;
+    use chrono::prelude::*;
+    use sqlx::PgPool;
 
-    use super::*;
+    fn get_default_account(num: i32) -> Account {
+        Account {
+            id: -1,
+            name: format!("testuser-{}", num),
+            password: format!("testpassword-{}", num),
+            algorithm: PasswordHashAlgorithm::Argon2,
+            created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+            updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+        }
+    }
 
     #[test]
     fn test_create_account() -> Result<()> {
@@ -89,15 +98,7 @@ pub mod tests {
         async fn test(pool: PgPool) -> Result<()> {
             let mut conn = pool.acquire().await.unwrap();
 
-            let org_account = Account {
-                id: -1,
-                name: "testuser".to_string(),
-                password: "not-a-real-password-hash".to_string(),
-                algorithm: PasswordHashAlgorithm::Argon2,
-                created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-            };
-
+            let org_account = get_default_account(0);
             let db_account = create(&mut conn, &org_account).await?;
 
             assert_ne!(org_account.id, db_account.id);
@@ -119,16 +120,7 @@ pub mod tests {
 
             let old_password = "password1".to_string();
             let new_password = "password2".to_string();
-
-            let org_account = Account {
-                id: -1,
-                name: "testuser".to_string(),
-                password: old_password.clone(),
-                algorithm: PasswordHashAlgorithm::Argon2,
-                created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-            };
-
+            let org_account = get_default_account(0);
             let db_account = create(&mut conn, &org_account).await?;
 
             update_password(
@@ -158,14 +150,7 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = Account {
-                    id: -1,
-                    name: format!("testuser-{}", i),
-                    password: format!("testpassword-{}", i),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                };
+                let org_account = get_default_account(i);
                 create(&mut conn, &org_account).await?;
             }
 
@@ -187,14 +172,7 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = Account {
-                    id: -1,
-                    name: format!("testuser-{}", i),
-                    password: format!("testpassword-{}", i),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                };
+                let org_account = get_default_account(i);
                 create(&mut conn, &org_account).await?;
             }
 
@@ -216,14 +194,7 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = Account {
-                    id: -1,
-                    name: format!("testuser-{}", i),
-                    password: format!("testpassword-{}", i),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                };
+                let org_account = get_default_account(i);
                 create(&mut conn, &org_account).await?;
             }
 
@@ -249,14 +220,7 @@ pub mod tests {
             let mut conn = pool.acquire().await.unwrap();
 
             for i in 1..=10i32 {
-                let org_account = Account {
-                    id: -1,
-                    name: format!("testuser-{}", i),
-                    password: format!("testpassword-{}", i),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                };
+                let org_account = get_default_account(i);
                 create(&mut conn, &org_account).await?;
             }
 

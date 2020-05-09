@@ -390,7 +390,7 @@ mod tests {
                 underwear: 179_035,
                 head: 50056,
                 face: 0,
-                appearance: Customization{data: vec![1,2,3,4,5,6,7,8]},
+                appearance: Customization(vec![1,2,3,4,5,6,7,8]),
                 is_second_character: false,
                 admin_level: 0,
                 is_banned: false,

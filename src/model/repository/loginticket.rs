@@ -59,16 +59,14 @@ pub async fn is_ticket_valid(conn: &mut PgConnection, name: &str, ticket: &[u8])
 
 #[cfg(test)]
 pub mod tests {
-    use chrono::prelude::*;
-    use sqlx::PgPool;
-
+    use super::*;
     use crate::model::entity::Account;
     use crate::model::repository::account;
     use crate::model::tests::db_test;
     use crate::model::PasswordHashAlgorithm;
     use crate::Result;
-
-    use super::*;
+    use chrono::prelude::*;
+    use sqlx::PgPool;
 
     #[test]
     fn test_upsert_login_ticket() -> Result<()> {
