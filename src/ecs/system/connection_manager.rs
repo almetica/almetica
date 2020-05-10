@@ -2,11 +2,11 @@ use crate::ecs::component::Connection;
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::WorldId;
 use crate::ecs::system::{send_event, send_event_with_connection};
-use crate::model::repository::loginticket;
+use crate::model::repository::{account, loginticket};
 use crate::model::Region;
 use crate::protocol::packet::*;
 use crate::Result;
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{bail, ensure, Context};
 use async_std::sync::Sender;
 use async_std::task;
 use shipyard::*;
@@ -92,6 +92,7 @@ fn handle_connection_registration(
         &mut *connections,
         Connection {
             channel: response_channel,
+            account_id: None,
             verified: false,
             version_checked: false,
             region: None,
@@ -156,7 +157,7 @@ fn handle_request_login_arbiter(
         trace!("Ticket value: {}", base64::encode(&packet.ticket));
 
         if packet.ticket.is_empty() {
-            return Err(anyhow!("Ticket was empty"));
+            bail!("Ticket was empty");
         }
 
         let mut conn = pool
@@ -168,7 +169,7 @@ fn handle_request_login_arbiter(
             .await
             .context("Error while executing query for account")?
         {
-            return Err(anyhow!("Ticket not valid"));
+            bail!("Ticket not valid");
         }
 
         info!(
@@ -180,8 +181,13 @@ fn handle_request_login_arbiter(
             .try_get(connection_id)
             .context("Could not find connection component for entity")?;
 
+        let account = account::get_by_name(&mut conn, &packet.master_account_name)
+            .await
+            .context("Can't find the account for the given master account name")?;
+
         connection.verified = true;
         connection.region = Some(packet.region);
+        connection.account_id = Some(account.id);
 
         check_and_handle_post_initialization(connection_id, connection);
 
@@ -386,6 +392,7 @@ mod tests {
                     &mut connections,
                     Connection {
                         channel: tx_channel,
+                        account_id: None,
                         verified: false,
                         version_checked: false,
                         region: None,
@@ -399,12 +406,12 @@ mod tests {
         (world, connection_id, rx_channel)
     }
 
-    async fn create_login(conn: &mut PgConnection) -> Result<(String, Vec<u8>)> {
+    async fn create_login(conn: &mut PgConnection) -> Result<(Account, Vec<u8>)> {
         let acc = account::create(
             conn,
             &Account {
                 id: -1,
-                name: "testuser".to_string(),
+                name: "testaccount".to_string(),
                 password: "not-a-real-password-hash".to_string(),
                 algorithm: PasswordHashAlgorithm::Argon2,
                 created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
@@ -413,7 +420,7 @@ mod tests {
         )
         .await?;
         let ticket = loginticket::upsert_ticket(conn, acc.id).await?;
-        Ok((acc.name, ticket.ticket))
+        Ok((acc, ticket.ticket))
     }
 
     #[test]
@@ -544,7 +551,7 @@ mod tests {
         async fn test(pool: PgPool) -> Result<()> {
             let mut conn = pool.acquire().await?;
             let (world, connection_id, _rx_channel) = setup_with_connection(pool);
-            let (account_name, ticket) = create_login(&mut conn).await?;
+            let (account, ticket) = create_login(&mut conn).await?;
 
             task::spawn_blocking(move || {
                 world.run(
@@ -554,7 +561,7 @@ mod tests {
                             Box::new(Event::RequestLoginArbiter {
                                 connection_id,
                                 packet: CLoginArbiter {
-                                    master_account_name: account_name,
+                                    master_account_name: account.name.clone(),
                                     ticket,
                                     unk1: 0,
                                     unk2: 0,
@@ -571,7 +578,9 @@ mod tests {
                 let valid_count = world
                     .borrow::<View<Connection>>()
                     .iter()
-                    .filter(|connection| connection.verified)
+                    .filter(|connection| {
+                        connection.verified && connection.account_id == Some(account.id)
+                    })
                     .count();
                 assert_eq!(valid_count, 1);
             });
@@ -586,7 +595,7 @@ mod tests {
         async fn test(pool: PgPool) -> Result<()> {
             let mut conn = pool.acquire().await?;
             let (world, connection_id, rx_channel) = setup_with_connection(pool);
-            let (account_name, mut ticket) = create_login(&mut conn).await?;
+            let (account, mut ticket) = create_login(&mut conn).await?;
 
             task::spawn_blocking(move || {
                 // Make ticket invalid
@@ -599,7 +608,7 @@ mod tests {
                             Box::new(Event::RequestLoginArbiter {
                                 connection_id,
                                 packet: CLoginArbiter {
-                                    master_account_name: account_name,
+                                    master_account_name: account.name,
                                     ticket,
                                     unk1: 0,
                                     unk2: 0,
@@ -647,7 +656,7 @@ mod tests {
         async fn test(pool: PgPool) -> Result<()> {
             let mut conn = pool.acquire().await?;
             let world = setup(pool);
-            let (account_name, ticket) = create_login(&mut conn).await?;
+            let (account, ticket) = create_login(&mut conn).await?;
             let (tx_channel, rx_channel) = channel(10);
 
             task::spawn_blocking(move || {
@@ -700,7 +709,7 @@ mod tests {
                             Box::new(Event::RequestLoginArbiter {
                                 connection_id: con,
                                 packet: CLoginArbiter {
-                                    master_account_name: account_name,
+                                    master_account_name: account.name,
                                     ticket,
                                     unk1: 0,
                                     unk2: 0,

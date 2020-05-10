@@ -37,8 +37,6 @@ pub struct LoginTicket {
 
 // An account user. TERA calls a character an user.
 #[derive(Clone, Debug, sqlx::FromRow)]
-#[sqlx(rename = "user")]
-#[sqlx(rename_all = "lowercase")]
 pub struct User {
     pub id: i32,
     pub account_id: i64,

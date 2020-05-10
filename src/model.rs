@@ -90,11 +90,27 @@ pub struct Vec3 {
     pub z: f32,
 }
 
+impl Default for Vec3 {
+    fn default() -> Self {
+        Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
 pub struct Vec3a {
     pub x: i32,
     pub y: i32,
     pub z: i32,
+}
+
+impl Default for Vec3a {
+    fn default() -> Self {
+        Vec3a { x: 0, y: 0, z: 0 }
+    }
 }
 
 // type skill_id = [u8; 4]; // Patch < 74
@@ -103,6 +119,12 @@ pub struct Vec3a {
 #[derive(Clone, Debug, sqlx::Type, PartialEq)]
 #[sqlx(transparent)]
 pub struct Customization(pub Vec<u8>);
+
+impl Default for Customization {
+    fn default() -> Self {
+        Customization(vec![0, 0, 0, 0, 0, 0, 0, 0])
+    }
+}
 
 impl Serialize for Customization {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -4,8 +4,6 @@ use crate::Result;
 use sqlx::prelude::*;
 use sqlx::PgConnection;
 
-// TODO get user count for account
-
 /// Creates a new user.
 pub async fn create(conn: &mut PgConnection, user: &User) -> Result<User> {
     Ok(sqlx::query_as(
@@ -131,6 +129,16 @@ pub async fn get_user_count(conn: &mut PgConnection, account_id: i64) -> Result<
         .fetch_one(conn)
         .await?;
     Ok(count)
+}
+
+/// Get all users of an account.
+pub async fn list(conn: &mut PgConnection, account_id: i64) -> Result<Vec<User>> {
+    Ok(
+        sqlx::query_as(r#"SELECT * FROM "user" WHERE "account_id" = $1"#)
+            .bind(account_id)
+            .fetch_all(conn)
+            .await?,
+    )
 }
 
 /// Checks if an user with the given name already exists.
@@ -328,7 +336,25 @@ pub mod tests {
     }
 
     #[test]
-    fn test_update_get_user_count() -> Result<()> {
+    fn test_list_users() -> Result<()> {
+        // FIXME into an async closure once stable
+        async fn test(pool: PgPool) -> Result<()> {
+            let mut conn = pool.acquire().await.unwrap();
+            let account = create_account(&mut conn).await?;
+
+            for i in 1..=10i32 {
+                create(&mut conn, &get_default_user(&account, i)).await?;
+            }
+            let users = list(&mut conn, account.id).await?;
+
+            assert_eq!(users.len(), 10);
+            Ok(())
+        }
+        db_test(test)
+    }
+
+    #[test]
+    fn test_get_user_count() -> Result<()> {
         // FIXME into an async closure once stable
         async fn test(pool: PgPool) -> Result<()> {
             let mut conn = pool.acquire().await.unwrap();

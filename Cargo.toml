@@ -54,8 +54,8 @@ tokio-test = "0.2"
 name = "crypt"
 harness = false
 
-[profile.dev]
-opt-level = 1
+#[profile.dev]
+#opt-level = 1
 
 [profile.release]
 lto = true
