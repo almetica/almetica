@@ -78,8 +78,9 @@ pub mod tests {
     use crate::model::tests::db_test;
     use crate::model::PasswordHashAlgorithm;
     use crate::Result;
+    use async_std::task;
     use chrono::prelude::*;
-    use sqlx::PgPool;
+    use sqlx::PgConnection;
 
     fn get_default_account(num: i32) -> Account {
         Account {
@@ -94,145 +95,149 @@ pub mod tests {
 
     #[test]
     fn test_create_account() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let org_account = get_default_account(0);
+                let db_account = create(&mut conn, &org_account).await?;
 
-            let org_account = get_default_account(0);
-            let db_account = create(&mut conn, &org_account).await?;
+                assert_ne!(org_account.id, db_account.id);
+                assert_eq!(org_account.name, db_account.name);
+                assert_eq!(org_account.password, db_account.password);
+                assert_eq!(org_account.algorithm, db_account.algorithm);
+                assert_ne!(org_account.created_at, db_account.created_at);
+                assert_ne!(org_account.updated_at, db_account.updated_at);
 
-            assert_ne!(org_account.id, db_account.id);
-            assert_eq!(org_account.name, db_account.name);
-            assert_eq!(org_account.password, db_account.password);
-            assert_eq!(org_account.algorithm, db_account.algorithm);
-            assert_ne!(org_account.created_at, db_account.created_at);
-            assert_ne!(org_account.updated_at, db_account.updated_at);
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_update_password() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            let old_password = "password1".to_string();
-            let new_password = "password2".to_string();
-            let org_account = get_default_account(0);
-            let db_account = create(&mut conn, &org_account).await?;
+                let old_password = "password1".to_string();
+                let new_password = "password2".to_string();
+                let org_account = get_default_account(0);
+                let db_account = create(&mut conn, &org_account).await?;
 
-            update_password(
-                &mut conn,
-                &org_account.name,
-                &new_password,
-                PasswordHashAlgorithm::Argon2,
-            )
-            .await?;
+                update_password(
+                    &mut conn,
+                    &org_account.name,
+                    &new_password,
+                    PasswordHashAlgorithm::Argon2,
+                )
+                .await?;
 
-            let updated_db_account = get_by_id(&mut conn, db_account.id).await?;
+                let updated_db_account = get_by_id(&mut conn, db_account.id).await?;
 
-            assert_eq!(updated_db_account.id, db_account.id);
-            assert_eq!(updated_db_account.name, db_account.name);
-            assert_ne!(updated_db_account.password, old_password);
-            assert_eq!(updated_db_account.password, new_password);
-            assert_eq!(updated_db_account.algorithm, PasswordHashAlgorithm::Argon2);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(updated_db_account.id, db_account.id);
+                assert_eq!(updated_db_account.name, db_account.name);
+                assert_ne!(updated_db_account.password, old_password);
+                assert_eq!(updated_db_account.password, new_password);
+                assert_eq!(updated_db_account.algorithm, PasswordHashAlgorithm::Argon2);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_get_by_id() -> Result<()> {
-        // FIXME into into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            for i in 1..=10i32 {
-                create(&mut conn, &get_default_account(i)).await?;
-            }
+                for i in 1..=10i32 {
+                    create(&mut conn, &get_default_account(i)).await?;
+                }
 
-            let get_db_account = get_by_id(&mut conn, 5).await?;
+                let get_db_account = get_by_id(&mut conn, 5).await?;
 
-            assert_eq!(get_db_account.id, 5);
-            assert_eq!(get_db_account.name, "testaccount-5");
-            assert_eq!(get_db_account.password, "testpassword-5");
-            assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(get_db_account.id, 5);
+                assert_eq!(get_db_account.name, "testaccount-5");
+                assert_eq!(get_db_account.password, "testpassword-5");
+                assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_get_by_name() -> Result<()> {
-        // FIXME into into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            for i in 1..=10i32 {
-                create(&mut conn, &get_default_account(i)).await?;
-            }
+                for i in 1..=10i32 {
+                    create(&mut conn, &get_default_account(i)).await?;
+                }
 
-            let get_db_account = get_by_name(&mut conn, "testaccount-2").await?;
+                let get_db_account = get_by_name(&mut conn, "testaccount-2").await?;
 
-            assert_eq!(get_db_account.id, 2);
-            assert_eq!(get_db_account.name, "testaccount-2");
-            assert_eq!(get_db_account.password, "testpassword-2");
-            assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(get_db_account.id, 2);
+                assert_eq!(get_db_account.name, "testaccount-2");
+                assert_eq!(get_db_account.password, "testpassword-2");
+                assert_eq!(get_db_account.algorithm, PasswordHashAlgorithm::Argon2);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_delete_by_id() -> Result<()> {
-        // FIXME into into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            for i in 1..=10i32 {
-                let org_account = get_default_account(i);
-                create(&mut conn, &org_account).await?;
-            }
+                for i in 1..=10i32 {
+                    let org_account = get_default_account(i);
+                    create(&mut conn, &org_account).await?;
+                }
 
-            delete_by_id(&mut conn, 5).await?;
-            if let Err(e) = get_by_id(&mut conn, 5).await {
-                match e.downcast_ref::<sqlx::Error>() {
-                    Some(sqlx::Error::RowNotFound) => Ok(()),
-                    Some(..) => Err(e),
-                    None => Err(e),
-                }?
-            } else {
-                panic!("Record was not deleted");
-            }
-            Ok(())
-        }
-        db_test(test)
+                delete_by_id(&mut conn, 5).await?;
+                if let Err(e) = get_by_id(&mut conn, 5).await {
+                    match e.downcast_ref::<sqlx::Error>() {
+                        Some(sqlx::Error::RowNotFound) => Ok(()),
+                        Some(..) => Err(e),
+                        None => Err(e),
+                    }?
+                } else {
+                    panic!("Record was not deleted");
+                }
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_delete_by_name() -> Result<()> {
-        // FIXME into into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            for i in 1..=10i32 {
-                create(&mut conn, &get_default_account(i)).await?;
-            }
+                for i in 1..=10i32 {
+                    create(&mut conn, &get_default_account(i)).await?;
+                }
 
-            delete_by_name(&mut conn, "testaccount-5").await?;
-            if let Err(e) = get_by_id(&mut conn, 5).await {
-                match e.downcast_ref::<sqlx::Error>() {
-                    Some(sqlx::Error::RowNotFound) => Ok(()),
-                    Some(..) => Err(e),
-                    None => Err(e),
-                }?
-            } else {
-                panic!("Record was not deleted");
-            }
-            Ok(())
-        }
-        db_test(test)
+                delete_by_name(&mut conn, "testaccount-5").await?;
+                if let Err(e) = get_by_id(&mut conn, 5).await {
+                    match e.downcast_ref::<sqlx::Error>() {
+                        Some(sqlx::Error::RowNotFound) => Ok(()),
+                        Some(..) => Err(e),
+                        None => Err(e),
+                    }?
+                } else {
+                    panic!("Record was not deleted");
+                }
+
+                Ok(())
+            })
+        })
     }
 }

@@ -168,8 +168,9 @@ pub mod tests {
     use crate::model::tests::db_test;
     use crate::model::{Class, Customization, Gender, PasswordHashAlgorithm, Race};
     use crate::Result;
+    use async_std::task;
     use chrono::prelude::*;
-    use sqlx::PgPool;
+    use sqlx::PgConnection;
 
     async fn create_account(pool: &mut PgConnection) -> Result<Account> {
         let account = Account {
@@ -218,196 +219,200 @@ pub mod tests {
 
     #[test]
     fn test_create_user() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let org_user = get_default_user(&account, 0);
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let org_user = get_default_user(&account, 0);
 
-            let db_user = create(&mut conn, &org_user).await?;
+                let db_user = create(&mut conn, &org_user).await?;
 
-            assert_ne!(org_user.id, db_user.id);
-            assert_eq!(org_user.account_id, db_user.account_id);
-            assert_eq!(org_user.name, db_user.name);
-            assert_eq!(org_user.gender, db_user.gender);
-            assert_eq!(org_user.race, db_user.race);
-            assert_eq!(org_user.class, db_user.class);
-            assert_eq!(org_user.shape, db_user.shape);
-            assert_eq!(org_user.details, db_user.details);
-            assert_eq!(org_user.appearance, db_user.appearance);
-            assert_eq!(org_user.appearance2, db_user.appearance2);
-            assert_eq!(org_user.world_id, db_user.world_id);
-            assert_eq!(org_user.guard_id, db_user.guard_id);
-            assert_eq!(org_user.section_id, db_user.section_id);
-            assert_eq!(org_user.level, db_user.level);
-            assert_eq!(org_user.awakening_level, db_user.awakening_level);
-            assert_eq!(org_user.laurel, db_user.laurel);
-            assert_eq!(org_user.achievement_points, db_user.achievement_points);
-            assert_eq!(org_user.playtime, db_user.playtime);
-            assert_eq!(org_user.rest_bonus_xp, db_user.rest_bonus_xp);
-            assert_eq!(org_user.show_face, db_user.show_face);
-            assert_eq!(org_user.show_style, db_user.show_style);
-            assert_eq!(org_user.position, db_user.position);
-            assert_eq!(org_user.is_new_character, db_user.is_new_character);
-            assert_eq!(org_user.tutorial_state, db_user.tutorial_state);
-            assert_eq!(org_user.is_deleting, db_user.is_deleting);
-            assert_eq!(org_user.delete_at, db_user.delete_at);
-            assert_ne!(org_user.last_logout_at, db_user.last_logout_at);
-            assert_ne!(org_user.created_at, db_user.created_at);
+                assert_ne!(org_user.id, db_user.id);
+                assert_eq!(org_user.account_id, db_user.account_id);
+                assert_eq!(org_user.name, db_user.name);
+                assert_eq!(org_user.gender, db_user.gender);
+                assert_eq!(org_user.race, db_user.race);
+                assert_eq!(org_user.class, db_user.class);
+                assert_eq!(org_user.shape, db_user.shape);
+                assert_eq!(org_user.details, db_user.details);
+                assert_eq!(org_user.appearance, db_user.appearance);
+                assert_eq!(org_user.appearance2, db_user.appearance2);
+                assert_eq!(org_user.world_id, db_user.world_id);
+                assert_eq!(org_user.guard_id, db_user.guard_id);
+                assert_eq!(org_user.section_id, db_user.section_id);
+                assert_eq!(org_user.level, db_user.level);
+                assert_eq!(org_user.awakening_level, db_user.awakening_level);
+                assert_eq!(org_user.laurel, db_user.laurel);
+                assert_eq!(org_user.achievement_points, db_user.achievement_points);
+                assert_eq!(org_user.playtime, db_user.playtime);
+                assert_eq!(org_user.rest_bonus_xp, db_user.rest_bonus_xp);
+                assert_eq!(org_user.show_face, db_user.show_face);
+                assert_eq!(org_user.show_style, db_user.show_style);
+                assert_eq!(org_user.position, db_user.position);
+                assert_eq!(org_user.is_new_character, db_user.is_new_character);
+                assert_eq!(org_user.tutorial_state, db_user.tutorial_state);
+                assert_eq!(org_user.is_deleting, db_user.is_deleting);
+                assert_eq!(org_user.delete_at, db_user.delete_at);
+                assert_ne!(org_user.last_logout_at, db_user.last_logout_at);
+                assert_ne!(org_user.created_at, db_user.created_at);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_update_user() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let mut db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
-            let org_user = db_user.clone();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let mut db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+                let org_user = db_user.clone();
 
-            assert_ne!(db_user.id, -1);
+                assert_ne!(db_user.id, -1);
 
-            db_user.account_id = 12312;
-            db_user.name = "new_user_name".to_string();
-            db_user.class = Class::Archer;
-            db_user.world_id = 100;
-            db_user.created_at = Utc.ymd(2003, 7, 8).and_hms(11, 40, 20);
+                db_user.account_id = 12312;
+                db_user.name = "new_user_name".to_string();
+                db_user.class = Class::Archer;
+                db_user.world_id = 100;
+                db_user.created_at = Utc.ymd(2003, 7, 8).and_hms(11, 40, 20);
 
-            let updated_db_user = update(&mut conn, &db_user).await?;
+                let updated_db_user = update(&mut conn, &db_user).await?;
 
-            assert_eq!(updated_db_user.id, db_user.id);
-            assert_eq!(updated_db_user.account_id, org_user.account_id);
-            assert_ne!(updated_db_user.name, org_user.name);
-            assert_eq!(updated_db_user.name, "new_user_name");
-            assert_ne!(updated_db_user.class, org_user.class);
-            assert_eq!(updated_db_user.class, Class::Archer);
-            assert_ne!(updated_db_user.world_id, org_user.world_id);
-            assert_eq!(updated_db_user.world_id, 100);
-            assert_eq!(updated_db_user.created_at, org_user.created_at);
+                assert_eq!(updated_db_user.id, db_user.id);
+                assert_eq!(updated_db_user.account_id, org_user.account_id);
+                assert_ne!(updated_db_user.name, org_user.name);
+                assert_eq!(updated_db_user.name, "new_user_name");
+                assert_ne!(updated_db_user.class, org_user.class);
+                assert_eq!(updated_db_user.class, Class::Archer);
+                assert_ne!(updated_db_user.world_id, org_user.world_id);
+                assert_eq!(updated_db_user.world_id, 100);
+                assert_eq!(updated_db_user.created_at, org_user.created_at);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_update_user_position() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
-            assert_ne!(db_user.id, -1);
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+                assert_ne!(db_user.id, -1);
 
-            update_position(&mut conn, db_user.id, 15).await?;
-            let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
+                update_position(&mut conn, db_user.id, 15).await?;
+                let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
 
-            assert_ne!(updated_db_user.position, 0);
-            assert_eq!(updated_db_user.position, 15);
-            assert_eq!(updated_db_user.id, db_user.id);
-            assert_eq!(updated_db_user.account_id, db_user.account_id);
-            assert_eq!(updated_db_user.created_at, db_user.created_at);
-            Ok(())
-        }
-        db_test(test)
+                assert_ne!(updated_db_user.position, 0);
+                assert_eq!(updated_db_user.position, 15);
+                assert_eq!(updated_db_user.id, db_user.id);
+                assert_eq!(updated_db_user.account_id, db_user.account_id);
+                assert_eq!(updated_db_user.created_at, db_user.created_at);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_update_get_by_id() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
-            assert_ne!(db_user.id, -1);
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
+                assert_ne!(db_user.id, -1);
 
-            let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
+                let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
 
-            assert_eq!(updated_db_user.id, db_user.id);
-            assert_eq!(updated_db_user.account_id, db_user.account_id);
-            assert_eq!(updated_db_user.created_at, db_user.created_at);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(updated_db_user.id, db_user.id);
+                assert_eq!(updated_db_user.account_id, db_user.account_id);
+                assert_eq!(updated_db_user.created_at, db_user.created_at);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_list_users() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
 
-            for i in 1..=10i32 {
-                create(&mut conn, &get_default_user(&account, i)).await?;
-            }
-            let users = list(&mut conn, account.id).await?;
+                for i in 1..=10i32 {
+                    create(&mut conn, &get_default_user(&account, i)).await?;
+                }
+                let users = list(&mut conn, account.id).await?;
 
-            assert_eq!(users.len(), 10);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(users.len(), 10);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_get_user_count() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
 
-            for i in 1..=10i32 {
-                create(&mut conn, &get_default_user(&account, i)).await?;
-            }
-            let count = get_user_count(&mut conn, account.id).await?;
+                for i in 1..=10i32 {
+                    create(&mut conn, &get_default_user(&account, i)).await?;
+                }
+                let count = get_user_count(&mut conn, account.id).await?;
 
-            assert_eq!(count, 10);
-            Ok(())
-        }
-        db_test(test)
+                assert_eq!(count, 10);
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_update_is_user_name_taken() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
-            assert_ne!(db_user.id, -1);
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
+                assert_ne!(db_user.id, -1);
 
-            assert!(is_user_name_taken(&mut conn, "testuser-99").await?);
-            assert!(!is_user_name_taken(&mut conn, "not-taken").await?);
+                assert!(is_user_name_taken(&mut conn, "testuser-99").await?);
+                assert!(!is_user_name_taken(&mut conn, "not-taken").await?);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_delete_user() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
-            let account = create_account(&mut conn).await?;
-            let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
-            assert_ne!(db_user.id, -1);
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
+                let account = create_account(&mut conn).await?;
+                let db_user = create(&mut conn, &get_default_user(&account, 99)).await?;
+                assert_ne!(db_user.id, -1);
 
-            delete_by_id(&mut conn, db_user.id).await?;
+                delete_by_id(&mut conn, db_user.id).await?;
 
-            match get_by_id(&mut conn, db_user.id).await {
-                Ok(..) => panic!("Found user that we expected to delete"),
-                Err(e) => match e.downcast_ref::<sqlx::Error>() {
-                    Some(sqlx::Error::RowNotFound) => { /* Expected result */ }
-                    Some(..) | None => panic!(e),
-                },
-            }
-            Ok(())
-        }
-        db_test(test)
+                match get_by_id(&mut conn, db_user.id).await {
+                    Ok(..) => panic!("Found user that we expected to delete"),
+                    Err(e) => match e.downcast_ref::<sqlx::Error>() {
+                        Some(sqlx::Error::RowNotFound) => { /* Expected result */ }
+                        Some(..) | None => panic!(e),
+                    },
+                }
+                Ok(())
+            })
+        })
     }
 }

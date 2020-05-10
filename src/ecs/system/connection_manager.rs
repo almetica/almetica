@@ -368,6 +368,7 @@ mod tests {
     use async_std::prelude::*;
     use async_std::sync::{channel, Receiver};
     use chrono::{TimeZone, Utc};
+    use sqlx::pool::PoolConnection;
     use sqlx::{PgConnection, PgPool};
     use std::time::Duration;
 
@@ -425,198 +426,22 @@ mod tests {
 
     #[test]
     fn test_connection_registration() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let world = setup(pool);
-            let (tx_channel, rx_channel) = channel(10);
-
-            world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                    for _i in 0..5 {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestRegisterConnection {
-                                response_channel: tx_channel.clone(),
-                            }),
-                        );
-                    }
-                },
-            );
-
-            world.run(connection_manager_system);
-
-            let mut count = 0;
-            loop {
-                if let Ok(event) = rx_channel.try_recv() {
-                    match *event {
-                        Event::ResponseRegisterConnection { .. } => count += 1,
-                        _ => {}
-                    }
-                } else {
-                    break;
-                }
-            }
-            assert_eq!(count, 5);
-
-            Ok(())
-        }
-        db_test(test)
-    }
-
-    #[test]
-    fn test_check_version_valid() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, _rx_channel) = setup_with_connection(pool);
-
-            world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                    entities.add_entity(
-                        &mut events,
-                        Box::new(Event::RequestCheckVersion {
-                            connection_id,
-                            packet: CCheckVersion {
-                                version: vec![
-                                    CCheckVersionEntry {
-                                        index: 0,
-                                        value: 366_222,
-                                    },
-                                    CCheckVersionEntry {
-                                        index: 1,
-                                        value: 365_535,
-                                    },
-                                ],
-                            },
-                        }),
-                    )
-                },
-            );
-
-            world.run(connection_manager_system);
-
-            let valid_count = world
-                .borrow::<View<Connection>>()
-                .iter()
-                .filter(|connection| connection.version_checked)
-                .count();
-            assert_eq!(valid_count, 1);
-
-            Ok(())
-        }
-        db_test(test)
-    }
-
-    #[test]
-    fn test_check_version_invalid() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, mut rx_channel) = setup_with_connection(pool);
-
-            world.run(
-                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                    entities.add_entity(
-                        &mut events,
-                        Box::new(Event::RequestCheckVersion {
-                            connection_id,
-                            packet: CCheckVersion {
-                                version: vec![CCheckVersionEntry {
-                                    index: 0,
-                                    value: 366_222,
-                                }],
-                            },
-                        }),
-                    )
-                },
-            );
-
-            world.run(connection_manager_system);
-
-            assert!(
-                rx_channel
-                    .all(|event| match *event {
-                        Event::ResponseCheckVersion { packet, .. } => !packet.ok,
-                        Event::ResponseDropConnection { .. } => true,
-                        _ => false,
-                    })
-                    .await,
-            );
-
-            // The connection should be dropped.
-            let count = world.borrow::<View<Connection>>().iter().count();
-            assert_eq!(count, 0);
-            Ok(())
-        }
-        db_test(test)
-    }
-
-    #[test]
-    fn test_login_arbiter_valid() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await?;
-            let (world, connection_id, _rx_channel) = setup_with_connection(pool);
-            let (account, ticket) = create_login(&mut conn).await?;
-
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestLoginArbiter {
-                                connection_id,
-                                packet: CLoginArbiter {
-                                    master_account_name: account.name.clone(),
-                                    ticket,
-                                    unk1: 0,
-                                    unk2: 0,
-                                    region: Region::Europe,
-                                    patch_version: 9002,
-                                },
-                            }),
-                        )
-                    },
-                );
-
-                world.run(connection_manager_system);
-
-                let valid_count = world
-                    .borrow::<View<Connection>>()
-                    .iter()
-                    .filter(|connection| {
-                        connection.verified && connection.account_id == Some(account.id)
-                    })
-                    .count();
-                assert_eq!(valid_count, 1);
-            });
-
-            Ok(())
-        }
-        db_test(test)
-    }
-
-    #[test]
-    fn test_login_arbiter_invalid() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await?;
-            let (world, connection_id, rx_channel) = setup_with_connection(pool);
-            let (account, mut ticket) = create_login(&mut conn).await?;
-
-            task::spawn_blocking(move || {
-                // Make ticket invalid
-                ticket.make_ascii_uppercase();
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let world = setup(pool);
+                let (tx_channel, rx_channel) = channel(10);
 
                 world.run(
                     |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestLoginArbiter {
-                                connection_id,
-                                packet: CLoginArbiter {
-                                    master_account_name: account.name,
-                                    ticket,
-                                    unk1: 0,
-                                    unk2: 0,
-                                    region: Region::Europe,
-                                    patch_version: 9002,
-                                },
-                            }),
-                        )
+                        for _i in 0..5 {
+                            entities.add_entity(
+                                &mut events,
+                                Box::new(Event::RequestRegisterConnection {
+                                    response_channel: tx_channel.clone(),
+                                }),
+                            );
+                        }
                     },
                 );
 
@@ -626,70 +451,33 @@ mod tests {
                 loop {
                     if let Ok(event) = rx_channel.try_recv() {
                         match *event {
-                            Event::ResponseLoginArbiter { packet, .. } => {
-                                if !packet.success {
-                                    count += 1;
-                                }
-                            }
-                            Event::ResponseDropConnection { .. } => {
-                                count += 1;
-                            }
+                            Event::ResponseRegisterConnection { .. } => count += 1,
                             _ => {}
                         }
                     } else {
                         break;
                     }
                 }
-                assert_eq!(count, 2);
+                assert_eq!(count, 5);
 
-                // The connection should be dropped.
-                let count = world.borrow::<View<Connection>>().iter().count();
-                assert_eq!(count, 0);
-            });
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
-    fn test_login_sequence() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await?;
-            let world = setup(pool);
-            let (account, ticket) = create_login(&mut conn).await?;
-            let (tx_channel, rx_channel) = channel(10);
-
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestRegisterConnection {
-                                response_channel: tx_channel.clone(),
-                            }),
-                        )
-                    },
-                );
-
-                world.run(connection_manager_system);
-
-                let con = match rx_channel.try_recv() {
-                    Ok(event) => match *event {
-                        Event::ResponseRegisterConnection { connection_id } => connection_id,
-                        _ => panic!("Received wrong event"),
-                    },
-                    _ => panic!("Couldn't find event"),
-                };
-
-                // Run the cleaner to clean up all events.
-                world.run(cleaner_system);
+    fn test_check_version_valid() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (world, connection_id, _rx_channel) = setup_with_connection(pool);
 
                 world.run(
                     |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                         entities.add_entity(
                             &mut events,
                             Box::new(Event::RequestCheckVersion {
-                                connection_id: con,
+                                connection_id,
                                 packet: CCheckVersion {
                                     version: vec![
                                         CCheckVersionEntry {
@@ -703,140 +491,106 @@ mod tests {
                                     ],
                                 },
                             }),
-                        );
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestLoginArbiter {
-                                connection_id: con,
-                                packet: CLoginArbiter {
-                                    master_account_name: account.name,
-                                    ticket,
-                                    unk1: 0,
-                                    unk2: 0,
-                                    region: Region::Europe,
-                                    patch_version: 9002,
-                                },
-                            }),
-                        );
+                        )
                     },
                 );
 
                 world.run(connection_manager_system);
 
-                task::block_on(async {
-                    let list: Vec<EcsEvent> = rx_channel.collect().await;
-                    assert_eq!(list.len(), 5);
+                let valid_count = world
+                    .borrow::<View<Connection>>()
+                    .iter()
+                    .filter(|connection| connection.version_checked)
+                    .count();
+                assert_eq!(valid_count, 1);
 
-                    if let Event::ResponseCheckVersion {
-                        connection_id,
-                        packet,
-                    } = &*list[0]
-                    {
-                        assert_eq!(*connection_id, con);
-                        assert_eq!(packet.ok, true);
-                    } else {
-                        panic!("Received packets in wrong order");
-                    }
-
-                    if let Event::ResponseLoadingScreenControlInfo {
-                        connection_id,
-                        packet,
-                    } = &*list[1]
-                    {
-                        assert_eq!(*connection_id, con);
-                        assert_eq!(packet.custom_screen_enabled, false);
-                    } else {
-                        panic!("Received packets in wrong order");
-                    }
-
-                    if let Event::ResponseRemainPlayTime {
-                        connection_id,
-                        packet,
-                    } = &*list[2]
-                    {
-                        assert_eq!(*connection_id, con);
-                        assert_eq!(packet.account_type, 6);
-                    } else {
-                        panic!("Received packets in wrong order");
-                    }
-
-                    if let Event::ResponseLoginArbiter {
-                        connection_id,
-                        packet,
-                    } = &*list[3]
-                    {
-                        assert_eq!(*connection_id, con);
-                        assert_eq!(packet.success, true);
-                        assert_eq!(packet.status, 65538);
-                    } else {
-                        panic!("Received packets in wrong order");
-                    }
-
-                    if let Event::ResponseLoginAccountInfo {
-                        connection_id,
-                        packet,
-                    } = &*list[4]
-                    {
-                        assert_eq!(*connection_id, con);
-                        assert!(!packet.server_name.trim().is_empty());
-                    } else {
-                        panic!("Received packets in wrong order");
-                    }
-                });
-            });
-
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
-    fn test_ping_pong_success() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, rx_channel) = setup_with_connection(pool);
+    fn test_check_version_invalid() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (world, connection_id, mut rx_channel) = setup_with_connection(pool);
 
-            // Set last pong 61 seconds ago.
-            let now = Instant::now();
-            let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
+                world.run(
+                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                        entities.add_entity(
+                            &mut events,
+                            Box::new(Event::RequestCheckVersion {
+                                connection_id,
+                                packet: CCheckVersion {
+                                    version: vec![CCheckVersionEntry {
+                                        index: 0,
+                                        value: 366_222,
+                                    }],
+                                },
+                            }),
+                        )
+                    },
+                );
 
-            world.run(|mut connections: ViewMut<Connection>| {
-                if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
-                    connection.last_pong = old_pong;
-                } else {
-                    panic!("Couldn't find connection component");
-                }
-            });
+                world.run(connection_manager_system);
 
-            world.run(connection_manager_system);
+                assert!(
+                    rx_channel
+                        .all(|event| match *event {
+                            Event::ResponseCheckVersion { packet, .. } => !packet.ok,
+                            Event::ResponseDropConnection { .. } => true,
+                            _ => false,
+                        })
+                        .await,
+                );
 
-            if let Ok(event) = rx_channel.try_recv() {
-                match &*event {
-                    Event::ResponsePing { .. } => { /* Ok */ }
-                    _ => panic!("Didn't found the expected ping event."),
-                }
-            } else {
-                panic!("Couldn't find ping event");
-            }
+                // The connection should be dropped.
+                let count = world.borrow::<View<Connection>>().iter().count();
+                assert_eq!(count, 0);
 
-            // Check if waiting_for_pong is updated
-            world.run(|connections: View<Connection>| {
-                if let Ok(connection) = (&connections).try_get(connection_id) {
-                    if !connection.waiting_for_pong {
-                        panic!("Waiting_for_pong was not set after ping");
-                    }
-                } else {
-                    panic!("Couldn't find connection component");
-                }
-            });
+                Ok(())
+            })
+        })
+    }
 
-            // Send pong
+    #[test]
+    fn test_login_arbiter_valid() -> Result<()> {
+        db_test(|db_string| {
+            let (_conn, _rx_channel, world, connection_id, account, ticket) =
+                task::block_on(async {
+                    let pool = PgPool::new(db_string).await?;
+                    let mut conn = pool.acquire().await?;
+                    let (world, connection_id, rx_channel) = setup_with_connection(pool);
+                    let (account, ticket) = create_login(&mut conn).await?;
+
+                    Ok::<
+                        (
+                            PoolConnection<PgConnection>,
+                            Receiver<EcsEvent>,
+                            World,
+                            EntityId,
+                            Account,
+                            Vec<u8>,
+                        ),
+                        anyhow::Error,
+                    >((conn, rx_channel, world, connection_id, account, ticket))
+                })?;
+
             world.run(
                 |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
                     entities.add_entity(
                         &mut events,
-                        Box::new(Event::RequestPong {
+                        Box::new(Event::RequestLoginArbiter {
                             connection_id,
-                            packet: CPong {},
+                            packet: CLoginArbiter {
+                                master_account_name: account.name.clone(),
+                                ticket,
+                                unk1: 0,
+                                unk2: 0,
+                                region: Region::Europe,
+                                patch_version: 9002,
+                            },
                         }),
                     )
                 },
@@ -844,49 +598,325 @@ mod tests {
 
             world.run(connection_manager_system);
 
-            // Check if last_pong is updated
-            world.run(|connections: View<Connection>| {
-                let component = &connections[connection_id];
-                assert_eq!(component.last_pong > old_pong, true);
-            });
+            let valid_count = world
+                .borrow::<View<Connection>>()
+                .iter()
+                .filter(|connection| {
+                    connection.verified && connection.account_id == Some(account.id)
+                })
+                .count();
+            assert_eq!(valid_count, 1);
+
             Ok(())
-        }
-        db_test(test)
+        })
+    }
+
+    #[test]
+    fn test_login_arbiter_invalid() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel) = setup_with_connection(pool);
+            let (account, mut ticket) = task::block_on(async { create_login(&mut conn).await })?;
+
+            // Make ticket invalid
+            ticket.make_ascii_uppercase();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestLoginArbiter {
+                            connection_id,
+                            packet: CLoginArbiter {
+                                master_account_name: account.name,
+                                ticket,
+                                unk1: 0,
+                                unk2: 0,
+                                region: Region::Europe,
+                                patch_version: 9002,
+                            },
+                        }),
+                    )
+                },
+            );
+
+            world.run(connection_manager_system);
+
+            let mut count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    match *event {
+                        Event::ResponseLoginArbiter { packet, .. } => {
+                            if !packet.success {
+                                count += 1;
+                            }
+                        }
+                        Event::ResponseDropConnection { .. } => {
+                            count += 1;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+            assert_eq!(count, 2);
+
+            // The connection should be dropped.
+            let count = world.borrow::<View<Connection>>().iter().count();
+            assert_eq!(count, 0);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_login_sequence() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let world = setup(pool);
+            let (account, ticket) = task::block_on(async { create_login(&mut conn).await })?;
+            let (tx_channel, rx_channel) = channel(10);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestRegisterConnection {
+                            response_channel: tx_channel.clone(),
+                        }),
+                    )
+                },
+            );
+
+            world.run(connection_manager_system);
+
+            let con = match rx_channel.try_recv() {
+                Ok(event) => match *event {
+                    Event::ResponseRegisterConnection { connection_id } => connection_id,
+                    _ => panic!("Received wrong event"),
+                },
+                _ => panic!("Couldn't find event"),
+            };
+
+            // Run the cleaner to clean up all events.
+            world.run(cleaner_system);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestCheckVersion {
+                            connection_id: con,
+                            packet: CCheckVersion {
+                                version: vec![
+                                    CCheckVersionEntry {
+                                        index: 0,
+                                        value: 366_222,
+                                    },
+                                    CCheckVersionEntry {
+                                        index: 1,
+                                        value: 365_535,
+                                    },
+                                ],
+                            },
+                        }),
+                    );
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestLoginArbiter {
+                            connection_id: con,
+                            packet: CLoginArbiter {
+                                master_account_name: account.name,
+                                ticket,
+                                unk1: 0,
+                                unk2: 0,
+                                region: Region::Europe,
+                                patch_version: 9002,
+                            },
+                        }),
+                    );
+                },
+            );
+
+            world.run(connection_manager_system);
+
+            // Stream interface with collect() blocked forever
+            let mut list = Vec::new();
+            task::block_on(async {
+                for _i in 0..5 {
+                    let event = rx_channel.try_recv().unwrap();
+                    list.push(event);
+                }
+            });
+
+            if let Event::ResponseCheckVersion {
+                connection_id,
+                packet,
+            } = &*list[0]
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.ok, true);
+            } else {
+                panic!("Received packets in wrong order");
+            }
+
+            if let Event::ResponseLoadingScreenControlInfo {
+                connection_id,
+                packet,
+            } = &*list[1]
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.custom_screen_enabled, false);
+            } else {
+                panic!("Received packets in wrong order");
+            }
+
+            if let Event::ResponseRemainPlayTime {
+                connection_id,
+                packet,
+            } = &*list[2]
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.account_type, 6);
+            } else {
+                panic!("Received packets in wrong order");
+            }
+
+            if let Event::ResponseLoginArbiter {
+                connection_id,
+                packet,
+            } = &*list[3]
+            {
+                assert_eq!(*connection_id, con);
+                assert_eq!(packet.success, true);
+                assert_eq!(packet.status, 65538);
+            } else {
+                panic!("Received packets in wrong order");
+            }
+
+            if let Event::ResponseLoginAccountInfo {
+                connection_id,
+                packet,
+            } = &*list[4]
+            {
+                assert_eq!(*connection_id, con);
+                assert!(!packet.server_name.trim().is_empty());
+            } else {
+                panic!("Received packets in wrong order");
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_ping_pong_success() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (world, connection_id, rx_channel) = setup_with_connection(pool);
+
+                // Set last pong 61 seconds ago.
+                let now = Instant::now();
+                let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
+
+                world.run(|mut connections: ViewMut<Connection>| {
+                    if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
+                        connection.last_pong = old_pong;
+                    } else {
+                        panic!("Couldn't find connection component");
+                    }
+                });
+
+                world.run(connection_manager_system);
+
+                if let Ok(event) = rx_channel.try_recv() {
+                    match &*event {
+                        Event::ResponsePing { .. } => { /* Ok */ }
+                        _ => panic!("Didn't found the expected ping event."),
+                    }
+                } else {
+                    panic!("Couldn't find ping event");
+                }
+
+                // Check if waiting_for_pong is updated
+                world.run(|connections: View<Connection>| {
+                    if let Ok(connection) = (&connections).try_get(connection_id) {
+                        if !connection.waiting_for_pong {
+                            panic!("Waiting_for_pong was not set after ping");
+                        }
+                    } else {
+                        panic!("Couldn't find connection component");
+                    }
+                });
+
+                // Send pong
+                world.run(
+                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                        entities.add_entity(
+                            &mut events,
+                            Box::new(Event::RequestPong {
+                                connection_id,
+                                packet: CPong {},
+                            }),
+                        )
+                    },
+                );
+
+                world.run(connection_manager_system);
+
+                // Check if last_pong is updated
+                world.run(|connections: View<Connection>| {
+                    let component = &connections[connection_id];
+                    assert_eq!(component.last_pong > old_pong, true);
+                });
+
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_ping_pong_failure() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, rx_channel) = setup_with_connection(pool);
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
 
-            // Set last pong 91 seconds ago.
-            let now = Instant::now();
-            let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
-            world.run(|mut connections: ViewMut<Connection>| {
-                connections[connection_id].last_pong = old_pong;
-            });
+                let (world, connection_id, rx_channel) = setup_with_connection(pool);
 
-            world.run(connection_manager_system);
+                // Set last pong 91 seconds ago.
+                let now = Instant::now();
+                let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
+                world.run(|mut connections: ViewMut<Connection>| {
+                    connections[connection_id].last_pong = old_pong;
+                });
 
-            // Check if drop connection event is present
-            if let Ok(event) = rx_channel.try_recv() {
-                match &*event {
-                    Event::ResponseDropConnection { .. } => { /* Ok */ }
-                    _ => {
-                        panic!("Couldn't find drop connection event. Found another packet instead.")
+                world.run(connection_manager_system);
+
+                // Check if drop connection event is present
+                if let Ok(event) = rx_channel.try_recv() {
+                    match &*event {
+                        Event::ResponseDropConnection { .. } => { /* Ok */ }
+                        _ => panic!(
+                            "Couldn't find drop connection event. Found another packet instead."
+                        ),
                     }
+                } else {
+                    panic!("Couldn't find drop connection event");
                 }
-            } else {
-                panic!("Couldn't find drop connection event");
-            }
 
-            // Check if connection component was deleted
-            if let Ok(_component) = world.borrow::<View<Connection>>().try_get(connection_id) {
-                panic!("Found the connection component even though it should have been deleted");
-            };
+                // Check if connection component was deleted
+                if let Ok(_component) = world.borrow::<View<Connection>>().try_get(connection_id) {
+                    panic!(
+                        "Found the connection component even though it should have been deleted"
+                    );
+                };
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 }

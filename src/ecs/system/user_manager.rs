@@ -63,6 +63,8 @@ pub fn user_manager_system(
                 );
             }
         }
+
+        // TODO handle RequestCreateUser
         _ => { /* Ignore all other events */ }
     });
 }
@@ -87,19 +89,29 @@ fn handle_user_list(
 
         // Send the user list paged, since we can only send 16kiB of data in one packet
         let mut is_first_page = true;
-        for chunk in user::list(&mut conn, account_id).await?.chunks(CHUNK_SIZE) {
-            let is_last_page = if chunk.len() == CHUNK_SIZE {
-                false
-            } else {
-                true
-            };
 
+        let users = user::list(&mut conn, account_id).await?;
+
+        if users.len() == 0 {
             send_event(
-                assemble_user_list_response(connection_id, chunk, is_first_page, is_last_page),
+                assemble_user_list_response(connection_id, &Vec::new(), true, true),
                 connections,
             );
+        } else {
+            for chunk in users.chunks(CHUNK_SIZE) {
+                let is_last_page = if chunk.len() == CHUNK_SIZE {
+                    false
+                } else {
+                    true
+                };
 
-            is_first_page = false;
+                send_event(
+                    assemble_user_list_response(connection_id, chunk, is_first_page, is_last_page),
+                    connections,
+                );
+
+                is_first_page = false;
+            }
         }
 
         Ok::<(), anyhow::Error>(())
@@ -162,7 +174,6 @@ fn handle_check_user_name(
             "Invalid username provided"
         );
 
-        // TODO check if the username is already present in the database
         if user::is_user_name_taken(&mut conn, &packet.name).await? {
             send_event(
                 assemble_check_user_name_response(connection_id, false),
@@ -434,81 +445,85 @@ mod tests {
 
     #[test]
     fn test_can_create_user_true() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, rx_channel, _account) = setup_with_connection(pool).await?;
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (world, connection_id, rx_channel, _account) =
+                    setup_with_connection(pool).await?;
 
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestCanCreateUser {
-                                connection_id,
-                                packet: CCanCreateUser {},
-                            }),
-                        );
-                    },
-                );
+                task::spawn_blocking(move || {
+                    world.run(
+                        |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                            entities.add_entity(
+                                &mut events,
+                                Box::new(Event::RequestCanCreateUser {
+                                    connection_id,
+                                    packet: CCanCreateUser {},
+                                }),
+                            );
+                        },
+                    );
 
-                world.run(user_manager_system);
+                    world.run(user_manager_system);
 
-                if let Ok(event) = rx_channel.try_recv() {
-                    match *event {
-                        Event::ResponseCanCreateUser { packet, .. } => {
-                            assert!(packet.ok);
+                    if let Ok(event) = rx_channel.try_recv() {
+                        match *event {
+                            Event::ResponseCanCreateUser { packet, .. } => {
+                                assert!(packet.ok);
+                            }
+                            _ => panic!("Event is not a ResponseCanCreateUser event."),
                         }
-                        _ => panic!("Event is not a ResponseCanCreateUser event."),
+                    } else {
+                        panic!("Can't find any event.");
                     }
-                } else {
-                    panic!("Can't find any event.");
-                }
-            });
+                    Ok::<(), anyhow::Error>(())
+                })
+                .await?;
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_can_create_user_false() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await?;
-            let (world, connection_id, rx_channel, account) = setup_with_connection(pool).await?;
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
 
             for i in 0..20 {
-                create_user(&mut conn, account.id, i).await?;
+                task::block_on(async { create_user(&mut conn, account.id, i).await })?;
             }
 
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestCanCreateUser {
-                                connection_id,
-                                packet: CCanCreateUser {},
-                            }),
-                        );
-                    },
-                );
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestCanCreateUser {
+                            connection_id,
+                            packet: CCanCreateUser {},
+                        }),
+                    );
+                },
+            );
 
-                world.run(user_manager_system);
+            world.run(user_manager_system);
 
-                if let Ok(event) = rx_channel.try_recv() {
-                    match *event {
-                        Event::ResponseCanCreateUser { packet, .. } => {
-                            assert!(!packet.ok);
-                        }
-                        _ => panic!("Event is not a ResponseCanCreateUser event."),
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCanCreateUser { packet, .. } => {
+                        assert!(!packet.ok);
                     }
-                } else {
-                    panic!("Can't find any event.");
+                    _ => panic!("Event is not a ResponseCanCreateUser event."),
                 }
-            });
+            } else {
+                panic!("Can't find any event.");
+            }
 
             Ok(())
-        }
-        db_test(test)
+        })
     }
 
     #[test]
@@ -536,143 +551,184 @@ mod tests {
 
     #[test]
     fn test_check_user_name_available() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, rx_channel, _account) = setup_with_connection(pool).await?;
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_id, rx_channel, _account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
 
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        for i in 0..5 {
-                            entities.add_entity(
-                                &mut events,
-                                Box::new(Event::RequestCheckUserName {
-                                    connection_id,
-                                    packet: CCheckUserName {
-                                        name: format!("NotTakenUserName{}", i),
-                                    },
-                                }),
-                            );
-                        }
-                    },
-                );
-
-                world.run(user_manager_system);
-
-                let mut count = 0;
-                loop {
-                    if let Ok(event) = rx_channel.try_recv() {
-                        match *event {
-                            Event::ResponseCheckUserName { packet, .. } => {
-                                if packet.ok {
-                                    count += 1
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                assert_eq!(count, 5)
-            });
-
-            Ok(())
-        }
-        db_test(test)
-    }
-
-    #[test]
-    fn test_check_user_name_invalid_username() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let (world, connection_id, rx_channel, _account) = setup_with_connection(pool).await?;
-
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    for i in 0..5 {
                         entities.add_entity(
                             &mut events,
                             Box::new(Event::RequestCheckUserName {
                                 connection_id,
                                 packet: CCheckUserName {
-                                    name: "H!x?or{}".to_string(),
+                                    name: format!("NotTakenUserName{}", i),
                                 },
                             }),
                         );
-                    },
-                );
+                    }
+                },
+            );
 
-                world.run(user_manager_system);
+            world.run(user_manager_system);
 
+            let mut count = 0;
+            loop {
                 if let Ok(event) = rx_channel.try_recv() {
                     match *event {
                         Event::ResponseCheckUserName { packet, .. } => {
-                            assert!(!packet.ok);
+                            if packet.ok {
+                                count += 1
+                            }
                         }
-                        _ => panic!("Event is not a ResponseCheckUserName event."),
+                        _ => {}
                     }
                 } else {
-                    panic!("Can't find any event.");
+                    break;
                 }
-            });
+            }
+            assert_eq!(count, 5);
 
             Ok(())
-        }
-        db_test(test)
+        })
+    }
+
+    #[test]
+    fn test_check_user_name_invalid_username() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_id, rx_channel, _account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestCheckUserName {
+                            connection_id,
+                            packet: CCheckUserName {
+                                name: "H!x?or{}".to_string(),
+                            },
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_manager_system);
+
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCheckUserName { packet, .. } => {
+                        assert!(!packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseCheckUserName event."),
+                }
+            } else {
+                panic!("Can't find any event.");
+            }
+
+            Ok(())
+        })
     }
 
     #[test]
     fn test_get_user_list() -> Result<()> {
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await?;
-            let (world, connection_id, rx_channel, account) = setup_with_connection(pool).await?;
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
 
             for i in 0..MAX_USERS_PER_ACCOUNT {
-                create_user(&mut conn, account.id, i).await?;
+                task::block_on(async { create_user(&mut conn, account.id, i).await })?;
             }
 
-            task::spawn_blocking(move || {
-                world.run(
-                    |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                        entities.add_entity(
-                            &mut events,
-                            Box::new(Event::RequestGetUserList {
-                                connection_id,
-                                packet: CGetUserList {},
-                            }),
-                        );
-                    },
-                );
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestGetUserList {
+                            connection_id,
+                            packet: CGetUserList {},
+                        }),
+                    );
+                },
+            );
 
-                world.run(user_manager_system);
+            world.run(user_manager_system);
 
-                let mut char_count = 0;
-                let mut packet_count = 0;
-                loop {
+            let mut char_count = 0;
+            let mut packet_count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
                     packet_count += 1;
-                    if let Ok(event) = rx_channel.try_recv() {
-                        match *event {
-                            Event::ResponseGetUserList { packet, .. } => {
-                                char_count = packet.characters.len()
-                            }
-                            _ => {}
+                    match *event {
+                        Event::ResponseGetUserList { packet, .. } => {
+                            char_count += packet.characters.len()
                         }
-                    } else {
-                        break;
+                        _ => panic!("Received an unexpected event: {}", event),
                     }
-                }
-
-                let expected_packet_count = if MAX_USERS_PER_ACCOUNT % CHUNK_SIZE != 0 {
-                    (MAX_USERS_PER_ACCOUNT / CHUNK_SIZE) + 1
                 } else {
-                    MAX_USERS_PER_ACCOUNT / CHUNK_SIZE
-                };
+                    break;
+                }
+            }
 
-                assert_eq!(char_count, MAX_USERS_PER_ACCOUNT);
-                assert_eq!(packet_count, expected_packet_count);
-            });
+            let expected_packet_count = if MAX_USERS_PER_ACCOUNT % CHUNK_SIZE != 0 {
+                (MAX_USERS_PER_ACCOUNT / CHUNK_SIZE) + 1
+            } else {
+                MAX_USERS_PER_ACCOUNT / CHUNK_SIZE
+            };
+
+            assert_eq!(char_count, MAX_USERS_PER_ACCOUNT);
+            assert_eq!(packet_count, expected_packet_count);
 
             Ok(())
-        }
-        db_test(test)
+        })
+    }
+
+    #[test]
+    fn test_get_empty_user_list() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_id, rx_channel, _account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestGetUserList {
+                            connection_id,
+                            packet: CGetUserList {},
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_manager_system);
+
+            let mut char_count = 0;
+            let mut packet_count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    packet_count += 1;
+                    match *event {
+                        Event::ResponseGetUserList { packet, .. } => {
+                            char_count = packet.characters.len()
+                        }
+                        _ => panic!("Received an unexpected event: {}", event),
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            assert_eq!(char_count, 0);
+            assert_eq!(packet_count, 1);
+
+            Ok(())
+        })
     }
 }

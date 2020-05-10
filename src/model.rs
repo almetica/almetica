@@ -174,29 +174,24 @@ pub enum PasswordHashAlgorithm {
 
 #[cfg(test)]
 pub mod tests {
-    use std::panic;
-
-    use async_std::task;
-    use hex::encode;
-    use rand::{thread_rng, RngCore};
-    use sqlx::{Connect, PgConnection, PgPool};
-    use std::future::Future;
-    use tokio::runtime::Runtime;
-
+    use super::*;
     use crate::model::embedded::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
     use crate::Result;
-
-    use super::*;
+    use async_std::task;
+    use hex::encode;
+    use rand::{thread_rng, RngCore};
+    use sqlx::{Connect, PgConnection};
+    use std::panic;
+    use tokio::runtime::Runtime;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
     /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
     /// and have the permission to create / delete databases.
-    /// Uses the default async_std runtime. Just use the standard `[test]` macro.
-    pub fn db_test<'a, T, F>(test: F) -> Result<()>
+    /// Use the standard `[test]` macro.
+    pub fn db_test<'a, F>(test: F) -> Result<()>
     where
-        T: Future<Output = Result<()>> + 'a,
-        F: FnOnce(PgPool) -> T + panic::UnwindSafe,
+        F: FnOnce(&str) -> Result<()> + panic::UnwindSafe,
     {
         let _ = dotenv::dotenv();
         let db_url = &dotenv::var("TEST_DATABASE_CONNECTION")?;
@@ -215,13 +210,10 @@ pub mod tests {
 
         // Don't re-use the connection when testing. It could get tainted.
         let result = panic::catch_unwind(|| {
-            task::block_on(async {
-                let db_string = format!("{}/{}", db_url, db_name);
-                let pool = PgPool::new(&db_string).await.unwrap();
-                if let Err(e) = test(pool).await {
-                    panic!("Error while executing test: {:?}", e);
-                }
-            });
+            let db_string = format!("{}/{}", db_url, db_name);
+            if let Err(e) = test(&db_string) {
+                panic!("Error while executing test: {:?}", e);
+            }
         });
 
         task::block_on(async {

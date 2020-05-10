@@ -64,121 +64,122 @@ pub mod tests {
     use crate::model::tests::db_test;
     use crate::model::PasswordHashAlgorithm;
     use crate::Result;
+    use async_std::task;
     use chrono::prelude::*;
-    use sqlx::PgPool;
+    use sqlx::PgConnection;
 
     #[test]
     fn test_upsert_login_ticket() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            let account = account::create(
-                &mut conn,
-                &Account {
-                    id: -1,
-                    name: "testuser".to_string(),
-                    password: "not-a-real-password-hash".to_string(),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                },
-            )
-            .await?;
+                let account = account::create(
+                    &mut conn,
+                    &Account {
+                        id: -1,
+                        name: "testuser".to_string(),
+                        password: "not-a-real-password-hash".to_string(),
+                        algorithm: PasswordHashAlgorithm::Argon2,
+                        created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                        updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                    },
+                )
+                .await?;
 
-            let first_ticket = upsert_ticket(&mut conn, account.id).await?;
-            let second_ticket = upsert_ticket(&mut conn, account.id).await?;
+                let first_ticket = upsert_ticket(&mut conn, account.id).await?;
+                let second_ticket = upsert_ticket(&mut conn, account.id).await?;
 
-            assert_eq!(first_ticket.account_id, second_ticket.account_id);
-            assert_ne!(first_ticket.ticket, second_ticket.ticket);
-            assert_ne!(first_ticket.created_at, second_ticket.created_at);
+                assert_eq!(first_ticket.account_id, second_ticket.account_id);
+                assert_ne!(first_ticket.ticket, second_ticket.ticket);
+                assert_ne!(first_ticket.created_at, second_ticket.created_at);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_validate_valid_ticket() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            let account = account::create(
-                &mut conn,
-                &Account {
-                    id: -1,
-                    name: "testuser".to_string(),
-                    password: "not-a-real-password-hash".to_string(),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                },
-            )
-            .await?;
+                let account = account::create(
+                    &mut conn,
+                    &Account {
+                        id: -1,
+                        name: "testuser".to_string(),
+                        password: "not-a-real-password-hash".to_string(),
+                        algorithm: PasswordHashAlgorithm::Argon2,
+                        created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                        updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                    },
+                )
+                .await?;
 
-            let ticket = upsert_ticket(&mut conn, account.id).await?;
-            assert!(!ticket.ticket.is_empty());
-            assert!(is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
-            // Ticket can only be used one time
-            assert!(!is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
+                let ticket = upsert_ticket(&mut conn, account.id).await?;
+                assert!(!ticket.ticket.is_empty());
+                assert!(is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
+                // Ticket can only be used one time
+                assert!(!is_ticket_valid(&mut conn, &account.name, &ticket.ticket).await?);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_validate_invalid_ticket_1() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            let account = account::create(
-                &mut conn,
-                &Account {
-                    id: -1,
-                    name: "testuser".to_string(),
-                    password: "not-a-real-password-hash".to_string(),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                },
-            )
-            .await?;
+                let account = account::create(
+                    &mut conn,
+                    &Account {
+                        id: -1,
+                        name: "testuser".to_string(),
+                        password: "not-a-real-password-hash".to_string(),
+                        algorithm: PasswordHashAlgorithm::Argon2,
+                        created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                        updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                    },
+                )
+                .await?;
 
-            upsert_ticket(&mut conn, account.id).await?;
-            assert!(!is_ticket_valid(&mut conn, &account.name, "123456789".as_bytes()).await?);
+                upsert_ticket(&mut conn, account.id).await?;
+                assert!(!is_ticket_valid(&mut conn, &account.name, "123456789".as_bytes()).await?);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 
     #[test]
     fn test_validate_invalid_ticket_2() -> Result<()> {
-        // FIXME into an async closure once stable
-        async fn test(pool: PgPool) -> Result<()> {
-            let mut conn = pool.acquire().await.unwrap();
+        db_test(|db_string| {
+            task::block_on(async {
+                let mut conn = PgConnection::connect(db_string).await?;
 
-            let account = account::create(
-                &mut conn,
-                &Account {
-                    id: -1,
-                    name: "testuser".to_string(),
-                    password: "not-a-real-password-hash".to_string(),
-                    algorithm: PasswordHashAlgorithm::Argon2,
-                    created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                    updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
-                },
-            )
-            .await?;
+                let account = account::create(
+                    &mut conn,
+                    &Account {
+                        id: -1,
+                        name: "testuser".to_string(),
+                        password: "not-a-real-password-hash".to_string(),
+                        algorithm: PasswordHashAlgorithm::Argon2,
+                        created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                        updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                    },
+                )
+                .await?;
 
-            let ticket = upsert_ticket(&mut conn, account.id).await?;
-            assert!(!is_ticket_valid(&mut conn, &"not-a-user", &ticket.ticket).await?);
+                let ticket = upsert_ticket(&mut conn, account.id).await?;
+                assert!(!is_ticket_valid(&mut conn, &"not-a-user", &ticket.ticket).await?);
 
-            Ok(())
-        }
-        db_test(test)
+                Ok(())
+            })
+        })
     }
 }
