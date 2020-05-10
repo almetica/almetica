@@ -9,15 +9,15 @@ use crate::model::repository::user;
 use crate::model::{Vec3, Vec3a};
 use crate::protocol::packet::*;
 use crate::Result;
-use anyhow::{ensure, Context};
+use anyhow::Context;
 use async_std::task;
 use chrono::Utc;
 use lazy_static::lazy_static;
 use regex::Regex;
 use shipyard::*;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::cmp::min;
-use tracing::{debug, error, info_span};
+use tracing::{debug, error, info, info_span};
 
 const MAX_USERS_PER_ACCOUNT: usize = 20;
 const CHUNK_SIZE: usize = 5;
@@ -63,8 +63,18 @@ pub fn user_manager_system(
                 );
             }
         }
-
-        // TODO handle RequestCreateUser
+        Event::RequestCreateUser {
+            connection_id,
+            packet,
+        } => {
+            if let Err(e) = handle_create_user(&packet, *connection_id, &connections, &pool) {
+                error!("Rejecting create user request: {:?}", e);
+                send_event(
+                    assemble_create_user_response(*connection_id, false),
+                    &connections,
+                );
+            }
+        }
         _ => { /* Ignore all other events */ }
     });
 }
@@ -136,7 +146,7 @@ fn handle_can_create_user(
             .await
             .context("Couldn't acquire connection from pool")?;
 
-        if MAX_USERS_PER_ACCOUNT as i64 > user::get_user_count(&mut conn, account_id).await? {
+        if can_create_user(&mut conn, account_id).await? {
             send_event(
                 assemble_can_create_user_response(connection_id, true),
                 connections,
@@ -147,6 +157,49 @@ fn handle_can_create_user(
                 connections,
             );
         }
+
+        Ok::<(), anyhow::Error>(())
+    })?)
+}
+
+fn handle_create_user(
+    packet: &CCreateUser,
+    connection_id: EntityId,
+    connections: &View<Connection>,
+    pool: &UniqueView<PgPool>,
+) -> Result<()> {
+    let span = info_span!("connection", connection = ?connection_id);
+    let _enter = span.enter();
+
+    debug!("Create user event incoming");
+
+    let account_id = get_account_id(connection_id, connections)?;
+
+    Ok(task::block_on(async {
+        let mut conn = pool
+            .begin()
+            .await
+            .context("Couldn't acquire connection from pool")?;
+
+        // TODO validate the send character even more
+
+        if can_create_user(&mut conn, account_id).await?
+            && check_username(&mut conn, &packet.name).await?
+        {
+            let next_position = user::get_user_count(&mut conn, account_id).await? + 1;
+            create_new_user(&mut conn, account_id, next_position as i32, packet).await?;
+            send_event(
+                assemble_create_user_response(connection_id, true),
+                connections,
+            );
+        } else {
+            send_event(
+                assemble_create_user_response(connection_id, false),
+                connections,
+            );
+        }
+
+        conn.commit().await?;
 
         Ok::<(), anyhow::Error>(())
     })?)
@@ -169,25 +222,89 @@ fn handle_check_user_name(
             .await
             .context("Couldn't acquire connection from pool")?;
 
-        ensure!(
-            is_valid_user_name(&packet.name),
-            "Invalid username provided"
-        );
-
-        if user::is_user_name_taken(&mut conn, &packet.name).await? {
+        if check_username(&mut conn, &packet.name).await? {
             send_event(
-                assemble_check_user_name_response(connection_id, false),
+                assemble_check_user_name_response(connection_id, true),
                 connections,
             );
         } else {
             send_event(
-                assemble_check_user_name_response(connection_id, true),
+                assemble_check_user_name_response(connection_id, false),
                 connections,
             );
         }
 
         Ok::<(), anyhow::Error>(())
     })?)
+}
+
+// Returns true if the name is valid and is not taken.
+async fn check_username(mut conn: &mut PgConnection, name: &str) -> Result<bool> {
+    if !is_valid_user_name(name) {
+        info!("Invalid username provided");
+        return Ok(false);
+    }
+
+    if user::is_user_name_taken(&mut conn, name).await? {
+        Ok(false)
+    } else {
+        Ok(true)
+    }
+}
+
+// Returns true if the account has free character slots.
+async fn can_create_user(mut conn: &mut PgConnection, account_id: i64) -> Result<bool> {
+    if MAX_USERS_PER_ACCOUNT as i64 > user::get_user_count(&mut conn, account_id).await? {
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+// Creates a new user with default values
+async fn create_new_user(
+    mut conn: &mut PgConnection,
+    account_id: i64,
+    position: i32,
+    packet: &CCreateUser,
+) -> Result<()> {
+    // TODO set the tutorial map as the start point
+    // FIXME client doesn't like the created user
+    user::create(
+        &mut conn,
+        &User {
+            id: -1,
+            account_id,
+            name: packet.name.clone(),
+            gender: packet.gender,
+            race: packet.race,
+            class: packet.class,
+            shape: packet.shape.clone(),
+            details: packet.details.clone(),
+            appearance: packet.appearance.clone(),
+            appearance2: packet.appearance2,
+            world_id: 1,
+            guard_id: 2,
+            section_id: 8,
+            level: 1,
+            awakening_level: 0,
+            laurel: 0,
+            achievement_points: 0,
+            playtime: 0,
+            rest_bonus_xp: 0,
+            show_face: false,
+            show_style: false,
+            position,
+            is_new_character: true,
+            tutorial_state: 0,
+            is_deleting: false,
+            delete_at: None,
+            last_logout_at: Utc::now(),
+            created_at: Utc::now(),
+        },
+    )
+    .await?;
+    Ok(())
 }
 
 /// Only alphanumeric characters are currently allowed. The client in rather limited with it's font.
@@ -202,6 +319,13 @@ fn assemble_can_create_user_response(connection_id: EntityId, ok: bool) -> EcsEv
     Box::new(Event::ResponseCanCreateUser {
         connection_id,
         packet: SCanCreateUser { ok },
+    })
+}
+
+fn assemble_create_user_response(connection_id: EntityId, ok: bool) -> EcsEvent {
+    Box::new(Event::ResponseCreateUser {
+        connection_id,
+        packet: SCreateUser { ok },
     })
 }
 
@@ -224,12 +348,17 @@ fn assemble_user_list_response(
         .cloned()
         .map(move |user| {
             let delete_time = match user.delete_at {
-                Some(t) => t.timestamp_millis(),
+                Some(t) => t.timestamp(),
                 None => 0,
             };
 
+            // FIXME Something is wrong with the custom_strings field! It needs to be set with zero values?!
+            // FIXME test the deletion time stamps!
             SGetUserListCharacter {
-                custom_strings: vec![],
+                custom_strings: vec![SGetUserListCharacterCustomString {
+                    string: "".to_string(),
+                    id: 0,
+                }],
                 name: user.name,
                 details: user.details,
                 shape: user.shape,
@@ -239,16 +368,15 @@ fn assemble_user_list_response(
                 race: user.race,
                 class: user.class,
                 level: user.level,
-                hp: 1,
-                mp: 1,
-                world_id: 1,
-                guard_id: 1,
-                section_id: 1,
-                last_logout_time: user.last_logout_at.timestamp_millis(),
+                hp: 200,
+                mp: 100,
+                world_id: user.world_id,
+                guard_id: user.guard_id,
+                section_id: user.section_id,
+                last_logout_time: user.last_logout_at.timestamp(),
                 is_deleting: user.is_deleting,
-                delete_time,
-                delete_remain_sec: min(delete_time - Utc::now().timestamp_millis() / 1000, 0)
-                    as i32,
+                delete_time: 86400,
+                delete_remain_sec: min(delete_time - Utc::now().timestamp(), -1_585_902_611) as i32,
                 weapon: 0,
                 earring1: 0,
                 earring2: 0,
@@ -266,7 +394,7 @@ fn assemble_user_list_response(
                 admin_level: 0,
                 is_banned: false,
                 ban_end_time: 0,
-                ban_remain_sec: 0,
+                ban_remain_sec: -1_585_989_011,
                 rename_needed: 0,
                 weapon_model: 0,
                 unk_model2: 0,
@@ -300,17 +428,17 @@ fn assemble_user_list_response(
                 style_body_dye: 0,
                 weapon_enchant: 0,
                 rest_bonus_xp: user.rest_bonus_xp,
-                max_rest_bonus_xp: 0,
+                max_rest_bonus_xp: 1,
                 show_face: user.show_face,
-                style_head_scale: 0.0,
+                style_head_scale: 1.0,
                 style_head_rotation: Vec3a::default(),
                 style_head_translation: Vec3::default(),
                 style_head_translation_debug: Vec3::default(),
-                style_faces_scale: 0.0,
+                style_faces_scale: 1.0,
                 style_face_rotation: Vec3a::default(),
                 style_face_translation: Vec3::default(),
                 style_face_translation_debug: Vec3::default(),
-                style_back_scale: 0.0,
+                style_back_scale: 1.0,
                 style_back_rotation: Vec3a::default(),
                 style_back_translation: Vec3::default(),
                 style_back_translation_debug: Vec3::default(),
@@ -333,15 +461,15 @@ fn assemble_user_list_response(
         connection_id,
         packet: SGetUserList {
             characters,
-            veteran: true,
+            veteran: false,
             bonus_buf_sec: 0,
             max_characters: MAX_USERS_PER_ACCOUNT as i32,
             first: is_first_page,
             more: !is_last_page,
             left_del_time_account_over: 0,
-            deletion_section_classify_level: 0,
+            deletion_section_classify_level: 40,
             delete_character_expire_hour1: 0,
-            delete_character_expire_hour2: 0,
+            delete_character_expire_hour2: 24,
         },
     })
 }
@@ -731,4 +859,6 @@ mod tests {
             Ok(())
         })
     }
+
+    // TODO write a handle_create_user test (valid, 2x invalid)
 }

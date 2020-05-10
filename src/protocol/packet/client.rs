@@ -33,7 +33,7 @@ pub struct CCreateUser {
     pub class: Class,
     pub appearance: Customization,
     pub is_second_character: bool, // Unused
-    pub appearance2: u32,
+    pub appearance2: i32,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
