@@ -269,7 +269,6 @@ async fn create_new_user(
     packet: &CCreateUser,
 ) -> Result<()> {
     // TODO set the tutorial map as the start point
-    // FIXME client doesn't like the created user
     user::create(
         &mut conn,
         &User {
