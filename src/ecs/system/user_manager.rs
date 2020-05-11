@@ -181,7 +181,7 @@ fn handle_create_user(
             .await
             .context("Couldn't acquire connection from pool")?;
 
-        // TODO validate the send character even more
+        // TODO validate the character even more
 
         if can_create_user(&mut conn, account_id).await?
             && check_username(&mut conn, &packet.name).await?
