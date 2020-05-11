@@ -32,6 +32,7 @@ enum ConnectionHandleEvent {
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
     pub connection_id: EntityId,
+    account_id: Option<i64>,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
     opcode_table: Arc<Vec<Opcode>>,
@@ -79,6 +80,7 @@ impl<'a> GameSession<'a> {
 
         Ok(GameSession {
             connection_id,
+            account_id: None,
             stream,
             cipher,
             opcode_table,
@@ -217,11 +219,20 @@ impl<'a> GameSession<'a> {
 
     /// Handles the incoming events from the global or local ECS.
     async fn handle_event(&mut self, event: EcsEvent) -> Result<()> {
-        if let Event::ResponseDropConnection { .. } = &*event {
-            debug!("Received drop connection event");
-            bail!(AlmeticaError::ConnectionClosed);
+        // Handle special events
+        match &*event {
+            Event::ResponseDropConnection { .. } => {
+                debug!("Received drop connection event");
+                bail!(AlmeticaError::ConnectionClosed);
+            }
+            Event::ResponseLoginArbiter { account_id, .. } => {
+                debug!("Connection is authenticated with account ID {}", account_id);
+                self.account_id = Some(*account_id);
+            }
+            _ => { /* Nothing special to do */ }
         }
 
+        // Send out packet events to the client.
         match event.data()? {
             Some(data) => match event.opcode() {
                 Some(opcode) => {
@@ -278,34 +289,45 @@ impl<'a> GameSession<'a> {
             Opcode::UNKNOWN => {
                 warn!("Unmapped and unhandled packet with opcode value {}", opcode);
             }
-            _ => match Event::new_from_packet(self.connection_id, opcode_type, packet_data) {
-                Ok(event) => {
-                    debug!("Received valid packet {:?}", opcode_type);
-                    match event.target() {
-                        EventTarget::Global => {
-                            self.global_request_channel.send(Box::new(event)).await;
-                        }
-                        EventTarget::Local => {
-                            // TODO send to the local world
-                        }
-                        EventTarget::Connection => {
-                            error!(
-                                "Can't send event {} with target Connection from a connection",
-                                event
-                            );
+            // TODO handle the account_id
+            _ => {
+                match Event::new_from_packet(
+                    self.connection_id,
+                    self.account_id,
+                    opcode_type,
+                    packet_data,
+                ) {
+                    Ok(event) => {
+                        debug!("Received valid packet {:?}", opcode_type);
+                        match event.target() {
+                            EventTarget::Global => {
+                                self.global_request_channel.send(Box::new(event)).await;
+                            }
+                            EventTarget::Local => {
+                                // TODO send to the local world
+                            }
+                            EventTarget::Connection => {
+                                error!(
+                                    "Can't send event {} with target Connection from a connection",
+                                    event
+                                );
+                            }
                         }
                     }
+                    Err(e) => match e.downcast_ref::<AlmeticaError>() {
+                        Some(AlmeticaError::NoEventMappingForPacket) => {
+                            warn!("No mapping found for packet {:?}", opcode_type);
+                        }
+                        Some(AlmeticaError::UnauthorizedPacket) => {
+                            bail!("Unauthorized client did try to send a packet that needs authorization");
+                        }
+                        Some(..) | None => error!(
+                            "Can't create event from valid packet {:?}: {:?}",
+                            opcode_type, e
+                        ),
+                    },
                 }
-                Err(e) => match e.downcast_ref::<AlmeticaError>() {
-                    Some(AlmeticaError::NoEventMappingForPacket) => {
-                        warn!("No mapping found for packet {:?}", opcode_type);
-                    }
-                    Some(..) | None => error!(
-                        "Can't create event from valid packet {:?}: {:?}",
-                        opcode_type, e
-                    ),
-                },
-            },
+            }
         }
         Ok(())
     }

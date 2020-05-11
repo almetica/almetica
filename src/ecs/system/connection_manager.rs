@@ -54,7 +54,7 @@ pub fn connection_manager_system(
             {
                 error!("Rejecting login arbiter event: {:?}", e);
                 send_event(
-                    reject_login_arbiter(*connection_id, packet.region),
+                    reject_login_arbiter(*connection_id, -1, packet.region),
                     &connections,
                 );
                 drop_connection(*connection_id, &mut connections);
@@ -134,8 +134,6 @@ fn handle_request_check_version(
         .context("Could not find connection component for entity")?;
     connection.version_checked = true;
 
-    check_and_handle_post_initialization(connection_id, connection);
-
     Ok(())
 }
 
@@ -189,7 +187,7 @@ fn handle_request_login_arbiter(
         connection.region = Some(packet.region);
         connection.account_id = Some(account.id);
 
-        check_and_handle_post_initialization(connection_id, connection);
+        check_and_handle_post_initialization(connection_id, account.id, connection);
 
         Ok(())
     })?)
@@ -234,7 +232,11 @@ fn drop_connection(connection_id: EntityId, connections: &mut ViewMut<Connection
     connections.delete(connection_id);
 }
 
-fn check_and_handle_post_initialization(connection_id: EntityId, connection: &Connection) {
+fn check_and_handle_post_initialization(
+    connection_id: EntityId,
+    account_id: i64,
+    connection: &Connection,
+) {
     if connection.verified && connection.version_checked {
         if let Some(region) = connection.region {
             // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
@@ -244,7 +246,10 @@ fn check_and_handle_post_initialization(connection_id: EntityId, connection: &Co
             send_event_with_connection(accept_check_version(connection_id), &connection);
             send_event_with_connection(assemble_loading_screen_info(connection_id), &connection);
             send_event_with_connection(assemble_remain_play_time(connection_id), &connection);
-            send_event_with_connection(accept_login_arbiter(connection_id, region), &connection);
+            send_event_with_connection(
+                accept_login_arbiter(connection_id, account_id, region),
+                &connection,
+            );
             send_event_with_connection(
                 assemble_login_account_info(connection_id, "Almetica".to_string(), 456_456),
                 &connection,
@@ -319,9 +324,10 @@ fn reject_check_version(connection_id: EntityId) -> EcsEvent {
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection_id: EntityId, region: Region) -> EcsEvent {
+fn accept_login_arbiter(connection_id: EntityId, account_id: i64, region: Region) -> EcsEvent {
     Box::new(Event::ResponseLoginArbiter {
         connection_id,
+        account_id,
         packet: SLoginArbiter {
             success: true,
             login_queue: false,
@@ -336,9 +342,10 @@ fn accept_login_arbiter(connection_id: EntityId, region: Region) -> EcsEvent {
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection_id: EntityId, region: Region) -> EcsEvent {
+fn reject_login_arbiter(connection_id: EntityId, account_id: i64, region: Region) -> EcsEvent {
     Box::new(Event::ResponseLoginArbiter {
         connection_id,
+        account_id,
         packet: SLoginArbiter {
             success: false,
             login_queue: false,
@@ -729,7 +736,7 @@ mod tests {
                         Box::new(Event::RequestLoginArbiter {
                             connection_id: con,
                             packet: CLoginArbiter {
-                                master_account_name: account.name,
+                                master_account_name: account.name.clone(),
                                 ticket,
                                 unk1: 0,
                                 unk2: 0,
@@ -788,9 +795,11 @@ mod tests {
             if let Event::ResponseLoginArbiter {
                 connection_id,
                 packet,
+                account_id,
             } = &*list[3]
             {
                 assert_eq!(*connection_id, con);
+                assert_eq!(*account_id, account.id);
                 assert_eq!(packet.success, true);
                 assert_eq!(packet.status, 65538);
             } else {

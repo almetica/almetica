@@ -3,7 +3,7 @@ use crate::ecs::component::Connection;
 use crate::ecs::event::Event::ResponseGetUserList;
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::WorldId;
-use crate::ecs::system::{get_account_id, send_event};
+use crate::ecs::system::send_event;
 use crate::model::entity::User;
 use crate::model::repository::user;
 use crate::model::{Vec3, Vec3a};
@@ -33,8 +33,13 @@ pub fn user_manager_system(
 
     // TODO Look for users without a connection component. Set their "deletion time" and persist them then.
     (&incoming_events).iter().for_each(|event| match &**event {
-        Event::RequestCanCreateUser { connection_id, .. } => {
-            if let Err(e) = handle_can_create_user(*connection_id, &connections, &pool) {
+        Event::RequestCanCreateUser {
+            connection_id,
+            account_id,
+            ..
+        } => {
+            if let Err(e) = handle_can_create_user(*connection_id, *account_id, &connections, &pool)
+            {
                 error!("Rejecting create user request: {:?}", e);
                 send_event(
                     assemble_can_create_user_response(*connection_id, false),
@@ -42,8 +47,12 @@ pub fn user_manager_system(
                 );
             }
         }
-        Event::RequestGetUserList { connection_id, .. } => {
-            if let Err(e) = handle_user_list(*connection_id, &connections, &pool) {
+        Event::RequestGetUserList {
+            connection_id,
+            account_id,
+            ..
+        } => {
+            if let Err(e) = handle_user_list(*connection_id, *account_id, &connections, &pool) {
                 error!("Rejecting get user list request: {:?}", e);
                 send_event(
                     assemble_user_list_response(*connection_id, &Vec::new(), true, true),
@@ -54,6 +63,7 @@ pub fn user_manager_system(
         Event::RequestCheckUserName {
             connection_id,
             packet,
+            ..
         } => {
             if let Err(e) = handle_check_user_name(&packet, *connection_id, &connections, &pool) {
                 error!("Rejecting check user name request: {:?}", e);
@@ -65,9 +75,12 @@ pub fn user_manager_system(
         }
         Event::RequestCreateUser {
             connection_id,
+            account_id,
             packet,
         } => {
-            if let Err(e) = handle_create_user(&packet, *connection_id, &connections, &pool) {
+            if let Err(e) =
+                handle_create_user(&packet, *connection_id, *account_id, &connections, &pool)
+            {
                 error!("Rejecting create user request: {:?}", e);
                 send_event(
                     assemble_create_user_response(*connection_id, false),
@@ -81,6 +94,7 @@ pub fn user_manager_system(
 
 fn handle_user_list(
     connection_id: EntityId,
+    account_id: i64,
     connections: &View<Connection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
@@ -88,8 +102,6 @@ fn handle_user_list(
     let _enter = span.enter();
 
     debug!("Get user list event incoming");
-
-    let account_id = get_account_id(connection_id, connections)?;
 
     Ok(task::block_on(async {
         let mut conn = pool
@@ -130,6 +142,7 @@ fn handle_user_list(
 
 fn handle_can_create_user(
     connection_id: EntityId,
+    account_id: i64,
     connections: &View<Connection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
@@ -137,8 +150,6 @@ fn handle_can_create_user(
     let _enter = span.enter();
 
     debug!("Can create user event incoming");
-
-    let account_id = get_account_id(connection_id, connections)?;
 
     Ok(task::block_on(async {
         let mut conn = pool
@@ -165,6 +176,7 @@ fn handle_can_create_user(
 fn handle_create_user(
     packet: &CCreateUser,
     connection_id: EntityId,
+    account_id: i64,
     connections: &View<Connection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
@@ -172,8 +184,6 @@ fn handle_create_user(
     let _enter = span.enter();
 
     debug!("Create user event incoming");
-
-    let account_id = get_account_id(connection_id, connections)?;
 
     Ok(task::block_on(async {
         let mut conn = pool
@@ -585,6 +595,7 @@ mod tests {
                                 &mut events,
                                 Box::new(Event::RequestCanCreateUser {
                                     connection_id,
+                                    account_id: -1,
                                     packet: CCanCreateUser {},
                                 }),
                             );
@@ -630,6 +641,7 @@ mod tests {
                         &mut events,
                         Box::new(Event::RequestCanCreateUser {
                             connection_id,
+                            account_id: account.id,
                             packet: CCanCreateUser {},
                         }),
                     );
@@ -680,7 +692,7 @@ mod tests {
     fn test_check_user_name_available() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_id, rx_channel, _account) =
+            let (world, connection_id, rx_channel, account) =
                 task::block_on(async { setup_with_connection(pool).await })?;
 
             world.run(
@@ -690,6 +702,7 @@ mod tests {
                             &mut events,
                             Box::new(Event::RequestCheckUserName {
                                 connection_id,
+                                account_id: account.id,
                                 packet: CCheckUserName {
                                     name: format!("NotTakenUserName{}", i),
                                 },
@@ -726,7 +739,7 @@ mod tests {
     fn test_check_user_name_invalid_username() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_id, rx_channel, _account) =
+            let (world, connection_id, rx_channel, account) =
                 task::block_on(async { setup_with_connection(pool).await })?;
 
             world.run(
@@ -735,6 +748,7 @@ mod tests {
                         &mut events,
                         Box::new(Event::RequestCheckUserName {
                             connection_id,
+                            account_id: account.id,
                             packet: CCheckUserName {
                                 name: "H!x?or{}".to_string(),
                             },
@@ -778,6 +792,7 @@ mod tests {
                         &mut events,
                         Box::new(Event::RequestGetUserList {
                             connection_id,
+                            account_id: account.id,
                             packet: CGetUserList {},
                         }),
                     );
@@ -819,7 +834,7 @@ mod tests {
     fn test_get_empty_user_list() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_id, rx_channel, _account) =
+            let (world, connection_id, rx_channel, account) =
                 task::block_on(async { setup_with_connection(pool).await })?;
 
             world.run(
@@ -828,6 +843,7 @@ mod tests {
                         &mut events,
                         Box::new(Event::RequestGetUserList {
                             connection_id,
+                            account_id: account.id,
                             packet: CGetUserList {},
                         }),
                     );

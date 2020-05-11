@@ -20,6 +20,7 @@ pub fn settings_manager_system(
             Event::RequestSetVisibleRange {
                 connection_id,
                 packet,
+                ..
             } => {
                 handle_set_visible_range(*connection_id, &packet, &mut settings, &mut entities);
             }
@@ -94,6 +95,7 @@ mod tests {
                     &mut events,
                     Box::new(Event::RequestSetVisibleRange {
                         connection_id,
+                        account_id: -1,
                         packet: CSetVisibleRange { range: 4234 },
                     }),
                 );

@@ -24,6 +24,9 @@ pub enum AlmeticaError {
     #[error("no event mapping found for packet")]
     NoEventMappingForPacket,
 
+    #[error("client sent authenticated packet without being authenticated")]
+    UnauthorizedPacket,
+
     #[error("unsupported password hash")]
     UnsupportedPasswordHash,
 

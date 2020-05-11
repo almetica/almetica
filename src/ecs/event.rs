@@ -38,28 +38,40 @@ pub enum EventTarget {
 
 macro_rules! assemble_event {
     (
-    Packet Events {
-        $($p_ty:ident{packet: $p_packet_type:ty $(, $p_arg_name:ident: $p_arg_type:ty)*}, $p_opcode:ident, $p_target:ident;)*
+    Authenticated Packet Events {
+        $($a_ty:ident{packet: $a_packet_type:ty $(, $a_arg_name:ident: $a_arg_type:ty)*}, $a_opcode:ident, $a_target:ident;)*
+    }
+    Unauthenticated Packet Events {
+        $($u_ty:ident{packet: $u_packet_type:ty $(, $u_arg_name:ident: $u_arg_type:ty)*}, $u_opcode:ident, $u_target:ident;)*
     }
     System Events {
-        $($e_ty:ident{$($e_arg_name:ident: $e_arg_type:ty)*}, $e_target:ident;)*
+        $($s_ty:ident{$($s_arg_name:ident: $s_arg_type:ty)*}, $s_target:ident;)*
     }
     ) => {
         /// Event enum for all events.
         #[derive(Clone, Debug)]
         pub enum Event {
             RequestRegisterConnection{response_channel: Sender<Box<Event>>},
-            $($p_ty {connection_id: EntityId, packet: $p_packet_type $(,$p_arg_name: $p_arg_type)*},)*
-            $($e_ty {connection_id: EntityId, $($e_arg_name: $e_arg_type),*},)*
+            $($a_ty {connection_id: EntityId, account_id: i64, packet: $a_packet_type $(,$a_arg_name: $a_arg_type)*},)*
+            $($u_ty {connection_id: EntityId, packet: $u_packet_type $(,$u_arg_name: $u_arg_type)*},)*
+            $($s_ty {connection_id: EntityId, $($s_arg_name: $s_arg_type),*},)*
         }
 
         impl Event {
             /// Creates a new Request/Response event for the given opcode & packet data.
-            pub fn new_from_packet(connection_id: EntityId, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
+            pub fn new_from_packet(connection_id: EntityId, account_id: Option<i64>, opcode: Opcode, packet_data: Vec<u8>) -> Result<Event> {
                 match opcode {
-                    $(Opcode::$p_opcode => {
+                    $(Opcode::$a_opcode => {
+                        if account_id.is_none() {
+                            bail!(AlmeticaError::UnauthorizedPacket);
+                        }
+
                         let packet = from_vec(packet_data)?;
-                        Ok(Event::$p_ty{connection_id: connection_id, packet})
+                        Ok(Event::$a_ty{connection_id, account_id: account_id.unwrap(), packet})
+                    },)*
+                    $(Opcode::$u_opcode => {
+                        let packet = from_vec(packet_data)?;
+                        Ok(Event::$u_ty{connection_id: connection_id, packet})
                     },)*
                     _ => bail!(AlmeticaError::NoEventMappingForPacket),
                 }
@@ -69,15 +81,20 @@ macro_rules! assemble_event {
             pub fn connection_id(&self) -> Option<EntityId> {
                 match self {
                     Event::RequestRegisterConnection{..} => None,
-                    $(Event::$p_ty{connection_id,..} => Some(*connection_id),)*
-                    $(Event::$e_ty{connection_id,..} => Some(*connection_id),)*
+                    $(Event::$a_ty{connection_id,..} => Some(*connection_id),)*
+                    $(Event::$u_ty{connection_id,..} => Some(*connection_id),)*
+                    $(Event::$s_ty{connection_id,..} => Some(*connection_id),)*
                 }
             }
 
             /// Get the data from a packet event.
             pub fn data(&self) -> Result<Option<Vec<u8>>> {
                 match self {
-                    $(Event::$p_ty{packet, ..} => {
+                    $(Event::$a_ty{packet, ..} => {
+                        let data = to_vec(packet)?;
+                        Ok(Some(data))
+                    },)*
+                    $(Event::$u_ty{packet, ..} => {
                         let data = to_vec(packet)?;
                         Ok(Some(data))
                     },)*
@@ -88,8 +105,11 @@ macro_rules! assemble_event {
             /// Get the opcode from a packet event.
             pub fn opcode(&self) -> Option<Opcode> {
                 match self {
-                    $(Event::$p_ty{..} => {
-                        Some(Opcode::$p_opcode)
+                    $(Event::$a_ty{..} => {
+                        Some(Opcode::$a_opcode)
+                    },)*
+                    $(Event::$u_ty{..} => {
+                        Some(Opcode::$u_opcode)
                     },)*
                     _ => None,
                 }
@@ -99,8 +119,9 @@ macro_rules! assemble_event {
             pub fn target(&self) -> EventTarget {
                 match self {
                     Event::RequestRegisterConnection{..} => EventTarget::Global,
-                    $(Event::$p_ty{..} => EventTarget::$p_target,)*
-                    $(Event::$e_ty{..} => EventTarget::$e_target,)*
+                    $(Event::$a_ty{..} => EventTarget::$a_target,)*
+                    $(Event::$u_ty{..} => EventTarget::$u_target,)*
+                    $(Event::$s_ty{..} => EventTarget::$s_target,)*
                 }
             }
         }
@@ -109,8 +130,9 @@ macro_rules! assemble_event {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 match self {
                     Event::RequestRegisterConnection{..} => write!(f, "{}", stringify!(RequestRegisterConnection)),
-                    $(Event::$p_ty{..} => write!(f, "{}", stringify!($p_ty)),)*
-                    $(Event::$e_ty{..} => write!(f, "{}", stringify!($e_ty)),)*
+                    $(Event::$a_ty{..} => write!(f, "{}", stringify!($a_ty)),)*
+                    $(Event::$u_ty{..} => write!(f, "{}", stringify!($u_ty)),)*
+                    $(Event::$s_ty{..} => write!(f, "{}", stringify!($s_ty)),)*
                 }
             }
         }
@@ -118,26 +140,31 @@ macro_rules! assemble_event {
 }
 
 assemble_event! {
-    Packet Events {
-        RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Global;
-        ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Connection;
-        RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Global;
-        ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Connection;
-        ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Connection;
-        ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Connection;
-        ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Connection;
-        RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Global;
-        RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Global;
-        ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Global;
-        RequestPong{packet: CPong}, C_PONG, Global;
-        ResponsePing{packet: SPing}, S_PING, Connection;
+    // Packets that need an account ID attached.
+    Authenticated Packet Events {
         RequestCanCreateUser{packet: CCanCreateUser}, C_CAN_CREATE_USER, Global;
-        ResponseCanCreateUser{packet: SCanCreateUser}, S_CAN_CREATE_USER, Connection;
         RequestCheckUserName{packet: CCheckUserName}, C_CHECK_USERNAME, Global;
-        ResponseCheckUserName{packet: SCheckUserName}, S_CHECK_USERNAME, Connection;
         RequestCreateUser{packet: CCreateUser}, C_CREATE_USER, Global;
-        ResponseCreateUser{packet: SCreateUser}, S_CREATE_USER, Connection;
+        RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Global;
+        RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Global;
+        ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Connection;
     }
+    // Packet events that don't need an account ID attached.
+    Unauthenticated Packet Events {
+        RequestLoginArbiter{packet: CLoginArbiter}, C_LOGIN_ARBITER, Global;
+        RequestCheckVersion{packet: CCheckVersion}, C_CHECK_VERSION, Global;
+        RequestPong{packet: CPong}, C_PONG, Global;
+        ResponseCanCreateUser{packet: SCanCreateUser}, S_CAN_CREATE_USER, Connection;
+        ResponseCheckUserName{packet: SCheckUserName}, S_CHECK_USERNAME, Connection;
+        ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Connection;
+        ResponseCreateUser{packet: SCreateUser}, S_CREATE_USER, Connection;
+        ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Global;
+        ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Connection;
+        ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Connection;
+        ResponsePing{packet: SPing}, S_PING, Connection;
+        ResponseRemainPlayTime{packet: SRemainPlayTime}, S_REMAIN_PLAY_TIME, Connection;
+    }
+    // System events are all packets that are not de-/serialized from/to a packet.
     System Events {
         // The connection will get it's EntityId returned with this message after registration.
         ResponseRegisterConnection{}, Connection;
@@ -164,7 +191,7 @@ mod tests {
             0x2, 0x0, 0x8, 0x0, 0x8, 0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1d, 0x8a, 0x5, 0x0,
             0x14, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0xce, 0x7b, 0x5, 0x0,
         ];
-        let event = Event::new_from_packet(entity, Opcode::C_CHECK_VERSION, data)?;
+        let event = Event::new_from_packet(entity, None, Opcode::C_CHECK_VERSION, data)?;
         if let Event::RequestCheckVersion {
             connection_id: entity_id,
             packet,
@@ -179,6 +206,25 @@ mod tests {
             panic!("New didn't returned the right event.");
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_unauthorized_packet_creation() -> Result<()> {
+        let entity = World::new().borrow::<EntitiesViewMut>().add_entity((), ());
+
+        let data = vec![
+            0x6, 0x0, 0x54, 0x0, 0x68, 0x0, 0x65, 0x0, 0x42, 0x0, 0x65, 0x0, 0x73, 0x0, 0x74, 0x0,
+            0x4e, 0x0, 0x61, 0x0, 0x6d, 0x0, 0x65, 0x0, 0x0, 0x0,
+        ];
+
+        match Event::new_from_packet(entity, None, Opcode::C_CHECK_USERNAME, data) {
+            Ok(..) => panic!("Could create an authenticated packet without an account ID"),
+            Err(e) => match e.downcast_ref::<AlmeticaError>() {
+                Some(AlmeticaError::UnauthorizedPacket) => Ok(()),
+                Some(..) => panic!(e),
+                None => panic!(e),
+            },
+        }
     }
 
     #[test]

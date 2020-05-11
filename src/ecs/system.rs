@@ -13,25 +13,8 @@ pub use user_manager::user_manager_system;
 
 use crate::ecs::component::Connection;
 use crate::ecs::event::EcsEvent;
-use crate::Result;
-use anyhow::{bail, Context};
 use async_std::sync::TrySendError;
-use shipyard::*;
 use tracing::{debug, error, info_span, trace};
-
-/// Checks the connection component if an account_id is present.
-pub fn get_account_id(connection_id: EntityId, connections: &View<Connection>) -> Result<i64> {
-    if let Some(account_id) = connections
-        .try_get(connection_id)
-        .context("Couldn't find the connection component")?
-        .account_id
-    {
-        Ok(account_id)
-    } else {
-        // FIXME: We need a way to drop badly behaving clients as soon as possible.
-        bail!("Calling connection is not yet authenticated.")
-    }
-}
 
 /// Send an outgoing event.
 pub fn send_event<'a, T>(event: EcsEvent, connections: T)

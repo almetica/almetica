@@ -8,7 +8,7 @@ use std::time::Instant;
 /// Tracks the connection and login information of an user.
 pub struct Connection {
     pub channel: Sender<EcsEvent>,
-    pub account_id: Option<i64>,
+    pub account_id: Option<i64>, // TODO transfer in own component, so that ping/pong can filter better to only send to authenticated connections
     pub verified: bool,
     pub version_checked: bool,
     pub region: Option<Region>,
