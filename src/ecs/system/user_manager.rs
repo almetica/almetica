@@ -120,11 +120,14 @@ fn handle_user_list(
                 connections,
             );
         } else {
+            let chunk_count = users.chunks(CHUNK_SIZE).count();
+            let mut current_chunk = 1;
+
             for chunk in users.chunks(CHUNK_SIZE) {
-                let is_last_page = if chunk.len() == CHUNK_SIZE {
-                    false
-                } else {
+                let is_last_page = if current_chunk == chunk_count {
                     true
+                } else {
+                    false
                 };
 
                 send_event(
@@ -133,6 +136,7 @@ fn handle_user_list(
                 );
 
                 is_first_page = false;
+                current_chunk += 1;
             }
         }
 
@@ -801,6 +805,12 @@ mod tests {
 
             world.run(user_manager_system);
 
+            let expected_packet_count = if MAX_USERS_PER_ACCOUNT % CHUNK_SIZE != 0 {
+                (MAX_USERS_PER_ACCOUNT / CHUNK_SIZE) + 1
+            } else {
+                MAX_USERS_PER_ACCOUNT / CHUNK_SIZE
+            };
+
             let mut char_count = 0;
             let mut packet_count = 0;
             loop {
@@ -808,7 +818,21 @@ mod tests {
                     packet_count += 1;
                     match *event {
                         Event::ResponseGetUserList { packet, .. } => {
-                            char_count += packet.characters.len()
+                            char_count += packet.characters.len();
+
+                            if packet_count == 1 {
+                                // First page
+                                assert_eq!(packet.first, true);
+                                assert_eq!(packet.more, true);
+                            } else if packet_count == expected_packet_count {
+                                // Last page
+                                assert_eq!(packet.first, false);
+                                assert_eq!(packet.more, false);
+                            } else {
+                                // In between
+                                assert_eq!(packet.first, false);
+                                assert_eq!(packet.more, true);
+                            }
                         }
                         _ => panic!("Received an unexpected event: {}", event),
                     }
@@ -816,12 +840,6 @@ mod tests {
                     break;
                 }
             }
-
-            let expected_packet_count = if MAX_USERS_PER_ACCOUNT % CHUNK_SIZE != 0 {
-                (MAX_USERS_PER_ACCOUNT / CHUNK_SIZE) + 1
-            } else {
-                MAX_USERS_PER_ACCOUNT / CHUNK_SIZE
-            };
 
             assert_eq!(char_count, MAX_USERS_PER_ACCOUNT);
             assert_eq!(packet_count, expected_packet_count);
