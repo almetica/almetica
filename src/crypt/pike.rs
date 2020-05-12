@@ -5,8 +5,8 @@ use byteorder::{ByteOrder, LittleEndian};
 /// Implements the Pike stream cipher.
 pub struct Pike {
     generators: [KeyGenerator; 3],
-    change_data: u32,
-    change_len: usize,
+    last_cryptor: u32,
+    last_cryptor_len: usize,
 }
 
 impl Pike {
@@ -18,8 +18,8 @@ impl Pike {
                 KeyGenerator::new(57, 50),
                 KeyGenerator::new(58, 39),
             ],
-            change_data: 0,
-            change_len: 0,
+            last_cryptor: 0,
+            last_cryptor_len: 0,
         };
 
         // Expand the given key using the botched (wrong) SHA1 implementation.
@@ -50,47 +50,53 @@ impl Pike {
         sc
     }
 
-    /// Applies the Pike stream cipher on the data. The data needs to be at least 4 bytes in size.
+    /// Applies the Pike stream cipher on the data.
     #[inline]
     pub fn apply_keystream(&mut self, data: &mut [u8]) {
+        // Look if we have parts of an old crypt key left and decide how much to use from.
         let size = data.len();
-        let pre = if size < self.change_len {
+        let prelude_size = if size < self.last_cryptor_len {
             size
         } else {
-            self.change_len
+            self.last_cryptor_len
         };
 
-        if pre != 0 {
-            for (i, el) in data.iter_mut().take(pre).enumerate() {
-                let shift = 8 * (4 - self.change_len + i);
-                *el ^= (self.change_data >> shift) as u8;
+        // Use all or parts of the old crypt key.
+        if prelude_size != 0 {
+            for (i, el) in data.iter_mut().take(prelude_size).enumerate() {
+                let shift = 8 * (4 - self.last_cryptor_len + i);
+                *el ^= (self.last_cryptor >> shift) as u8;
             }
-            self.change_len -= pre;
+            self.last_cryptor_len -= prelude_size;
         }
 
-        for i in (pre..size - 3).step_by(4) {
-            self.clock_keys();
-            for k in self.generators.iter() {
-                data[i] ^= k.sum as u8;
-                data[i + 1] ^= (k.sum >> 8) as u8;
-                data[i + 2] ^= (k.sum >> 16) as u8;
-                data[i + 3] ^= (k.sum >> 24) as u8;
+        // Crypt the data in 4 bytes steps.
+        if size >= 4 {
+            for i in (prelude_size..size - 3).step_by(4) {
+                self.clock_keys();
+                for k in self.generators.iter() {
+                    data[i] ^= k.sum as u8;
+                    data[i + 1] ^= (k.sum >> 8) as u8;
+                    data[i + 2] ^= (k.sum >> 16) as u8;
+                    data[i + 3] ^= (k.sum >> 24) as u8;
+                }
             }
         }
 
-        let remain = (size - pre) & 3;
-        if remain != 0 {
+        // Crypt the last bytes (at most 3) and save the crypt key for the next data.
+        let postlude_size = (size - prelude_size) & 3;
+        if postlude_size != 0 {
             self.clock_keys();
-            self.change_data = 0;
+            self.last_cryptor = 0;
             for k in self.generators.iter() {
-                self.change_data ^= k.sum;
+                self.last_cryptor ^= k.sum;
             }
 
-            for i in 0..remain {
-                data[size - remain + i] ^= (self.change_data >> (i * 8)) as u8;
+            for i in 0..postlude_size {
+                data[size - postlude_size + i] ^= (self.last_cryptor >> (i * 8)) as u8;
             }
 
-            self.change_len = 4 - remain;
+            self.last_cryptor_len = 4 - postlude_size;
         }
     }
 
@@ -234,5 +240,39 @@ mod tests {
         let mut data: [u8; 4] = [0x11; 4];
         cipher.apply_keystream(&mut data);
         assert_eq!(encode(&data), "c49d4467");
+    }
+
+    #[test]
+    fn test_cipher_2_byte_steps() {
+        let mut cipher = setup_cipher();
+
+        let mut data: [u8; 2] = [0x11; 2];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "c49d");
+
+        let mut data: [u8; 2] = [0x11; 2];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "4467");
+    }
+
+    #[test]
+    fn test_cipher_1_byte_steps() {
+        let mut cipher = setup_cipher();
+
+        let mut data: [u8; 1] = [0x11; 1];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "c4");
+
+        let mut data: [u8; 1] = [0x11; 1];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "9d");
+
+        let mut data: [u8; 1] = [0x11; 1];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "44");
+
+        let mut data: [u8; 1] = [0x11; 1];
+        cipher.apply_keystream(&mut data);
+        assert_eq!(encode(&data), "67");
     }
 }
