@@ -381,8 +381,6 @@ mod tests {
                     &mut connections,
                     Connection {
                         channel: tx_channel,
-                        account_id: None,
-                        verified: false,
                         version_checked: false,
                         region: None,
                         last_pong: Instant::now(),

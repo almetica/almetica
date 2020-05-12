@@ -1,4 +1,4 @@
-use crate::ecs::component::Connection;
+use crate::ecs::component::{AccountID, Connection};
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::WorldId;
 use crate::ecs::system::{send_event, send_event_with_connection};
@@ -17,6 +17,7 @@ use tracing::{debug, error, info, info_span, trace};
 /// Connection manager handles the connection components.
 pub fn connection_manager_system(
     incoming_events: View<EcsEvent>,
+    mut account_ids: ViewMut<AccountID>,
     mut connections: ViewMut<Connection>,
     mut entities: EntitiesViewMut,
     pool: UniqueView<PgPool>,
@@ -49,9 +50,14 @@ pub fn connection_manager_system(
             connection_id,
             packet,
         } => {
-            if let Err(e) =
-                handle_request_login_arbiter(*connection_id, &packet, &mut connections, &pool)
-            {
+            if let Err(e) = handle_request_login_arbiter(
+                *connection_id,
+                &packet,
+                &mut account_ids,
+                &mut connections,
+                &mut entities,
+                &pool,
+            ) {
                 error!("Rejecting login arbiter event: {:?}", e);
                 send_event(
                     reject_login_arbiter(*connection_id, -1, packet.region),
@@ -92,8 +98,6 @@ fn handle_connection_registration(
         &mut *connections,
         Connection {
             channel: response_channel,
-            account_id: None,
-            verified: false,
             version_checked: false,
             region: None,
             last_pong: Instant::now(),
@@ -140,7 +144,9 @@ fn handle_request_check_version(
 fn handle_request_login_arbiter(
     connection_id: EntityId,
     packet: &CLoginArbiter,
+    account_ids: &mut ViewMut<AccountID>,
     mut connections: &mut ViewMut<Connection>,
+    entities: &mut EntitiesViewMut,
     pool: &PgPool,
 ) -> Result<()> {
     let span = info_span!("connection", connection = ?connection_id);
@@ -152,6 +158,10 @@ fn handle_request_login_arbiter(
     );
 
     Ok(task::block_on(async {
+        let mut connection = (&mut connections)
+            .try_get(connection_id)
+            .context("Could not find connection component for entity")?;
+
         trace!("Ticket value: {}", base64::encode(&packet.ticket));
 
         if packet.ticket.is_empty() {
@@ -175,17 +185,12 @@ fn handle_request_login_arbiter(
             packet.master_account_name
         );
 
-        let mut connection = (&mut connections)
-            .try_get(connection_id)
-            .context("Could not find connection component for entity")?;
-
         let account = account::get_by_name(&mut conn, &packet.master_account_name)
             .await
             .context("Can't find the account for the given master account name")?;
 
-        connection.verified = true;
         connection.region = Some(packet.region);
-        connection.account_id = Some(account.id);
+        entities.add_component(account_ids, AccountID(account.id), connection_id);
 
         check_and_handle_post_initialization(connection_id, account.id, connection);
 
@@ -237,26 +242,24 @@ fn check_and_handle_post_initialization(
     account_id: i64,
     connection: &Connection,
 ) {
-    if connection.verified && connection.version_checked {
-        if let Some(region) = connection.region {
-            // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
-            debug!("Sending connection post initialization commands");
+    if let Some(region) = connection.region {
+        // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
+        debug!("Sending connection post initialization commands");
 
-            // FIXME get from configuration (server name and PVP setting) and database (account_id). Set the account_id in the connection component!
-            send_event_with_connection(accept_check_version(connection_id), &connection);
-            send_event_with_connection(assemble_loading_screen_info(connection_id), &connection);
-            send_event_with_connection(assemble_remain_play_time(connection_id), &connection);
-            send_event_with_connection(
-                accept_login_arbiter(connection_id, account_id, region),
-                &connection,
-            );
-            send_event_with_connection(
-                assemble_login_account_info(connection_id, "Almetica".to_string(), 456_456),
-                &connection,
-            );
-        } else {
-            error!("Region was not set in connection component");
-        }
+        // FIXME get from configuration (server name and PVP setting)!
+        send_event_with_connection(accept_check_version(connection_id), &connection);
+        send_event_with_connection(assemble_loading_screen_info(connection_id), &connection);
+        send_event_with_connection(assemble_remain_play_time(connection_id), &connection);
+        send_event_with_connection(
+            accept_login_arbiter(connection_id, account_id, region),
+            &connection,
+        );
+        send_event_with_connection(
+            assemble_login_account_info(connection_id, "Almetica".to_string(), account_id),
+            &connection,
+        );
+    } else {
+        error!("Region was not set in connection component");
     }
 }
 
@@ -400,8 +403,6 @@ mod tests {
                     &mut connections,
                     Connection {
                         channel: tx_channel,
-                        account_id: None,
-                        verified: false,
                         version_checked: false,
                         region: None,
                         last_pong: Instant::now(),
@@ -606,11 +607,9 @@ mod tests {
             world.run(connection_manager_system);
 
             let valid_count = world
-                .borrow::<View<Connection>>()
+                .borrow::<View<AccountID>>()
                 .iter()
-                .filter(|connection| {
-                    connection.verified && connection.account_id == Some(account.id)
-                })
+                .filter(|account_id| account_id.0 == account.id)
                 .count();
             assert_eq!(valid_count, 1);
 
@@ -812,6 +811,8 @@ mod tests {
             } = &*list[4]
             {
                 assert_eq!(*connection_id, con);
+                assert_eq!(packet.account_id, account.id);
+                assert_eq!(packet.server_name, "Almetica".to_string());
                 assert!(!packet.server_name.trim().is_empty());
             } else {
                 panic!("Received packets in wrong order");
