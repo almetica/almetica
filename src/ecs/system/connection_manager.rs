@@ -1,4 +1,4 @@
-use crate::ecs::component::{AccountID, Connection};
+use crate::ecs::component::{Account, Connection};
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::WorldId;
 use crate::ecs::system::{send_event, send_event_with_connection};
@@ -14,10 +14,14 @@ use sqlx::PgPool;
 use std::time::Instant;
 use tracing::{debug, error, info, info_span, trace};
 
+const MAX_UNAUTHENTICATED_LIFETIME: u64 = 5;
+const PING_INTERVAL: u64 = 60;
+const PONG_DEADLINE: u64 = 75;
+
 /// Connection manager handles the connection components.
 pub fn connection_manager_system(
     incoming_events: View<EcsEvent>,
-    mut account_ids: ViewMut<AccountID>,
+    mut account_ids: ViewMut<Account>,
     mut connections: ViewMut<Connection>,
     mut entities: EntitiesViewMut,
     pool: UniqueView<PgPool>,
@@ -72,16 +76,32 @@ pub fn connection_manager_system(
 
     // Check the status of the existing connections and drop inactive connections
     let now = Instant::now();
-    let mut to_delete = Vec::new();
+
+    // Ping/Pong test for authenticated connections
+    let mut to_drop = Vec::new();
     (&mut connections)
         .iter()
         .with_id()
+        .filter(|(_, connection)| connection.is_authenticated)
         .for_each(|(connection_id, mut connection)| {
             if handle_ping(&now, connection_id, &mut connection) {
-                to_delete.push(connection_id);
+                to_drop.push(connection_id);
             }
         });
-    for connection_id in to_delete {
+
+    // Unauthenticated connections only live for 5 seconds
+    (&mut connections)
+        .iter()
+        .with_id()
+        .filter(|(_, connection)| !connection.is_authenticated)
+        .for_each(|(connection_id, connection)| {
+            let last_pong_duration = now.duration_since(connection.last_pong).as_secs();
+            if last_pong_duration >= MAX_UNAUTHENTICATED_LIFETIME {
+                to_drop.push(connection_id);
+            }
+        });
+
+    for connection_id in to_drop {
         drop_connection(connection_id, &mut connections);
     }
 }
@@ -98,8 +118,8 @@ fn handle_connection_registration(
         &mut *connections,
         Connection {
             channel: response_channel,
-            version_checked: false,
-            region: None,
+            is_authenticated: false,
+            is_version_checked: false,
             last_pong: Instant::now(),
             waiting_for_pong: false,
         },
@@ -136,7 +156,7 @@ fn handle_request_check_version(
     let mut connection = (&mut connections)
         .try_get(connection_id)
         .context("Could not find connection component for entity")?;
-    connection.version_checked = true;
+    connection.is_version_checked = true;
 
     Ok(())
 }
@@ -144,7 +164,7 @@ fn handle_request_check_version(
 fn handle_request_login_arbiter(
     connection_id: EntityId,
     packet: &CLoginArbiter,
-    account_ids: &mut ViewMut<AccountID>,
+    account_ids: &mut ViewMut<Account>,
     mut connections: &mut ViewMut<Connection>,
     entities: &mut EntitiesViewMut,
     pool: &PgPool,
@@ -189,10 +209,15 @@ fn handle_request_login_arbiter(
             .await
             .context("Can't find the account for the given master account name")?;
 
-        connection.region = Some(packet.region);
-        entities.add_component(account_ids, AccountID(account.id), connection_id);
+        connection.is_authenticated = true;
 
-        check_and_handle_post_initialization(connection_id, account.id, connection);
+        let account = Account {
+            id: account.id,
+            region: packet.region,
+        };
+        entities.add_component(account_ids, account, connection_id);
+
+        check_and_handle_post_initialization(connection_id, account, connection);
 
         Ok(())
     })?)
@@ -205,10 +230,13 @@ fn handle_ping(now: &Instant, connection_id: EntityId, mut connection: &mut Conn
 
     let last_pong_duration = now.duration_since(connection.last_pong).as_secs();
 
-    if last_pong_duration >= 90 {
-        debug!("Didn't received pong in 30 seconds. Dropping connection");
+    if last_pong_duration >= PONG_DEADLINE {
+        debug!(
+            "Didn't received pong in {} seconds. Dropping connection",
+            PONG_DEADLINE
+        );
         true
-    } else if !connection.waiting_for_pong && last_pong_duration >= 60 {
+    } else if !connection.waiting_for_pong && last_pong_duration >= PING_INTERVAL {
         debug!("Sending ping");
         connection.waiting_for_pong = true;
         send_event_with_connection(assemble_ping(connection_id), connection);
@@ -239,28 +267,24 @@ fn drop_connection(connection_id: EntityId, connections: &mut ViewMut<Connection
 
 fn check_and_handle_post_initialization(
     connection_id: EntityId,
-    account_id: i64,
+    account: Account,
     connection: &Connection,
 ) {
-    if let Some(region) = connection.region {
-        // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
-        debug!("Sending connection post initialization commands");
+    // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
+    debug!("Sending connection post initialization commands");
 
-        // FIXME get from configuration (server name and PVP setting)!
-        send_event_with_connection(accept_check_version(connection_id), &connection);
-        send_event_with_connection(assemble_loading_screen_info(connection_id), &connection);
-        send_event_with_connection(assemble_remain_play_time(connection_id), &connection);
-        send_event_with_connection(
-            accept_login_arbiter(connection_id, account_id, region),
-            &connection,
-        );
-        send_event_with_connection(
-            assemble_login_account_info(connection_id, "Almetica".to_string(), account_id),
-            &connection,
-        );
-    } else {
-        error!("Region was not set in connection component");
-    }
+    // FIXME get from configuration (server name and PVP setting)!
+    send_event_with_connection(accept_check_version(connection_id), &connection);
+    send_event_with_connection(assemble_loading_screen_info(connection_id), &connection);
+    send_event_with_connection(assemble_remain_play_time(connection_id), &connection);
+    send_event_with_connection(
+        accept_login_arbiter(connection_id, account.id, account.region),
+        &connection,
+    );
+    send_event_with_connection(
+        assemble_login_account_info(connection_id, "Almetica".to_string(), account.id),
+        &connection,
+    );
 }
 
 fn assemble_loading_screen_info(connection_id: EntityId) -> EcsEvent {
@@ -365,10 +389,11 @@ fn reject_login_arbiter(connection_id: EntityId, account_id: i64, region: Region
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ecs::component;
     use crate::ecs::event::Event;
     use crate::ecs::resource::DeletionList;
     use crate::ecs::system::cleaner_system;
-    use crate::model::entity::Account;
+    use crate::model::entity;
     use crate::model::repository::account;
     use crate::model::repository::loginticket;
     use crate::model::tests::db_test;
@@ -390,7 +415,10 @@ mod tests {
         world
     }
 
-    fn setup_with_connection(pool: PgPool) -> (World, EntityId, Receiver<EcsEvent>) {
+    fn setup_with_connection(
+        pool: PgPool,
+        is_authenticated: bool,
+    ) -> (World, EntityId, Receiver<EcsEvent>) {
         let world = World::new();
         world.add_unique(WorldId(0));
         world.add_unique(pool);
@@ -403,8 +431,8 @@ mod tests {
                     &mut connections,
                     Connection {
                         channel: tx_channel,
-                        version_checked: false,
-                        region: None,
+                        is_authenticated,
+                        is_version_checked: is_authenticated,
                         last_pong: Instant::now(),
                         waiting_for_pong: false,
                     },
@@ -415,10 +443,10 @@ mod tests {
         (world, connection_id, rx_channel)
     }
 
-    async fn create_login(conn: &mut PgConnection) -> Result<(Account, Vec<u8>)> {
+    async fn create_login(conn: &mut PgConnection) -> Result<(entity::Account, Vec<u8>)> {
         let acc = account::create(
             conn,
-            &Account {
+            &entity::Account {
                 id: -1,
                 name: "testaccount".to_string(),
                 password: "not-a-real-password-hash".to_string(),
@@ -478,7 +506,7 @@ mod tests {
         db_test(|db_string| {
             task::block_on(async {
                 let pool = PgPool::new(db_string).await?;
-                let (world, connection_id, _rx_channel) = setup_with_connection(pool);
+                let (world, connection_id, _rx_channel) = setup_with_connection(pool, true);
 
                 world.run(
                     |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
@@ -508,7 +536,7 @@ mod tests {
                 let valid_count = world
                     .borrow::<View<Connection>>()
                     .iter()
-                    .filter(|connection| connection.version_checked)
+                    .filter(|connection| connection.is_version_checked)
                     .count();
                 assert_eq!(valid_count, 1);
 
@@ -522,7 +550,7 @@ mod tests {
         db_test(|db_string| {
             task::block_on(async {
                 let pool = PgPool::new(db_string).await?;
-                let (world, connection_id, mut rx_channel) = setup_with_connection(pool);
+                let (world, connection_id, mut rx_channel) = setup_with_connection(pool, true);
 
                 world.run(
                     |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
@@ -569,7 +597,7 @@ mod tests {
                 task::block_on(async {
                     let pool = PgPool::new(db_string).await?;
                     let mut conn = pool.acquire().await?;
-                    let (world, connection_id, rx_channel) = setup_with_connection(pool);
+                    let (world, connection_id, rx_channel) = setup_with_connection(pool, true);
                     let (account, ticket) = create_login(&mut conn).await?;
 
                     Ok::<
@@ -578,7 +606,7 @@ mod tests {
                             Receiver<EcsEvent>,
                             World,
                             EntityId,
-                            Account,
+                            entity::Account,
                             Vec<u8>,
                         ),
                         anyhow::Error,
@@ -607,9 +635,9 @@ mod tests {
             world.run(connection_manager_system);
 
             let valid_count = world
-                .borrow::<View<AccountID>>()
+                .borrow::<View<component::Account>>()
                 .iter()
-                .filter(|account_id| account_id.0 == account.id)
+                .filter(|acc| acc.id == account.id && acc.region == Region::Europe)
                 .count();
             assert_eq!(valid_count, 1);
 
@@ -622,7 +650,7 @@ mod tests {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
             let mut conn = task::block_on(async { pool.acquire().await })?;
-            let (world, connection_id, rx_channel) = setup_with_connection(pool);
+            let (world, connection_id, rx_channel) = setup_with_connection(pool, true);
             let (account, mut ticket) = task::block_on(async { create_login(&mut conn).await })?;
 
             // Make ticket invalid
@@ -827,11 +855,13 @@ mod tests {
         db_test(|db_string| {
             task::block_on(async {
                 let pool = PgPool::new(db_string).await?;
-                let (world, connection_id, rx_channel) = setup_with_connection(pool);
+                let (world, connection_id, rx_channel) = setup_with_connection(pool, true);
 
-                // Set last pong 61 seconds ago.
+                // Set last pong so that we will get a PING event
                 let now = Instant::now();
-                let old_pong = now.checked_sub(Duration::from_secs(61)).unwrap();
+                let old_pong = now
+                    .checked_sub(Duration::from_secs(PING_INTERVAL + 1))
+                    .unwrap();
 
                 world.run(|mut connections: ViewMut<Connection>| {
                     if let Ok(mut connection) = (&mut connections).try_get(connection_id) {
@@ -895,11 +925,13 @@ mod tests {
             task::block_on(async {
                 let pool = PgPool::new(db_string).await?;
 
-                let (world, connection_id, rx_channel) = setup_with_connection(pool);
+                let (world, connection_id, rx_channel) = setup_with_connection(pool, true);
 
-                // Set last pong 91 seconds ago.
+                // Set last_pong in "getting dropped" range
                 let now = Instant::now();
-                let old_pong = now.checked_sub(Duration::from_secs(91)).unwrap();
+                let old_pong = now
+                    .checked_sub(Duration::from_secs(PONG_DEADLINE + 1))
+                    .unwrap();
                 world.run(|mut connections: ViewMut<Connection>| {
                     connections[connection_id].last_pong = old_pong;
                 });
@@ -919,11 +951,99 @@ mod tests {
                 }
 
                 // Check if connection component was deleted
-                if let Ok(_component) = world.borrow::<View<Connection>>().try_get(connection_id) {
-                    panic!(
-                        "Found the connection component even though it should have been deleted"
-                    );
-                };
+                assert!(world
+                    .borrow::<View<Connection>>()
+                    .try_get(connection_id)
+                    .is_err());
+
+                Ok(())
+            })
+        })
+    }
+
+    #[test]
+    fn test_drop_unauthenticated_connection() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+
+                let (world, connection_id, rx_channel) = setup_with_connection(pool, false);
+
+                // Set last pong in "still ok" range
+                let now = Instant::now();
+                let old_pong = now
+                    .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME - 1))
+                    .unwrap();
+                world.run(|mut connections: ViewMut<Connection>| {
+                    connections[connection_id].last_pong = old_pong;
+                });
+
+                world.run(connection_manager_system);
+
+                // Connection should still be alive
+                assert!(world
+                    .borrow::<View<Connection>>()
+                    .try_get(connection_id)
+                    .is_ok());
+
+                // Set last pong to "getting dropped" range
+                let now = Instant::now();
+                let old_pong = now
+                    .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME + 1))
+                    .unwrap();
+                world.run(|mut connections: ViewMut<Connection>| {
+                    connections[connection_id].last_pong = old_pong;
+                });
+
+                world.run(connection_manager_system);
+
+                // Check if drop connection event is present
+                if let Ok(event) = rx_channel.try_recv() {
+                    match &*event {
+                        Event::ResponseDropConnection { .. } => { /* Ok */ }
+                        _ => panic!(
+                            "Couldn't find drop connection event. Found another packet instead."
+                        ),
+                    }
+                } else {
+                    panic!("Couldn't find drop connection event");
+                }
+
+                // Connection should be deleted
+                assert!(world
+                    .borrow::<View<Connection>>()
+                    .try_get(connection_id)
+                    .is_err());
+
+                Ok(())
+            })
+        })
+    }
+
+    #[test]
+    fn test_dont_drop_authenticated_connection_without_ping_ping() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+
+                let (world, connection_id, _rx_channel) = setup_with_connection(pool, true);
+
+                // Set last pong to "getting dropped" range
+                let now = Instant::now();
+                let old_pong = now
+                    .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME + 1))
+                    .unwrap();
+                world.run(|mut connections: ViewMut<Connection>| {
+                    connections[connection_id].last_pong = old_pong;
+                });
+
+                world.run(connection_manager_system);
+
+                // Connection should still be alive
+                assert!(world
+                    .borrow::<View<Connection>>()
+                    .try_get(connection_id)
+                    .is_ok());
 
                 Ok(())
             })

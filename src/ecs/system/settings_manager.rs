@@ -71,8 +71,8 @@ mod tests {
                     &mut connections,
                     Connection {
                         channel: tx_channel,
-                        version_checked: false,
-                        region: None,
+                        is_version_checked: false,
+                        is_authenticated: false,
                         last_pong: Instant::now(),
                         waiting_for_pong: false,
                     },
