@@ -37,5 +37,7 @@ CREATE TABLE "user"
     "delete_at"          TIMESTAMP WITH TIME ZONE,
 
     "last_logout_at"     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    "created_at"         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    "created_at"         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(account_id, position) -- Character positioning has to be unique for an account
 );
