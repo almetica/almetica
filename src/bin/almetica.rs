@@ -4,8 +4,8 @@ use almetica::crypt::password_hash;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::EcsEvent;
 use almetica::ecs::world::Multiverse;
-use almetica::model::embedded::migrations;
 use almetica::model::entity::Account;
+use almetica::model::migrations;
 use almetica::model::repository::account;
 use almetica::model::PasswordHashAlgorithm;
 use almetica::networkserver;
@@ -22,7 +22,6 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
-use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 use tracing_log::LogTracer;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
@@ -142,8 +141,20 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
             .count()
     );
 
-    info!("Running database migrations");
-    run_db_migrations(&config)?;
+    info!("Updating database schema");
+    migrations::apply(
+        format!(
+            "postgres://{}:{}@{}:{}",
+            config.database.username,
+            config.database.password,
+            config.database.hostname,
+            config.database.port,
+        )
+        .as_ref(),
+        &config.database.database,
+    )
+    .await
+    .context("Can't update database schema")?;
 
     info!("Creating database pool");
     let pool = sqlx_pool(&config).await?;
@@ -170,22 +181,6 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
     network_server_res.context("Error while running the network server")?;
 
     Ok(())
-}
-
-/// Performs the database migrations
-fn run_db_migrations(config: &Configuration) -> Result<()> {
-    // FIXME: Use sqlx once refinery adds support for it or we implement our own migration framework.
-    let mut rt = Runtime::new()?;
-    rt.block_on(async {
-        let db_conf = tokio_postgres_config(&config);
-        let (mut client, connection) = db_conf.connect(tokio_postgres::NoTls).await?;
-        tokio::spawn(async move {
-            connection.await.unwrap();
-        });
-        migrations::runner().run_async(&mut client).await?;
-        Ok::<_, anyhow::Error>(())
-    })
-    .context("Can't run migrations")
 }
 
 /// Starts the multiverse on a new thread and returns a channel into the global world.
@@ -223,29 +218,19 @@ fn start_network_server(
     task::spawn(async { networkserver::run(global_channel, map, reverse_map, config).await })
 }
 
-fn tokio_postgres_config(config: &Configuration) -> tokio_postgres::Config {
-    let mut c = tokio_postgres::Config::new();
-    c.host(&config.database.hostname);
-    c.port(config.database.port);
-    c.user(&config.database.username);
-    c.password(&config.database.password);
-    c.dbname(&config.database.database);
-    c
-}
-
 async fn sqlx_pool(config: &Configuration) -> Result<PgPool> {
-    Ok(PgPool::new(sqlx_config(config).as_ref()).await?)
-}
-
-fn sqlx_config(config: &Configuration) -> String {
-    format!(
-        "postgres://{}:{}@{}:{}/{}",
-        config.database.username,
-        config.database.password,
-        config.database.hostname,
-        config.database.port,
-        config.database.database
+    Ok(PgPool::new(
+        format!(
+            "postgres://{}:{}@{}:{}/{}",
+            config.database.username,
+            config.database.password,
+            config.database.hostname,
+            config.database.port,
+            config.database.database
+        )
+        .as_ref(),
     )
+    .await?)
 }
 
 async fn create_account(matches: &ArgMatches, config: &Configuration) -> Result<()> {

@@ -107,7 +107,11 @@ The tests will create a randomly named test database so that they can run in
 parallel.
 
 To configure the database access, please create a .env file in the project root
-and add a TEST_DATABASE_CONNECTION variable.
+and add a TEST_DATABASE_CONNECTION variable:
+
+```bash
+TEST_DATABASE_CONNECTION="postgres://username:password@192.168.1.1:5432"
+```
 
 Use the format that is documented here:
 

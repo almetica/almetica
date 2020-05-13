@@ -1,10 +1,7 @@
 /// Module that abstracts the persistence model.
 pub mod entity;
+pub mod migrations;
 pub mod repository;
-pub mod embedded {
-    use refinery::embed_migrations;
-    embed_migrations!("./src/model/migrations");
-}
 
 use byteorder::{ByteOrder, LittleEndian};
 use serde::de::{self, Visitor};
@@ -175,20 +172,19 @@ pub enum PasswordHashAlgorithm {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::model::embedded::migrations;
+    use crate::model::migrations;
     use crate::protocol::serde::{from_vec, to_vec};
     use crate::Result;
+    use anyhow::Context;
     use async_std::task;
     use hex::encode;
     use rand::{thread_rng, RngCore};
     use sqlx::{Connect, PgConnection};
     use std::panic;
-    use tokio::runtime::Runtime;
 
     /// Executes a test with a database connection. Prepares a new test database that is cleaned up after the test.
-    /// Configure the DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
+    /// Configure the TEST_DATABASE_CONNECTION in your .env file. The user needs to have access to the postgres database
     /// and have the permission to create / delete databases.
-    /// Use the standard `[test]` macro.
     pub fn db_test<'a, F>(test: F) -> Result<()>
     where
         F: FnOnce(&str) -> Result<()> + panic::UnwindSafe,
@@ -196,17 +192,7 @@ pub mod tests {
         let _ = dotenv::dotenv();
         let db_url = &dotenv::var("TEST_DATABASE_CONNECTION")?;
 
-        // FIXME: Switch to pure sqlx once refinery added support for it.
-        let mut db_name = "".to_string();
-        {
-            let mut config: tokio_postgres::Config = db_url.parse()?;
-            config.dbname("postgres");
-
-            let mut rt = Runtime::new()?;
-            rt.block_on(async {
-                db_name = setup_db(config.clone()).await.unwrap();
-            });
-        }
+        let db_name = task::block_on(async { setup_db(db_url).await })?;
 
         // Don't re-use the connection when testing. It could get tainted.
         let result = panic::catch_unwind(|| {
@@ -216,52 +202,34 @@ pub mod tests {
             }
         });
 
-        task::block_on(async {
-            teardown_db(format!("{}/postgres", db_url).as_ref(), db_name)
-                .await
-                .unwrap();
-        });
+        task::block_on(async { teardown_db(db_url, &db_name).await })?;
 
         assert!(result.is_ok());
         Ok(())
     }
 
     /// Creates a randomly named test database.
-    async fn setup_db(mut config: tokio_postgres::Config) -> Result<String> {
-        let mut random = vec![0u8; 32];
+    async fn setup_db(db_url: &str) -> Result<String> {
+        let mut random = vec![0u8; 28];
         thread_rng().fill_bytes(random.as_mut_slice());
         let db_name: String = format!("test_{}", encode(random));
 
-        let (client, connection) = config.connect(tokio_postgres::NoTls).await?;
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
-
-        client
-            .batch_execute(format!("CREATE DATABASE {};", db_name).as_ref())
+        let mut conn = PgConnection::connect(format!("{}/postgres", db_url)).await?;
+        sqlx::query(format!("CREATE DATABASE {};", db_name).as_ref())
+            .execute(&mut conn)
             .await?;
 
         // Run migrations on the temporary database
-        config.dbname(&db_name);
-        let (mut migration_client, connection) = config.connect(tokio_postgres::NoTls).await?;
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
-
-        migrations::runner()
-            .run_async(&mut migration_client)
-            .await?;
+        migrations::apply(db_url, &db_name)
+            .await
+            .context("Can't migrate database schema")?;
 
         Ok(db_name)
     }
 
     /// Deletes the randomly named test database.
-    async fn teardown_db(db_url: &str, db_name: String) -> Result<()> {
-        let mut conn = PgConnection::connect(db_url).await?;
+    async fn teardown_db(db_url: &str, db_name: &str) -> Result<()> {
+        let mut conn = PgConnection::connect(format!("{}/postgres", db_url)).await?;
 
         // Drop all other connections to the database
         sqlx::query(
@@ -270,7 +238,7 @@ pub mod tests {
                    FROM pg_stat_activity
                    WHERE datname = '{}'
                    AND pid <> pg_backend_pid();"#,
-                &db_name
+                db_name
             )
             .as_ref(),
         )
