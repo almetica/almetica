@@ -207,7 +207,7 @@ pub mod tests {
             rest_bonus_xp: 0,
             show_face: false,
             show_style: false,
-            position: 0,
+            position: num,
             is_new_character: true,
             tutorial_state: 0,
             is_deleting: false,

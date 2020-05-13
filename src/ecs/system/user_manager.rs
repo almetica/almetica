@@ -544,7 +544,7 @@ mod tests {
         Ok((world, connection_id, rx_channel, account))
     }
 
-    async fn create_user(conn: &mut PgConnection, account_id: i64, num: usize) -> Result<()> {
+    async fn create_user(conn: &mut PgConnection, account_id: i64, num: i32) -> Result<()> {
         user::create(
             conn,
             &User {
@@ -569,7 +569,7 @@ mod tests {
                 rest_bonus_xp: 0,
                 show_face: false,
                 show_style: false,
-                position: 0,
+                position: num,
                 is_new_character: false,
                 tutorial_state: 0,
                 is_deleting: false,
@@ -784,7 +784,7 @@ mod tests {
             let (world, connection_id, rx_channel, account) =
                 task::block_on(async { setup_with_connection(pool).await })?;
 
-            for i in 0..MAX_USERS_PER_ACCOUNT {
+            for i in 0..MAX_USERS_PER_ACCOUNT as i32 {
                 task::block_on(async { create_user(&mut conn, account.id, i).await })?;
             }
 
