@@ -495,7 +495,7 @@ mod tests {
     use crate::model::entity::Account;
     use crate::model::repository::account;
     use crate::model::tests::db_test;
-    use crate::model::{Class, Gender, PasswordHashAlgorithm, Race};
+    use crate::model::{Class, Customization, Gender, PasswordHashAlgorithm, Race};
     use crate::Result;
     use async_std::sync::{channel, Receiver};
     use chrono::TimeZone;
@@ -542,6 +542,27 @@ mod tests {
         );
 
         Ok((world, connection_id, rx_channel, account))
+    }
+
+    fn assemble_create_user_packet() -> CCreateUser {
+        CCreateUser {
+            name: "testuser".to_string(),
+            details: vec![
+                13, 19, 26, 8, 0, 0, 0, 0, 31, 10, 4, 0, 23, 10, 0, 0, 9, 0, 12, 13, 0, 0, 0, 0,
+                21, 31, 14, 22, 29, 16, 16, 0,
+            ],
+            shape: vec![
+                1, 19, 16, 19, 19, 16, 19, 19, 19, 15, 15, 15, 15, 15, 15, 15, 16, 19, 10, 0, 5,
+                11, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            gender: Gender::Female,
+            race: Race::Aman,
+            class: Class::Warrior,
+            appearance: Customization(vec![101, 30, 11, 1, 9, 25, 4, 0]),
+            is_second_character: false,
+            appearance2: 100,
+        }
     }
 
     async fn create_user(conn: &mut PgConnection, account_id: i64, num: i32) -> Result<()> {
@@ -611,10 +632,10 @@ mod tests {
                             Event::ResponseCanCreateUser { packet, .. } => {
                                 assert!(packet.ok);
                             }
-                            _ => panic!("Event is not a ResponseCanCreateUser event."),
+                            _ => panic!("Event is not a ResponseCanCreateUser event"),
                         }
                     } else {
-                        panic!("Can't find any event.");
+                        panic!("Can't find any event");
                     }
                     Ok::<(), anyhow::Error>(())
                 })
@@ -633,7 +654,7 @@ mod tests {
             let (world, connection_id, rx_channel, account) =
                 task::block_on(async { setup_with_connection(pool).await })?;
 
-            for i in 0..20 {
+            for i in 0..MAX_USERS_PER_ACCOUNT as i32 {
                 task::block_on(async { create_user(&mut conn, account.id, i).await })?;
             }
 
@@ -657,10 +678,10 @@ mod tests {
                     Event::ResponseCanCreateUser { packet, .. } => {
                         assert!(!packet.ok);
                     }
-                    _ => panic!("Event is not a ResponseCanCreateUser event."),
+                    _ => panic!("Event is not a ResponseCanCreateUser event"),
                 }
             } else {
-                panic!("Can't find any event.");
+                panic!("Can't find any event");
             }
 
             Ok(())
@@ -766,10 +787,10 @@ mod tests {
                     Event::ResponseCheckUserName { packet, .. } => {
                         assert!(!packet.ok);
                     }
-                    _ => panic!("Event is not a ResponseCheckUserName event."),
+                    _ => panic!("Event is not a ResponseCheckUserName event"),
                 }
             } else {
-                panic!("Can't find any event.");
+                panic!("Can't find any event");
             }
 
             Ok(())
@@ -891,5 +912,168 @@ mod tests {
         })
     }
 
-    // TODO write a handle_create_user test (valid, 2x invalid)
+    #[test]
+    fn test_create_user_successful() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            let org_packet = assemble_create_user_packet();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestCreateUser {
+                            connection_id,
+                            account_id: account.id,
+                            packet: org_packet.clone(),
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_manager_system);
+
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCreateUser { packet, .. } => {
+                        assert!(packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseCreateUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
+
+            let mut users: Vec<User> =
+                task::block_on(async { user::list(&mut conn, account.id).await })?;
+
+            if let Some(u) = users.pop() {
+                assert_eq!(u.name, org_packet.name);
+                assert_eq!(u.details, org_packet.details);
+                assert_eq!(u.shape, org_packet.shape);
+                assert_eq!(u.gender, org_packet.gender);
+                assert_eq!(u.race, org_packet.race);
+                assert_eq!(u.class, org_packet.class);
+                assert_eq!(u.appearance, org_packet.appearance);
+                assert_eq!(u.appearance2, org_packet.appearance2);
+            } else {
+                panic!("Can't find the created user");
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_create_user_unsuccessful_name_taken() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            let org_packet = assemble_create_user_packet();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    for _i in 0..2 {
+                        entities.add_entity(
+                            &mut events,
+                            Box::new(Event::RequestCreateUser {
+                                connection_id,
+                                account_id: account.id,
+                                packet: org_packet.clone(),
+                            }),
+                        );
+                    }
+                },
+            );
+
+            world.run(user_manager_system);
+
+            // First user could be created
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCreateUser { packet, .. } => {
+                        assert!(packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseCreateUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
+
+            // Second user failed because the name was already taken
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCreateUser { packet, .. } => {
+                        assert!(!packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseCreateUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
+
+            let count =
+                task::block_on(async { user::get_user_count(&mut conn, account.id).await })?;
+            assert_eq!(count, 1);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_create_user_unsuccessful_no_slots_left() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            for i in 0..MAX_USERS_PER_ACCOUNT as i32 {
+                task::block_on(async { create_user(&mut conn, account.id, i).await })?;
+            }
+
+            let org_packet = assemble_create_user_packet();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    for _i in 0..2 {
+                        entities.add_entity(
+                            &mut events,
+                            Box::new(Event::RequestCreateUser {
+                                connection_id,
+                                account_id: account.id,
+                                packet: org_packet.clone(),
+                            }),
+                        );
+                    }
+                },
+            );
+
+            world.run(user_manager_system);
+
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCreateUser { packet, .. } => {
+                        assert!(!packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseCreateUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
+
+            let count =
+                task::block_on(async { user::get_user_count(&mut conn, account.id).await })?;
+            assert_eq!(count, MAX_USERS_PER_ACCOUNT as i64);
+
+            Ok(())
+        })
+    }
 }
