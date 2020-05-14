@@ -1,4 +1,4 @@
-# Almetica
+![Almetica Logo](assets/logo_wide.svg)
 
 [![Gitter](https://badges.gitter.im/almetica-server/community.svg)](https://gitter.im/almetica-server/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
