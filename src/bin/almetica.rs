@@ -17,7 +17,7 @@ use async_macros::join;
 use async_std::sync::Sender;
 use async_std::task::{self, JoinHandle};
 use chrono::Utc;
-use clap::{App, Arg, ArgMatches};
+use clap::{crate_version, App, Arg, ArgMatches};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ use tracing_subscriber::registry::Registry;
 #[async_std::main]
 async fn main() {
     let matches = App::new("almetica")
-        .version("0.0.2")
+        .version(crate_version!())
         .author("Almetica <almetica@protonmail.com>")
         .about("Custom server implementation for the game TERA")
         .arg(
@@ -113,13 +113,13 @@ fn init_logging(matches: &ArgMatches) {
 }
 
 async fn run_command(matches: &ArgMatches) -> Result<()> {
-    info!("Reading configuration file");
     let config_str = matches.value_of("config").unwrap_or("config.yaml");
     let path = PathBuf::from(config_str);
     let config =
         read_configuration(&path).context(format!("Can't read configuration file {:?}", path))?;
 
     if let Some(matches) = matches.subcommand_matches("run") {
+        info!("Starting almetica version {}", crate_version!());
         start_server(matches, &config).await?;
     } else if let Some(matches) = matches.subcommand_matches("create-account") {
         create_account(matches, &config).await?;

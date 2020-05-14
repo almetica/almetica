@@ -1,6 +1,6 @@
 [package]
 name = "almetica"
-version = "0.0.1"
+version = "0.0.3"
 authors = ["Almetica <almetica@protonmail.com>"]
 edition = "2018"
 
@@ -42,7 +42,6 @@ ucs2 = "0.3"
 [dev-dependencies]
 criterion = "0.3"
 criterion-cycles-per-byte = "0.1"
-regex = "1"
 
 [[bench]]
 name = "crypt"
