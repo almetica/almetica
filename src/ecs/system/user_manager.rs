@@ -233,8 +233,12 @@ fn handle_change_user_lobby_slot_id(
                 entry.database_id,
                 account_id
             );
-            // Client starts the position at 1
-            debug!("Updating position of user id {} to {}", db_user.id, pos + 1);
+            // Client starts the lobby slot at 1
+            debug!(
+                "Updating lobby slot of user id {} to {}",
+                db_user.id,
+                pos + 1
+            );
             user::update_lobby_slot(&mut conn, entry.database_id, (pos + 1) as i32)
                 .await
                 .context("Can't update the lobby slot of  user")?;
@@ -333,8 +337,8 @@ fn handle_delete_user(
         let users = user::list(&mut conn, account_id).await?;
         for (pos, user) in users.iter().enumerate() {
             if user.lobby_slot != pos as i32 {
-                // Client starts the position at 1
-                debug!("Updating position of user id {} to {}", user.id, pos + 1);
+                // Client starts the lobby slot at 1
+                debug!("Updating lobby slot of user id {} to {}", user.id, pos + 1);
                 user::update_lobby_slot(&mut conn, user.id, (pos + 1) as i32)
                     .await
                     .context("Can't update the lobby slot of user")?;
