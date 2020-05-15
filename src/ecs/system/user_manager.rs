@@ -750,43 +750,37 @@ mod tests {
     #[test]
     fn test_can_create_user_true() -> Result<()> {
         db_test(|db_string| {
-            task::block_on(async {
-                let pool = PgPool::new(db_string).await?;
-                let (world, connection_id, rx_channel, _account) =
-                    setup_with_connection(pool).await?;
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_id, rx_channel, _account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
 
-                task::spawn_blocking(move || {
-                    world.run(
-                        |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
-                            entities.add_entity(
-                                &mut events,
-                                Box::new(Event::RequestCanCreateUser {
-                                    connection_id,
-                                    account_id: -1,
-                                    packet: CCanCreateUser {},
-                                }),
-                            );
-                        },
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestCanCreateUser {
+                            connection_id,
+                            account_id: -1,
+                            packet: CCanCreateUser {},
+                        }),
                     );
+                },
+            );
 
-                    world.run(user_manager_system);
+            world.run(user_manager_system);
 
-                    if let Ok(event) = rx_channel.try_recv() {
-                        match *event {
-                            Event::ResponseCanCreateUser { packet, .. } => {
-                                assert!(packet.ok);
-                            }
-                            _ => panic!("Event is not a ResponseCanCreateUser event"),
-                        }
-                    } else {
-                        panic!("Can't find any event");
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseCanCreateUser { packet, .. } => {
+                        assert!(packet.ok);
                     }
-                    Ok::<(), anyhow::Error>(())
-                })
-                .await?;
+                    _ => panic!("Event is not a ResponseCanCreateUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
 
-                Ok(())
-            })
+            Ok(())
         })
     }
 
