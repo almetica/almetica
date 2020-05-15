@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 pub struct CCanCreateUser {}
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CChangeUserLobbySlotId {
+    pub user_positions: Vec<CChangeUserLobbySlotIdEntry>,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CChangeUserLobbySlotIdEntry {
+    pub database_id: i32,
+    pub lobby_slot: i32,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CCheckVersion {
     pub version: Vec<CCheckVersionEntry>,
 }
@@ -81,6 +92,23 @@ mod tests {
         name: test_can_create_user,
         data: vec![],
         expected: CCanCreateUser {}
+    );
+
+    packet_test!(
+        name: test_change_user_lobby_slot_id,
+        data: vec![2, 0, 8, 0, 8, 0, 20, 0, 5, 0, 0, 0, 1, 0, 0, 0, 20, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0],
+        expected: CChangeUserLobbySlotId {
+            user_positions: vec![
+                CChangeUserLobbySlotIdEntry {
+                    database_id: 5,
+                    lobby_slot: 1,
+                },
+                CChangeUserLobbySlotIdEntry {
+                    database_id: 6,
+                    lobby_slot: 2,
+                },
+            ],
+        }
     );
 
     packet_test!(

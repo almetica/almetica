@@ -47,6 +47,17 @@ pub fn user_manager_system(
                 );
             }
         }
+        Event::RequestChangeUserLobbySlotId {
+            connection_id,
+            account_id,
+            packet,
+        } => {
+            if let Err(e) =
+                handle_change_user_lobby_slot_id(&packet, *connection_id, *account_id, &pool)
+            {
+                error!("Ignoring change user lobby slot id request: {:?}", e);
+            }
+        }
         Event::RequestGetUserList {
             connection_id,
             account_id,
@@ -192,6 +203,49 @@ fn handle_can_create_user(
     })?)
 }
 
+fn handle_change_user_lobby_slot_id(
+    packet: &CChangeUserLobbySlotId,
+    connection_id: EntityId,
+    account_id: i64,
+    pool: &UniqueView<PgPool>,
+) -> Result<()> {
+    let span = info_span!("connection", connection = ?connection_id);
+    let _enter = span.enter();
+
+    debug!("Change user lobby slot ID event incoming");
+
+    Ok(task::block_on(async {
+        let mut conn = pool
+            .begin()
+            .await
+            .context("Couldn't acquire connection from pool")?;
+
+        let mut user_list = packet.user_positions.clone();
+        user_list.sort_by(|a, b| a.lobby_slot.partial_cmp(&b.lobby_slot).unwrap());
+
+        for (pos, entry) in user_list.iter().enumerate() {
+            let db_user = user::get_by_id(&mut conn, entry.database_id)
+                .await
+                .context(format!("Can't find user {}", entry.database_id))?;
+            ensure!(
+                db_user.account_id == account_id,
+                "User {} doesn't belong to account {}",
+                entry.database_id,
+                account_id
+            );
+            // Client starts the position at 1
+            debug!("Updating position of user id {} to {}", db_user.id, pos + 1);
+            user::update_lobby_slot(&mut conn, entry.database_id, (pos + 1) as i32)
+                .await
+                .context("Can't update the lobby slot of  user")?;
+        }
+
+        conn.commit().await?;
+
+        Ok::<(), anyhow::Error>(())
+    })?)
+}
+
 fn handle_create_user(
     packet: &CCreateUser,
     connection_id: EntityId,
@@ -261,15 +315,29 @@ fn handle_delete_user(
             format!("Can't find user ID {} in the database", packet.database_id)
         );
 
-        user::delete_by_id(&mut conn, packet.database_id).await?;
-        info!("Deleted user with ID {}", packet.database_id);
+        let db_user = user::get_by_id(&mut conn, packet.database_id)
+            .await
+            .context("Can't query user")?;
+        ensure!(
+            db_user.account_id == account_id,
+            "User {} doesn't belong to account {}",
+            db_user.id,
+            account_id
+        );
+
+        user::delete_by_id(&mut conn, db_user.id)
+            .await
+            .context("Can't delete user")?;
+        info!("Deleted user with ID {}", db_user.id);
 
         let users = user::list(&mut conn, account_id).await?;
         for (pos, user) in users.iter().enumerate() {
-            if user.position != pos as i32 {
+            if user.lobby_slot != pos as i32 {
                 // Client starts the position at 1
                 debug!("Updating position of user id {} to {}", user.id, pos + 1);
-                user::update_position(&mut conn, user.id, (pos + 1) as i32).await?;
+                user::update_lobby_slot(&mut conn, user.id, (pos + 1) as i32)
+                    .await
+                    .context("Can't update the lobby slot of user")?;
             }
         }
 
@@ -344,7 +412,7 @@ async fn can_create_user(mut conn: &mut PgConnection, account_id: i64) -> Result
 async fn create_new_user(
     mut conn: &mut PgConnection,
     account_id: i64,
-    position: i32,
+    lobby_slot: i32,
     packet: &CCreateUser,
 ) -> Result<()> {
     // TODO set the tutorial map as the start point
@@ -372,7 +440,7 @@ async fn create_new_user(
             rest_bonus_xp: 0,
             show_face: false,
             show_style: false,
-            position,
+            lobby_slot,
             is_new_character: true,
             tutorial_state: 0,
             is_deleting: false,
@@ -381,7 +449,8 @@ async fn create_new_user(
             created_at: Utc::now(),
         },
     )
-    .await?;
+    .await
+    .context("Can't create user")?;
     Ok(())
 }
 
@@ -534,7 +603,7 @@ fn assemble_user_list_response(
                 appearance2: user.appearance2,
                 achievement_points: user.achievement_points,
                 laurel: user.laurel,
-                position: user.position,
+                lobby_slot: user.lobby_slot,
                 guild_logo_id: 0,
                 awakening_level: user.awakening_level,
                 has_broker_sales: false,
@@ -662,7 +731,7 @@ mod tests {
                 rest_bonus_xp: 0,
                 show_face: false,
                 show_style: false,
-                position: num,
+                lobby_slot: num,
                 is_new_character: false,
                 tutorial_state: 0,
                 is_deleting: false,
@@ -1196,10 +1265,66 @@ mod tests {
 
             for i in 0..(MAX_USERS_PER_ACCOUNT - 1) {
                 if let Some(u) = users.get(i) {
-                    assert_eq!(u.position, (i + 1) as i32);
+                    assert_eq!(u.lobby_slot, (i + 1) as i32);
                     assert_eq!(u.name, format!("name-{}", i + 1))
                 } else {
-                    panic!("Can't user in position {}", i);
+                    panic!("Can't find user in position {}", i);
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_change_user_lobby_slot_id() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, _rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            let mut users: Vec<User> = Vec::new();
+            task::block_on(async {
+                for i in 0..MAX_USERS_PER_ACCOUNT as i32 {
+                    let user: User = create_user(&mut conn, account.id, i + 1).await.unwrap();
+                    users.push(user);
+                }
+            });
+
+            users.reverse();
+
+            let user_positions: Vec<CChangeUserLobbySlotIdEntry> = users
+                .iter()
+                .map(|u| CChangeUserLobbySlotIdEntry {
+                    database_id: u.id,
+                    lobby_slot: (MAX_USERS_PER_ACCOUNT as i32 - u.lobby_slot + 1),
+                })
+                .collect();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestChangeUserLobbySlotId {
+                            connection_id,
+                            account_id: account.id,
+                            packet: CChangeUserLobbySlotId { user_positions },
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_manager_system);
+
+            users = task::block_on(async { user::list(&mut conn, account.id).await })?;
+
+            for i in 0..MAX_USERS_PER_ACCOUNT {
+                if let Some(u) = users.get(i) {
+                    assert_eq!(u.lobby_slot, (i + 1) as i32);
+                    assert_eq!(u.name, format!("name-{}", MAX_USERS_PER_ACCOUNT - i))
+                } else {
+                    panic!("Can't find user in position {}", i);
                 }
             }
 

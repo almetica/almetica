@@ -59,7 +59,7 @@ pub struct User {
     pub rest_bonus_xp: i64,
     pub show_face: bool,
     pub show_style: bool,
-    pub position: i32,
+    pub lobby_slot: i32,
     pub is_new_character: bool,
     pub tutorial_state: i32,
     pub is_deleting: bool,

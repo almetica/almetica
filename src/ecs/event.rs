@@ -143,6 +143,7 @@ assemble_event! {
     // Packets that need an account ID attached.
     Authenticated Packet Events {
         RequestCanCreateUser{packet: CCanCreateUser}, C_CAN_CREATE_USER, Global;
+        RequestChangeUserLobbySlotId{packet: CChangeUserLobbySlotId}, C_CHANGE_USER_LOBBY_SLOT_ID, Global;
         RequestCheckUserName{packet: CCheckUserName}, C_CHECK_USERNAME, Global;
         RequestCreateUser{packet: CCreateUser}, C_CREATE_USER, Global;
         RequestDeleteUser{packet: CDeleteUser}, C_DELETE_USER, Global;

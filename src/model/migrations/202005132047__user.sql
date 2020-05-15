@@ -29,7 +29,7 @@ CREATE TABLE "user"
     "show_face"          BOOLEAN    NOT NULL      DEFAULT FALSE,
     "show_style"         BOOLEAN    NOT NULL      DEFAULT FALSE,
 
-    "position"           INT        NOT NULL      DEFAULT 0,
+    "lobby_slot"         INT        NOT NULL      DEFAULT 0,
     "is_new_character"   BOOLEAN    NOT NULL      DEFAULT FALSE,
     "tutorial_state"     INT        NOT NULL      DEFAULT 0,
 
@@ -37,7 +37,5 @@ CREATE TABLE "user"
     "delete_at"          TIMESTAMP WITH TIME ZONE,
 
     "last_logout_at"     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    "created_at"         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(account_id, position) -- Character positioning has to be unique for an account
+    "created_at"         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

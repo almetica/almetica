@@ -31,7 +31,7 @@ pub async fn create(conn: &mut PgConnection, user: &User) -> Result<User> {
     .bind(&user.rest_bonus_xp)
     .bind(&user.show_face)
     .bind(&user.show_style)
-    .bind(&user.position)
+    .bind(&user.lobby_slot)
     .bind(&user.is_new_character)
     .bind(&user.tutorial_state)
     .bind(&user.is_deleting)
@@ -63,7 +63,7 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
             "rest_bonus_xp" = $17,
             "show_face" = $18,
             "show_style" = $19,
-            "position" = $20,
+            "lobby_slot" = $20,
             "is_new_character" = $21,
             "tutorial_state" = $22,
             "is_deleting" = $23,
@@ -91,7 +91,7 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
     .bind(&user.rest_bonus_xp)
     .bind(&user.show_face)
     .bind(&user.show_style)
-    .bind(&user.position)
+    .bind(&user.lobby_slot)
     .bind(&user.is_new_character)
     .bind(&user.tutorial_state)
     .bind(&user.is_deleting)
@@ -102,9 +102,9 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
     .await?)
 }
 
-/// Updates the position of an user with the given ID.
-pub async fn update_position(conn: &mut PgConnection, id: i32, position: i32) -> Result<()> {
-    sqlx::query(r#"UPDATE "user" SET "position" = $1 WHERE "id" = $2"#)
+/// Updates the lobby_slot of an user with the given ID.
+pub async fn update_lobby_slot(conn: &mut PgConnection, id: i32, position: i32) -> Result<()> {
+    sqlx::query(r#"UPDATE "user" SET "lobby_slot" = $1 WHERE "id" = $2"#)
         .bind(&position)
         .bind(&id)
         .execute(conn)
@@ -134,7 +134,7 @@ pub async fn get_user_count(conn: &mut PgConnection, account_id: i64) -> Result<
 /// Get all users of an account.
 pub async fn list(conn: &mut PgConnection, account_id: i64) -> Result<Vec<User>> {
     Ok(
-        sqlx::query_as(r#"SELECT * FROM "user" WHERE "account_id" = $1 ORDER BY "position""#)
+        sqlx::query_as(r#"SELECT * FROM "user" WHERE "account_id" = $1 ORDER BY "lobby_slot""#)
             .bind(account_id)
             .fetch_all(conn)
             .await?,
@@ -207,7 +207,7 @@ pub mod tests {
             rest_bonus_xp: 0,
             show_face: false,
             show_style: false,
-            position: num,
+            lobby_slot: num,
             is_new_character: true,
             tutorial_state: 0,
             is_deleting: false,
@@ -248,7 +248,7 @@ pub mod tests {
                 assert_eq!(org_user.rest_bonus_xp, db_user.rest_bonus_xp);
                 assert_eq!(org_user.show_face, db_user.show_face);
                 assert_eq!(org_user.show_style, db_user.show_style);
-                assert_eq!(org_user.position, db_user.position);
+                assert_eq!(org_user.lobby_slot, db_user.lobby_slot);
                 assert_eq!(org_user.is_new_character, db_user.is_new_character);
                 assert_eq!(org_user.tutorial_state, db_user.tutorial_state);
                 assert_eq!(org_user.is_deleting, db_user.is_deleting);
@@ -304,11 +304,11 @@ pub mod tests {
                 let db_user = create(&mut conn, &get_default_user(&account, 0)).await?;
                 assert_ne!(db_user.id, -1);
 
-                update_position(&mut conn, db_user.id, 15).await?;
+                update_lobby_slot(&mut conn, db_user.id, 15).await?;
                 let updated_db_user = get_by_id(&mut conn, db_user.id).await?;
 
-                assert_ne!(updated_db_user.position, 0);
-                assert_eq!(updated_db_user.position, 15);
+                assert_ne!(updated_db_user.lobby_slot, 0);
+                assert_eq!(updated_db_user.lobby_slot, 15);
                 assert_eq!(updated_db_user.id, db_user.id);
                 assert_eq!(updated_db_user.account_id, db_user.account_id);
                 assert_eq!(updated_db_user.created_at, db_user.created_at);

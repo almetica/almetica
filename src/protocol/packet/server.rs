@@ -149,7 +149,7 @@ pub struct SGetUserListCharacter {
     pub achievement_points: i32,
     pub laurel: i32,
     // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
-    pub position: i32,
+    pub lobby_slot: i32,
     // 1..characterCount (position in character selection screen)
     pub guild_logo_id: i32,
     pub awakening_level: i32,
@@ -465,7 +465,7 @@ mod tests {
                 appearance2: 100,
                 achievement_points: 13565,
                 laurel: 2,
-                position: 1,
+                lobby_slot: 1,
                 guild_logo_id: 4521,
                 awakening_level: 0,
                 has_broker_sales: false,
