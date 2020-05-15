@@ -37,6 +37,11 @@ pub struct CCreateUser {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CDeleteUser {
+    pub database_id: i32,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CGetUserList {}
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
@@ -139,6 +144,14 @@ mod tests {
             appearance: Customization(vec![101, 30, 11, 1, 9, 25, 4, 0]),
             is_second_character: false,
             appearance2: 100,
+        }
+    );
+
+    packet_test!(
+        name: test_delete_user,
+        data: vec![0x13, 0x12, 0x11, 0x32],
+        expected: CDeleteUser {
+            database_id: 839979539,
         }
     );
 

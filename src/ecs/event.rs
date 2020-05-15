@@ -145,6 +145,7 @@ assemble_event! {
         RequestCanCreateUser{packet: CCanCreateUser}, C_CAN_CREATE_USER, Global;
         RequestCheckUserName{packet: CCheckUserName}, C_CHECK_USERNAME, Global;
         RequestCreateUser{packet: CCreateUser}, C_CREATE_USER, Global;
+        RequestDeleteUser{packet: CDeleteUser}, C_DELETE_USER, Global;
         RequestGetUserList{packet: CGetUserList}, C_GET_USER_LIST, Global;
         RequestSetVisibleRange{packet: CSetVisibleRange}, C_SET_VISIBLE_RANGE, Global;
         ResponseLoginArbiter{packet: SLoginArbiter}, S_LOGIN_ARBITER, Connection;
@@ -158,6 +159,7 @@ assemble_event! {
         ResponseCheckUserName{packet: SCheckUserName}, S_CHECK_USERNAME, Connection;
         ResponseCheckVersion{packet: SCheckVersion}, S_CHECK_VERSION, Connection;
         ResponseCreateUser{packet: SCreateUser}, S_CREATE_USER, Connection;
+        ResponseDeleteUser{packet: SDeleteUser}, S_DELETE_USER, Connection;
         ResponseGetUserList{packet: SGetUserList}, S_GET_USER_LIST, Global;
         ResponseLoadingScreenControlInfo{packet: SLoadingScreenControlInfo}, S_LOADING_SCREEN_CONTROL_INFO, Connection;
         ResponseLoginAccountInfo{packet: SLoginAccountInfo}, S_LOGIN_ACCOUNT_INFO, Connection;

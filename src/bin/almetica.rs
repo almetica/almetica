@@ -36,7 +36,7 @@ async fn main() {
         .author("Almetica <almetica@protonmail.com>")
         .about("Custom server implementation for the game TERA")
         .arg(
-            Arg::with_name("config")
+            Arg::new("config")
                 .short('c')
                 .long("config")
                 .value_name("FILE")
@@ -45,7 +45,7 @@ async fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("log")
+            Arg::new("log")
                 .short('l')
                 .long("log")
                 .value_name("LEVEL")
@@ -59,7 +59,7 @@ async fn main() {
             App::new("create-account")
                 .about("Creates an account")
                 .arg(
-                    Arg::with_name("name")
+                    Arg::new("name")
                         .short('n')
                         .long("name")
                         .about("name of the account")
@@ -67,7 +67,7 @@ async fn main() {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("password")
+                    Arg::new("password")
                         .short('p')
                         .long("password")
                         .about("password of the account")

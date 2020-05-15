@@ -34,6 +34,11 @@ pub struct SCreateUser {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SDeleteUser {
+    pub ok: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SGetUserList {
     pub characters: Vec<SGetUserListCharacter>,
     pub veteran: bool,
@@ -281,6 +286,16 @@ mod tests {
             0x1
         ],
         expected: SCreateUser {
+            ok: true,
+        }
+    );
+
+    packet_test!(
+        name: test_delete_user,
+        data: vec![
+            0x1
+        ],
+        expected: SDeleteUser {
             ok: true,
         }
     );

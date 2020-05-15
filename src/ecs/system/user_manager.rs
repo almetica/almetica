@@ -9,7 +9,7 @@ use crate::model::repository::user;
 use crate::model::{Vec3, Vec3a};
 use crate::protocol::packet::*;
 use crate::Result;
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use async_std::task;
 use chrono::Utc;
 use lazy_static::lazy_static;
@@ -84,6 +84,21 @@ pub fn user_manager_system(
                 error!("Rejecting create user request: {:?}", e);
                 send_event(
                     assemble_create_user_response(*connection_id, false),
+                    &connections,
+                );
+            }
+        }
+        Event::RequestDeleteUser {
+            connection_id,
+            account_id,
+            packet,
+        } => {
+            if let Err(e) =
+                handle_delete_user(&packet, *connection_id, *account_id, &connections, &pool)
+            {
+                error!("Rejecting delete user request: {:?}", e);
+                send_event(
+                    assemble_delete_user_response(*connection_id, false),
                     &connections,
                 );
             }
@@ -200,7 +215,8 @@ fn handle_create_user(
         if can_create_user(&mut conn, account_id).await?
             && check_username(&mut conn, &packet.name).await?
         {
-            let next_position = user::get_user_count(&mut conn, account_id).await? + 1;
+            // Client starts the position at 1
+            let next_position = 1 + user::get_user_count(&mut conn, account_id).await?;
             create_new_user(&mut conn, account_id, next_position as i32, packet).await?;
             send_event(
                 assemble_create_user_response(connection_id, true),
@@ -212,6 +228,55 @@ fn handle_create_user(
                 connections,
             );
         }
+
+        conn.commit().await?;
+
+        Ok::<(), anyhow::Error>(())
+    })?)
+}
+
+fn handle_delete_user(
+    packet: &CDeleteUser,
+    connection_id: EntityId,
+    account_id: i64,
+    connections: &View<Connection>,
+    pool: &UniqueView<PgPool>,
+) -> Result<()> {
+    let span = info_span!("connection", connection = ?connection_id);
+    let _enter = span.enter();
+
+    debug!("Delete user event incoming");
+
+    // TODO if a multiverse_location component is attached to the connection, don't execute the command!
+    // TODO Implement the deletion timer functionality
+
+    Ok(task::block_on(async {
+        let mut conn = pool
+            .begin()
+            .await
+            .context("Couldn't acquire connection from pool")?;
+
+        ensure!(
+            user::get_by_id(&mut conn, packet.database_id).await.is_ok(),
+            format!("Can't find user ID {} in the database", packet.database_id)
+        );
+
+        user::delete_by_id(&mut conn, packet.database_id).await?;
+        info!("Deleted user with ID {}", packet.database_id);
+
+        let users = user::list(&mut conn, account_id).await?;
+        for (pos, user) in users.iter().enumerate() {
+            if user.position != pos as i32 {
+                // Client starts the position at 1
+                debug!("Updating position of user id {} to {}", user.id, pos + 1);
+                user::update_position(&mut conn, user.id, (pos + 1) as i32).await?;
+            }
+        }
+
+        send_event(
+            assemble_delete_user_response(connection_id, true),
+            connections,
+        );
 
         conn.commit().await?;
 
@@ -346,6 +411,13 @@ fn assemble_check_user_name_response(connection_id: EntityId, ok: bool) -> EcsEv
     Box::new(Event::ResponseCheckUserName {
         connection_id,
         packet: SCheckUserName { ok },
+    })
+}
+
+fn assemble_delete_user_response(connection_id: EntityId, ok: bool) -> EcsEvent {
+    Box::new(Event::ResponseDeleteUser {
+        connection_id,
+        packet: SDeleteUser { ok },
     })
 }
 
@@ -565,8 +637,8 @@ mod tests {
         }
     }
 
-    async fn create_user(conn: &mut PgConnection, account_id: i64, num: i32) -> Result<()> {
-        user::create(
+    async fn create_user(conn: &mut PgConnection, account_id: i64, num: i32) -> Result<User> {
+        Ok(user::create(
             conn,
             &User {
                 id: -1,
@@ -599,8 +671,7 @@ mod tests {
                 created_at: Utc.ymd(2009, 7, 8).and_hms(9, 10, 11),
             },
         )
-        .await?;
-        Ok(())
+        .await?)
     }
 
     #[test]
@@ -1072,6 +1143,65 @@ mod tests {
             let count =
                 task::block_on(async { user::get_user_count(&mut conn, account.id).await })?;
             assert_eq!(count, MAX_USERS_PER_ACCOUNT as i64);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_delete_user() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel, account) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            let mut users: Vec<User> = Vec::new();
+            task::block_on(async {
+                for i in 0..MAX_USERS_PER_ACCOUNT as i32 {
+                    let user: User = create_user(&mut conn, account.id, i).await.unwrap();
+                    users.push(user);
+                }
+            });
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestDeleteUser {
+                            connection_id,
+                            account_id: account.id,
+                            packet: CDeleteUser {
+                                database_id: users[0].id,
+                            },
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_manager_system);
+
+            if let Ok(event) = rx_channel.try_recv() {
+                match *event {
+                    Event::ResponseDeleteUser { packet, .. } => {
+                        assert!(packet.ok);
+                    }
+                    _ => panic!("Event is not a ResponseDeleteUser event"),
+                }
+            } else {
+                panic!("Can't find any event");
+            }
+
+            users = task::block_on(async { user::list(&mut conn, account.id).await })?;
+
+            for i in 0..(MAX_USERS_PER_ACCOUNT - 1) {
+                if let Some(u) = users.get(i) {
+                    assert_eq!(u.position, (i + 1) as i32);
+                    assert_eq!(u.name, format!("name-{}", i + 1))
+                } else {
+                    panic!("Can't user in position {}", i);
+                }
+            }
 
             Ok(())
         })

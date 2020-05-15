@@ -134,7 +134,7 @@ pub async fn get_user_count(conn: &mut PgConnection, account_id: i64) -> Result<
 /// Get all users of an account.
 pub async fn list(conn: &mut PgConnection, account_id: i64) -> Result<Vec<User>> {
     Ok(
-        sqlx::query_as(r#"SELECT * FROM "user" WHERE "account_id" = $1"#)
+        sqlx::query_as(r#"SELECT * FROM "user" WHERE "account_id" = $1 ORDER BY "position""#)
             .bind(account_id)
             .fetch_all(conn)
             .await?,
