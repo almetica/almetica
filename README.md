@@ -1,7 +1,7 @@
 ![Almetica Logo](assets/logo_wide.svg)
 
 [![Gitter](https://badges.gitter.im/almetica-server/community.svg)](https://gitter.im/almetica-server/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
-[![](https://tokei.rs/b1/github/almetica/almetica?category=lines)](https://github.com/almetica/almetica).
+[![LOC](https://tokei.rs/b1/github/almetica/almetica?category=lines)](https://github.com/almetica/almetica)
 
 This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 93.02.
 
