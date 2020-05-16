@@ -78,6 +78,15 @@ pub enum Class {
     Valkyrie = 12,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
+#[sqlx(rename = "servant_type")]
+pub enum ServantType {
+    #[sqlx(rename = "pet")]
+    Pet = 0,
+    #[sqlx(rename = "partner")]
+    Partner = 1,
+}
+
 pub type Angle = i16;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
@@ -154,6 +163,110 @@ impl<'de> Visitor<'de> for U64Visitor {
     }
 
     fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(value)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemplateID {
+    pub race: Race,
+    pub gender: Gender,
+    pub class: Class,
+}
+
+impl Default for TemplateID {
+    fn default() -> Self {
+        TemplateID {
+            race: Race::Human,
+            gender: Gender::Male,
+            class: Class::Warrior,
+        }
+    }
+}
+
+impl Serialize for TemplateID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i32(
+            10101 + ((self.race as i32 * 2 + self.gender as i32) * 100) + self.class as i32,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for TemplateID {
+    fn deserialize<D>(deserializer: D) -> Result<TemplateID, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut value = deserializer.deserialize_i32(I32Visitor)? - 10101;
+
+        let gender = if value % 200 >= 100 {
+            value -= 100;
+            Gender::Female
+        } else {
+            Gender::Male
+        };
+
+        let race = match value / 200 {
+            0 => Race::Human,
+            1 => Race::Castanic,
+            2 => Race::Aman,
+            3 => Race::HighElf,
+            4 => Race::ElinPopori,
+            5 => Race::Baraka,
+            _ => {
+                return Err(de::Error::custom(format!(
+                    "unknown race when parsing TemplateID {}",
+                    value
+                )))
+            }
+        };
+
+        let class = match value % 100 {
+            0 => Class::Warrior,
+            1 => Class::Lancer,
+            2 => Class::Slayer,
+            3 => Class::Berserker,
+            4 => Class::Sorcerer,
+            5 => Class::Archer,
+            6 => Class::Priest,
+            7 => Class::Elementalist,
+            8 => Class::Soulless,
+            9 => Class::Engineer,
+            10 => Class::Fighter,
+            11 => Class::Ninja,
+            12 => Class::Valkyrie,
+            _ => {
+                return Err(de::Error::custom(format!(
+                    "unknown class when parsing TemplateID {}",
+                    value
+                )))
+            }
+        };
+
+        Ok(TemplateID {
+            race,
+            gender,
+            class,
+        })
+    }
+}
+
+struct I32Visitor;
+
+impl<'de> Visitor<'de> for I32Visitor {
+    type Value = i32;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("4 bytes")
+    }
+
+    fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
@@ -266,6 +379,52 @@ pub mod tests {
         let data = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
         let value: Customization = from_vec(data)?;
         assert_eq!(value.0, [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_template_id_serialization_elin_lancer() -> Result<()> {
+        let value = TemplateID {
+            race: Race::ElinPopori,
+            gender: Gender::Female,
+            class: Class::Lancer,
+        };
+        let data = to_vec(&value)?;
+        assert_eq!(LittleEndian::read_i32(&data), 11002);
+        Ok(())
+    }
+
+    #[test]
+    fn test_template_id_serialization_human_sorcerer() -> Result<()> {
+        let value = TemplateID {
+            race: Race::Human,
+            gender: Gender::Male,
+            class: Class::Sorcerer,
+        };
+        let data = to_vec(&value)?;
+        assert_eq!(LittleEndian::read_i32(&data), 10105);
+        Ok(())
+    }
+
+    #[test]
+    fn test_template_id_deserialization_elin_lancer() -> Result<()> {
+        let mut data = vec![0u8; 4];
+        LittleEndian::write_i32(&mut data, 11002);
+        let value: TemplateID = from_vec(data)?;
+        assert_eq!(value.race, Race::ElinPopori);
+        assert_eq!(value.gender, Gender::Female);
+        assert_eq!(value.class, Class::Lancer);
+        Ok(())
+    }
+
+    #[test]
+    fn test_template_id_deserialization_human_sorcerer() -> Result<()> {
+        let mut data = vec![0u8; 4];
+        LittleEndian::write_i32(&mut data, 10105);
+        let value: TemplateID = from_vec(data)?;
+        assert_eq!(value.race, Race::Human);
+        assert_eq!(value.gender, Gender::Male);
+        assert_eq!(value.class, Class::Sorcerer);
         Ok(())
     }
 }

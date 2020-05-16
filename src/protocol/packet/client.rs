@@ -76,6 +76,12 @@ pub struct CLoginArbiter {
 pub struct CPong {}
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CSelectUser {
+    pub database_id: i32,
+    pub unk1: u8,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CSetVisibleRange {
     pub range: u32,
 }
@@ -227,6 +233,15 @@ mod tests {
         name: test_pong,
         data: vec![],
         expected: CPong {}
+    );
+
+    packet_test!(
+        name: test_select_user,
+        data: vec![0x3, 0x2f, 0x32, 0x1, 0x0],
+        expected: CSelectUser {
+            database_id: 20066051,
+            unk1: 0,
+        }
     );
 
     packet_test!(

@@ -369,6 +369,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     ) -> Result<Self::SerializeStructVariant> {
         Err(Error::NotImplemented())
     }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 }
 
 impl<'a> ser::SerializeSeq for &'a mut Serializer {

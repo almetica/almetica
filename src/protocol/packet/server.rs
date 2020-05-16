@@ -1,6 +1,9 @@
 /// Module for server network packages.
-use crate::model::{Class, Customization, Gender, Race, Region, Vec3, Vec3a};
+use crate::model::{
+    Class, Customization, Gender, Race, Region, ServantType, TemplateID, Vec3, Vec3a,
+};
 use serde::{Deserialize, Serialize};
+use shipyard::EntityId;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SAccountPackageList {
@@ -142,15 +145,12 @@ pub struct SGetUserListCharacter {
     pub style_back_translation_debug: Vec3,
     pub used_style_head_transform: bool,
     pub is_new_character: bool,
-    pub tutorial_state: i32,
-    // TODO research what it does
+    pub tutorial_state: i32, // TODO research what it does
     pub show_style: bool,
     pub appearance2: i32,
     pub achievement_points: i32,
-    pub laurel: i32,
-    // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
-    pub lobby_slot: i32,
-    // 1..characterCount (position in character selection screen)
+    pub laurel: i32, // TODO enum: -1..5 (none, none, bronze, silver, gold, diamond, champion)
+    pub lobby_slot: i32, // 1..characterCount (position in character selection screen)
     pub guild_logo_id: i32,
     pub awakening_level: i32,
     pub has_broker_sales: bool,
@@ -204,6 +204,95 @@ pub struct SLoginAccountInfo {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLogin {
+    pub servants: Vec<SLoginServantEntry>,
+    pub name: String,
+    #[serde(with = "serde_bytes")]
+    pub details: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub shape: Vec<u8>,
+    pub template_id: TemplateID,
+    pub id: EntityId,
+    pub server_id: i32,
+    pub db_id: i32,       // TODO is this the account_db_id or the user_db_id?
+    pub action_mode: i32, // TODO investigate the exact function
+    pub alive: bool,
+    pub status: i32,
+    pub walk_speed: i32, // TODO investigate the exact function
+    pub run_speed: i32,
+    pub appearance: Customization,
+    pub visible: bool,
+    pub is_second_character: bool,
+    pub level: i16,
+    pub awakening_level: i32,
+    pub profession_mineral: i32,
+    pub profession_bug: i32,
+    pub profession_herb: i32,
+    pub profession_energy: i32,
+    pub profession_pet: i16,
+    pub pvp_declared_count: i32,
+    pub pvp_kill_count: i32,
+    pub total_exp: i64, // TODO research all exp values
+    pub level_exp: i64,
+    pub total_level_exp: i64,
+    pub ep_level: i32,
+    pub ep_exp: i64,
+    pub ep_daily_exp: i32,
+    pub rest_bonus_exp: i64,
+    pub max_rest_bonus_exp: i64,
+    pub exp_bonus_percent: f32,
+    pub drop_bonus_percent: f32,
+    pub weapon: i32, // TODO is this an datacenter ID or a database ID?
+    pub body: i32,
+    pub hand: i32,
+    pub feet: i32,
+    pub underwear: i32,
+    pub head: i32,
+    pub face: i32,
+    pub server_time: u64, // TODO what format is this? Doesn't seem to be the epoch time! (37990471)
+    pub is_pvp_server: bool,
+    pub chat_ban_end_time: u64, // timestamp in ms
+    pub title: i32,             // achievement ID
+    pub weapon_model: i32,
+    pub body_model: i32,
+    pub hand_model: i32,
+    pub feet_model: i32,
+    pub weapon_dye: i32, // ignore
+    pub body_dye: i32,
+    pub hand_dye: i32,
+    pub feet_dye: i32,
+    pub underwear_dye: i32,
+    pub style_back_dye: i32,
+    pub style_head_dye: i32,
+    pub style_face_dye: i32,
+    pub weapon_enchant: i32,
+    pub is_world_event_target: bool, // TODO investigate me
+    pub infamy: i32,
+    pub show_face: bool,
+    pub style_head: i32,
+    pub style_face: i32,
+    pub style_back: i32,
+    pub style_weapon: i32,
+    pub style_body: i32,
+    pub style_footprint: i32,
+    pub style_body_dye: i32,
+    pub show_style: bool,
+    pub title_count: i64,
+    pub appearance2: i32, // unknown, but client ignores shape if this is invalid
+    pub scale: f32,
+    pub guild_logo_id: i32,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoginServantEntry {
+    pub database_id: i64,
+    pub id: i32,
+    pub servant_type: ServantType,
+    pub energy: u32,
+    pub slot: i32,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginArbiter {
     pub success: bool,
     pub login_queue: bool,
@@ -229,12 +318,18 @@ pub struct SRemainPlayTime {
     pub minutes_left: u32,
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SSelectUser {
+    unkn1: u8, // TODO try to identify the usage of the packets
+    unkn2: u16,
+    unkn3: u64,
+}
+
 #[cfg(test)]
 #[macro_use]
 mod tests {
-    use crate::protocol::serde::{from_vec, to_vec, Result};
-
     use super::*;
+    use crate::protocol::serde::{from_vec, to_vec, Result};
 
     packet_test!(
         name: test_account_package_list,
@@ -530,6 +625,133 @@ mod tests {
     );
 
     packet_test!(
+        name: test_login,
+        data: vec![
+            0x2, 0x0, 0x3d, 0x1, 0x75, 0x1, 0x85, 0x1, 0x20, 0x0, 0xa5, 0x1, 0x40, 0x0, 0xfa,
+            0x2a, 0x0, 0x0, 0x3a, 0x22, 0x1d, 0x0, 0x0, 0x80, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0,
+            0xe4, 0x98, 0x98, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x32, 0x0, 0x0,
+            0x0, 0xb3, 0x0, 0x0, 0x0, 0x65, 0xa, 0x0, 0x0, 0x7, 0x8, 0x4, 0x0, 0x1, 0x0, 0x41,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x5e, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x5e, 0x1, 0x0,
+            0x0, 0x5e, 0x1, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf,
+            0xe1, 0xef, 0x3e, 0x0, 0x0, 0x0, 0x0, 0x45, 0xf6, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x96, 0x7, 0x44, 0x8d, 0x0, 0x0, 0x0, 0x0, 0xa, 0x1, 0x0, 0x0, 0x9c, 0xca, 0x16,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x40, 0x46, 0x74, 0x11, 0x0, 0x0, 0x0,
+            0x0, 0x4c, 0x46, 0x74, 0x11, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x3f, 0x0, 0x0,
+            0x0, 0x0, 0xd1, 0x6e, 0x0, 0x0, 0x19, 0x78, 0x1, 0x0, 0x1b, 0x78, 0x1, 0x0, 0x1d,
+            0x78, 0x1, 0x0, 0x5b, 0xbb, 0x2, 0x0, 0x88, 0xc3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0xab, 0xb0, 0x43, 0x2, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0xa, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0xf, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x7a,
+            0xb3, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2d, 0x98, 0x2, 0x0, 0x61,
+            0xb6, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3c, 0x19, 0x19, 0x19, 0x1, 0x1e, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x64, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x3f, 0x0, 0x0, 0x0,
+            0x0, 0x3d, 0x1, 0x59, 0x1, 0xbb, 0xc9, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x60, 0x2,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x64, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x59,
+            0x1, 0x0, 0x0, 0xff, 0xf4, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x61, 0x2, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x64, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x4d, 0x0, 0x69, 0x0,
+            0x6e, 0x0, 0x65, 0x0, 0x72, 0x0, 0x76, 0x0, 0x61, 0x0, 0x0, 0x0, 0x0, 0x7, 0x0,
+            0xc, 0x0, 0x0, 0x0, 0x0, 0x1a, 0x18, 0x14, 0x0, 0x0, 0xd, 0x7, 0x0, 0x10, 0x0,
+            0x10, 0x10, 0x0, 0x0, 0x0, 0xe, 0x11, 0x1d, 0xc, 0x18, 0x1a, 0x10, 0x7, 0x3, 0x1,
+            0x12, 0x10, 0x13, 0x13, 0x10, 0x13, 0x13, 0x13, 0x10, 0x10, 0x11, 0x10, 0xf, 0xf,
+            0xf, 0x10, 0x13, 0xa, 0x0, 0x16, 0x18, 0x9, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0,
+        ],
+        expected: SLogin {
+            servants: vec![SLoginServantEntry {
+                database_id: 248251,
+                id: 608,
+                servant_type: ServantType::Pet,
+                energy: 100,
+                slot: -1
+            },
+            SLoginServantEntry {
+                database_id: 128255,
+                id: 609,
+                servant_type: ServantType::Pet,
+                energy: 100,
+                slot: -1
+            }],
+            name: "Minerva".to_string(),
+            details: vec![0, 7, 0, 12, 0, 0, 0, 0, 26, 24, 20, 0, 0, 13, 7, 0, 16, 0, 16, 16, 0, 0, 0, 14, 17, 29, 12, 24, 26, 16, 7, 3],
+            shape: vec![1, 18, 16, 19, 19, 16, 19, 19, 19, 16, 16, 17, 16, 15, 15, 15, 16, 19, 10, 0, 22, 24, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            template_id: TemplateID{race: Race::ElinPopori, gender: Gender::Female, class: Class::Lancer},
+            id: from_vec::<EntityId>(vec![0x3A,0x22,0x1D,0x0,0x0,0x80,0,0])?,
+            server_id: 1,
+            db_id: 10000612,
+            action_mode: 0,
+            alive: true,
+            status: 0,
+            walk_speed: 50,
+            run_speed: 179,
+            appearance: Customization(vec![101, 10, 0, 0, 7, 8, 4, 0]),
+            visible: true,
+            is_second_character: false,
+            level: 65,
+            awakening_level: 0,
+            profession_mineral: 350,
+            profession_bug: 0,
+            profession_herb: 350,
+            profession_energy: 350,
+            profession_pet: 1,
+            pvp_declared_count: 0,
+            pvp_kill_count: 0,
+            total_exp: 1055908111,
+            level_exp: 128581,
+            total_level_exp: 2370045846,
+            ep_level: 266,
+            ep_exp: 1493660,
+            ep_daily_exp: 0,
+            rest_bonus_exp: 292832832,
+            max_rest_bonus_exp: 292832844,
+            exp_bonus_percent: 1.0,
+            drop_bonus_percent: 0.0,
+            weapon: 28369,
+            body: 96281,
+            hand: 96283,
+            feet: 96285,
+            underwear: 179035,
+            head: 50056,
+            face: 0,
+            server_time: 37990571,
+            is_pvp_server: true,
+            chat_ban_end_time: 0,
+            title: 778,
+            weapon_model: 0,
+            body_model: 0,
+            hand_model: 0,
+            feet_model: 0,
+            weapon_dye: 0,
+            body_dye: 0,
+            hand_dye: 0,
+            feet_dye: 0,
+            underwear_dye: 0,
+            style_back_dye: 0,
+            style_head_dye: 0,
+            style_face_dye: 0,
+            weapon_enchant: 15,
+            is_world_event_target: false,
+            infamy: 0,
+            show_face: true,
+            style_head: 177018,
+            style_face: 0,
+            style_back: 0,
+            style_weapon: 170029,
+            style_body: 177761,
+            style_footprint: 0,
+            style_body_dye: 421075260,
+            show_style: true,
+            title_count: 30,
+            appearance2: 100,
+            scale: 1.0,
+            guild_logo_id: 0,
+        }
+    );
+
+    packet_test!(
         name: test_login_arbiter,
         data: vec![
             0x1, 0x0, 0x2, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0,
@@ -560,6 +782,16 @@ mod tests {
         expected: SRemainPlayTime {
             account_type: 6,
             minutes_left: 0,
+        }
+    );
+
+    packet_test!(
+        name: test_select_user,
+        data: vec![0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1],
+        expected: SSelectUser {
+            unkn1: 1,
+            unkn2: 0,
+            unkn3: 72339069014638592,
         }
     );
 

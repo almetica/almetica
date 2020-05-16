@@ -399,6 +399,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     {
         Err(Error::DeserializeIgnoredAnyNotSupported(self.pos))
     }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 }
 
 impl<'de, 'a> serde::de::VariantAccess<'de> for &'a mut Deserializer {
