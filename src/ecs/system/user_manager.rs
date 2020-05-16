@@ -305,7 +305,7 @@ fn handle_delete_user(
 
     debug!("Delete user event incoming");
 
-    // TODO if a multiverse_location component is attached to the connection, don't execute the command!
+    // TODO if a global world_location component is attached to the connection, don't execute the command!
     // TODO Implement the deletion timer functionality
 
     Ok(task::block_on(async {

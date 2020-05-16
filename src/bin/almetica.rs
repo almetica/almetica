@@ -3,7 +3,7 @@ use almetica::config::{read_configuration, Configuration};
 use almetica::crypt::password_hash;
 use almetica::dataloader::load_opcode_mapping;
 use almetica::ecs::event::EcsEvent;
-use almetica::ecs::world::Multiverse;
+use almetica::ecs::world::GlobalWorld;
 use almetica::model::entity::Account;
 use almetica::model::migrations;
 use almetica::model::repository::account;
@@ -159,8 +159,8 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
     info!("Creating database pool");
     let pool = sqlx_pool(&config).await?;
 
-    info!("Starting the ECS multiverse");
-    let (multiverse_handle, global_tx_channel) = start_multiverse(config.clone(), pool.clone());
+    info!("Starting the ECS global world");
+    let (global_world_handle, global_tx_channel) = start_global_world(config.clone(), pool.clone());
 
     info!("Starting the web server");
     let web_handle = start_web_server(pool, config.clone());
@@ -173,26 +173,26 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
         config.clone(),
     );
 
-    let (multiverse_res, web_server_res, network_server_res) =
-        join!(multiverse_handle, web_handle, network_handle).await;
+    let (global_world_res, web_server_res, network_server_res) =
+        join!(global_world_handle, web_handle, network_handle).await;
 
-    multiverse_res.context("Error while running the multiverse")?;
+    global_world_res.context("Error while running the global world")?;
     web_server_res.context("Error while running the web server")?;
     network_server_res.context("Error while running the network server")?;
 
     Ok(())
 }
 
-/// Starts the multiverse on a new thread and returns a channel into the global world.
-fn start_multiverse(
+/// Starts the global world on a new thread and returns a channel into the global world.
+fn start_global_world(
     config: Configuration,
     pool: PgPool,
 ) -> (JoinHandle<Result<()>>, Sender<EcsEvent>) {
-    let mut multiverse = Multiverse::new();
-    let rx = multiverse.get_global_input_event_channel();
+    let mut global_world = GlobalWorld::new();
+    let rx = global_world.get_global_input_event_channel();
 
     let join_handle = task::spawn_blocking(move || {
-        multiverse.run(pool, config);
+        global_world.run(pool, config);
         Ok(())
     });
 
