@@ -2,8 +2,8 @@ use crate::ecs::component::{Account, Connection};
 use crate::ecs::event::{EcsEvent, Event};
 use crate::ecs::resource::WorldId;
 use crate::ecs::system::{send_event, send_event_with_connection};
+use crate::model;
 use crate::model::repository::{account, loginticket};
-use crate::model::Region;
 use crate::protocol::packet::*;
 use crate::Result;
 use anyhow::{bail, ensure, Context};
@@ -21,7 +21,7 @@ const PONG_DEADLINE: u64 = 75;
 /// Connection manager handles the connection components.
 pub fn connection_manager_system(
     incoming_events: View<EcsEvent>,
-    mut account_ids: ViewMut<Account>,
+    mut accounts: ViewMut<Account>,
     mut connections: ViewMut<Connection>,
     mut entities: EntitiesViewMut,
     pool: UniqueView<PgPool>,
@@ -57,7 +57,7 @@ pub fn connection_manager_system(
             if let Err(e) = handle_request_login_arbiter(
                 *connection_id,
                 &packet,
-                &mut account_ids,
+                &mut accounts,
                 &mut connections,
                 &mut entities,
                 &pool,
@@ -164,7 +164,7 @@ fn handle_request_check_version(
 fn handle_request_login_arbiter(
     connection_id: EntityId,
     packet: &CLoginArbiter,
-    account_ids: &mut ViewMut<Account>,
+    accounts: &mut ViewMut<Account>,
     mut connections: &mut ViewMut<Connection>,
     entities: &mut EntitiesViewMut,
     pool: &PgPool,
@@ -209,13 +209,18 @@ fn handle_request_login_arbiter(
             .await
             .context("Can't find the account for the given master account name")?;
 
+        ensure!(
+            accounts.iter().find(|id| id.id == account.id).is_none(),
+            "Account is already logged in"
+        );
+
         connection.is_authenticated = true;
 
         let account = Account {
             id: account.id,
             region: packet.region,
         };
-        entities.add_component(account_ids, account, connection_id);
+        entities.add_component(accounts, account, connection_id);
 
         check_and_handle_post_initialization(connection_id, account, connection);
 
@@ -351,7 +356,11 @@ fn reject_check_version(connection_id: EntityId) -> EcsEvent {
 }
 
 // TODO read PVP option out of configuration
-fn accept_login_arbiter(connection_id: EntityId, account_id: i64, region: Region) -> EcsEvent {
+fn accept_login_arbiter(
+    connection_id: EntityId,
+    account_id: i64,
+    region: model::Region,
+) -> EcsEvent {
     Box::new(Event::ResponseLoginArbiter {
         connection_id,
         account_id,
@@ -369,7 +378,11 @@ fn accept_login_arbiter(connection_id: EntityId, account_id: i64, region: Region
 }
 
 // TODO read PVP option out of configuration
-fn reject_login_arbiter(connection_id: EntityId, account_id: i64, region: Region) -> EcsEvent {
+fn reject_login_arbiter(
+    connection_id: EntityId,
+    account_id: i64,
+    region: model::Region,
+) -> EcsEvent {
     Box::new(Event::ResponseLoginArbiter {
         connection_id,
         account_id,
@@ -655,6 +668,77 @@ mod tests {
 
             // Make ticket invalid
             ticket.make_ascii_uppercase();
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
+                    entities.add_entity(
+                        &mut events,
+                        Box::new(Event::RequestLoginArbiter {
+                            connection_id,
+                            packet: CLoginArbiter {
+                                master_account_name: account.name,
+                                ticket,
+                                unk1: 0,
+                                unk2: 0,
+                                region: Region::Europe,
+                                patch_version: 9002,
+                            },
+                        }),
+                    )
+                },
+            );
+
+            world.run(connection_manager_system);
+
+            let mut count = 0;
+            loop {
+                if let Ok(event) = rx_channel.try_recv() {
+                    match *event {
+                        Event::ResponseLoginArbiter { packet, .. } => {
+                            if !packet.success {
+                                count += 1;
+                            }
+                        }
+                        Event::ResponseDropConnection { .. } => {
+                            count += 1;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break;
+                }
+            }
+            assert_eq!(count, 2);
+
+            // The connection should be dropped.
+            let count = world.borrow::<View<Connection>>().iter().count();
+            assert_eq!(count, 0);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_login_arbiter_reject_double_login() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let mut conn = task::block_on(async { pool.acquire().await })?;
+            let (world, connection_id, rx_channel) = setup_with_connection(pool, true);
+            let (account, ticket) = task::block_on(async { create_login(&mut conn).await })?;
+
+            // Add an account component to the connection entity to signal that it's already logged in
+            world.run(
+                |entities: EntitiesViewMut, mut accounts: ViewMut<Account>| {
+                    entities.add_component(
+                        &mut accounts,
+                        Account {
+                            id: account.id,
+                            region: Region::Europe,
+                        },
+                        connection_id,
+                    )
+                },
+            );
 
             world.run(
                 |mut entities: EntitiesViewMut, mut events: ViewMut<EcsEvent>| {
