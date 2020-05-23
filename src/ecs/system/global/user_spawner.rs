@@ -344,7 +344,7 @@ fn assemble_response_login(connection_global_world_id: EntityId, user: entity::U
             style_head_dye: 0,
             style_face_dye: 0,
             weapon_enchant: 0,
-            is_world_message_target: false,
+            is_world_event_target: false,
             infamy: 0,
             show_face: true,
             style_head: 0,

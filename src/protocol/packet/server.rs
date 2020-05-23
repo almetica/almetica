@@ -278,7 +278,7 @@ pub struct SLogin {
     pub style_head_dye: i32,
     pub style_face_dye: i32,
     pub weapon_enchant: i32,
-    pub is_world_message_target: bool, // TODO investigate me
+    pub is_world_event_target: bool, // TODO investigate me
     pub infamy: i32,
     pub show_face: bool,
     pub style_head: i32,
@@ -323,7 +323,7 @@ pub struct SPing {}
 pub struct SRemainPlayTime {
     // 1 = P2P (active subscription)
     // 2 = P2P (no active subscription),
-    // 3 = F2P (free-play message)
+    // 3 = F2P (free-play event)
     // 4 = F2P (legacy restriction),
     // 5 = Premium, 6 = Basic
     pub account_type: u32,
@@ -778,7 +778,7 @@ mod tests {
             style_head_dye: 0,
             style_face_dye: 0,
             weapon_enchant: 15,
-            is_world_message_target: false,
+            is_world_event_target: false,
             infamy: 0,
             show_face: true,
             style_head: 177018,
