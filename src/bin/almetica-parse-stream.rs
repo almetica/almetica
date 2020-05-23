@@ -180,12 +180,27 @@ impl StreamParser {
                         self.tmp_buffer[0].len()
                     );
                 }
-                debug!("{:#x?}", packet_data);
+                self.pretty_data_print(packet_data);
                 self.num_packets += 1;
             } else {
                 return Ok(());
             }
         }
+    }
+
+    fn pretty_data_print(&self, data: Vec<u8>) {
+        let mut s = String::default();
+        let mut first = true;
+        for b in data {
+            if first {
+                first = false;
+            } else {
+                s += ", ";
+            }
+
+            s += format!("0x{:x}", b).as_ref();
+        }
+        debug!("[{}]", s);
     }
 
     fn init_crypt_session(&mut self, is_server: usize, mut payload: &[u8]) -> Result<()> {

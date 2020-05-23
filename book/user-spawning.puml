@@ -1,0 +1,69 @@
+@startuml
+autonumber
+
+actor Connection as c
+control LocalWorld as lw
+control GlobalWorld as gw
+database Database as db
+
+activate c
+activate gw
+activate db
+
+
+rnote over c: Selects character
+c -> gw: RequestSelectUser{}
+rnote over c: Waits
+
+gw -> db: GetUserById()
+rnote over gw
+- Ensure that connection has no
+  other active SpawnComponent
+- Ensure that user
+  belongs to the account
+- Create a UserSpawn component
+end note
+
+gw->lw: CreateLocalWorld(world_id, zone) -> join_handle, local_world_channel
+activate lw
+rnote over lw
+Load local world:
+- Map data
+- etc.
+end note
+
+lw -> gw: LocalWorldLoaded{world_id}
+gw -> lw: PrepareUserSpawn{user}
+
+rnote over lw
+Create user and set
+status to inactive
+end note
+
+lw -> gw: UserSpawnPrepared{connection_global_world_id, connection_local_world_id}
+gw -> db: GetUserById()
+gw -> c: RegisterLocalWorld{local_world_channel, connection_local_world_id}
+gw -> c: ResponseLogin{user_id}
+gw -> db: GetPersistedData()
+
+rnote over gw
+Send persisted user data:
+- inventory
+- quest
+- friend list
+- etc.
+end note
+
+gw -> c: ResponseLoadHint
+gw -> c: ResponseLoadTopo
+gw -> lw: UserReadyToConnect{connection_local_world_id}
+
+rnote over c: Loading Screen
+
+c -> lw: RequestLoadTopoFin
+rnote over lw: Set user active
+
+lw -> c: ResponseSpawnMe
+rnote over c: Character spawns on the map
+
+@enduml

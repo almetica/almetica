@@ -62,6 +62,9 @@ pub struct CGetUserGuildLogo {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CLoadTopoFin {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct CLoginArbiter {
     pub master_account_name: String,
     #[serde(with = "serde_bytes")]
@@ -202,6 +205,12 @@ mod tests {
         name: test_get_user_list,
         data: vec![],
         expected: CGetUserList {}
+    );
+
+    packet_test!(
+        name: test_load_topo_fin,
+        data: vec![],
+        expected: CLoadTopoFin {}
     );
 
     packet_test!(

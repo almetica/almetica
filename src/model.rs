@@ -87,7 +87,64 @@ pub enum ServantType {
     Partner = 1,
 }
 
-pub type Angle = i16;
+/// TERA transmits the rotation of objects as a u16 value. It's a fraction value of a full rotation.
+/// 0x0 = 0°, 0xFFFF = 360°
+#[derive(Clone, Copy, Debug, sqlx::Type, PartialEq)]
+#[sqlx(transparent)]
+pub struct Angle(u16);
+
+impl Angle {
+    pub fn from_deg(deg: f32) -> Self {
+        Angle((deg as f32 * 0x10000 as f32 / 360 as f32) as u16)
+    }
+
+    pub fn raw(&self) -> u16 {
+        self.0
+    }
+
+    pub fn rad(&self) -> f32 {
+        self.0 as f32 * (2.0 * std::f32::consts::PI) / 0x10000 as f32
+    }
+
+    pub fn deg(&self) -> f32 {
+        self.0 as f32 * 360.0 / 0x10000 as f32
+    }
+
+    pub fn normalize(&self) -> Self {
+        Angle(((self.0 as u32 + 0x8000) % 0x10000 - 0x8000) as u16)
+    }
+}
+
+impl Default for Angle {
+    fn default() -> Self {
+        Angle(0)
+    }
+}
+
+impl fmt::Display for Angle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.3}°", self.deg())
+    }
+}
+
+impl Serialize for Angle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u16(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Angle {
+    fn deserialize<D>(deserializer: D) -> Result<Angle, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = deserializer.deserialize_u16(U16Visitor)?;
+        Ok(Angle(value))
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
 pub struct Vec3 {
@@ -150,23 +207,6 @@ impl<'de> Deserialize<'de> for Customization {
         let value = deserializer.deserialize_u64(U64Visitor)?;
         LittleEndian::write_u64(&mut data, value);
         Ok(Customization(data))
-    }
-}
-
-struct U64Visitor;
-
-impl<'de> Visitor<'de> for U64Visitor {
-    type Value = u64;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("8 bytes")
-    }
-
-    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(value)
     }
 }
 
@@ -257,6 +297,31 @@ impl<'de> Deserialize<'de> for TemplateID {
     }
 }
 
+/// Supported password hash algorithms.
+#[derive(Clone, Debug, sqlx::Type, PartialEq)]
+#[sqlx(rename = "password_hash_algorithm")]
+pub enum PasswordHashAlgorithm {
+    #[sqlx(rename = "argon2")]
+    Argon2,
+}
+
+struct U16Visitor;
+
+impl<'de> Visitor<'de> for U16Visitor {
+    type Value = u16;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("2 bytes")
+    }
+
+    fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(value)
+    }
+}
+
 struct I32Visitor;
 
 impl<'de> Visitor<'de> for I32Visitor {
@@ -274,12 +339,21 @@ impl<'de> Visitor<'de> for I32Visitor {
     }
 }
 
-/// Supported password hash algorithms.
-#[derive(Clone, Debug, sqlx::Type, PartialEq)]
-#[sqlx(rename = "password_hash_algorithm")]
-pub enum PasswordHashAlgorithm {
-    #[sqlx(rename = "argon2")]
-    Argon2,
+struct U64Visitor;
+
+impl<'de> Visitor<'de> for U64Visitor {
+    type Value = u64;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("8 bytes")
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(value)
+    }
 }
 
 #[cfg(test)]
@@ -425,6 +499,31 @@ pub mod tests {
         assert_eq!(value.race, Race::Human);
         assert_eq!(value.gender, Gender::Male);
         assert_eq!(value.class, Class::Sorcerer);
+        Ok(())
+    }
+
+    #[test]
+    fn test_angle_basic() {
+        for i in 0..360 {
+            assert_eq!(Angle::from_deg(i as f32).deg().round(), (i as f32).round());
+        }
+        assert_eq!(Angle::from_deg(360.0).deg(), 0.0);
+    }
+
+    #[test]
+    fn test_angle_serialization() -> Result<()> {
+        let value = Angle::from_deg(180.0);
+        let data = to_vec(&value)?;
+        assert_eq!(LittleEndian::read_u16(&data), 32768);
+        Ok(())
+    }
+
+    #[test]
+    fn test_angle_deserialization() -> Result<()> {
+        let mut data = vec![0u8; 2];
+        LittleEndian::write_u16(&mut data, 32768);
+        let value: Angle = from_vec(data)?;
+        assert_eq!(value.deg(), 180.0);
         Ok(())
     }
 }

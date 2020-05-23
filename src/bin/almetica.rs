@@ -2,7 +2,7 @@
 use almetica::config::{read_configuration, Configuration};
 use almetica::crypt::password_hash;
 use almetica::dataloader::load_opcode_mapping;
-use almetica::ecs::event::EcsEvent;
+use almetica::ecs::message::EcsMessage;
 use almetica::ecs::world::GlobalWorld;
 use almetica::model::entity::Account;
 use almetica::model::migrations;
@@ -159,7 +159,7 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
     info!("Creating database pool");
     let pool = sqlx_pool(&config).await?;
 
-    info!("Starting the ECS global world");
+    info!("Starting the ECS");
     let (global_world_handle, global_tx_channel) = start_global_world(config.clone(), pool.clone());
 
     info!("Starting the web server");
@@ -187,16 +187,15 @@ async fn start_server(_matches: &ArgMatches, config: &Configuration) -> Result<(
 fn start_global_world(
     config: Configuration,
     pool: PgPool,
-) -> (JoinHandle<Result<()>>, Sender<EcsEvent>) {
-    let mut global_world = GlobalWorld::new();
-    let rx = global_world.get_global_input_event_channel();
-
+) -> (JoinHandle<Result<()>>, Sender<EcsMessage>) {
+    let mut global_world = GlobalWorld::new(&config, &pool);
+    let channel = global_world.channel.clone();
     let join_handle = task::spawn_blocking(move || {
-        global_world.run(pool, config);
+        global_world.run();
         Ok(())
     });
 
-    (join_handle, rx)
+    (join_handle, channel)
 }
 
 /// Starts the web server handling all HTTP requests.
@@ -210,7 +209,7 @@ fn start_web_server(pool: PgPool, config: Configuration) -> JoinHandle<Result<()
 
 /// Starts the network server that handles all TCP game client connections.
 fn start_network_server(
-    global_channel: Sender<EcsEvent>,
+    global_channel: Sender<EcsMessage>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,

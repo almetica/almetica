@@ -4,7 +4,7 @@ pub mod packet;
 pub mod serde;
 
 use crate::crypt::CryptSession;
-use crate::ecs::event::{EcsEvent, Event, EventTarget};
+use crate::ecs::message::{EcsMessage, Message, MessageTarget};
 use crate::protocol::opcode::Opcode;
 use crate::{AlmeticaError, Result};
 use anyhow::{bail, Context};
@@ -22,29 +22,27 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
-enum ConnectionHandleEvent {
+enum ConnectionHandleMessage {
     Rx(usize),
-    GlobalTx(EcsEvent),
-    #[allow(dead_code)]
-    LocalTx(EcsEvent), // FIXME remove me once implemented
+    Tx(EcsMessage),
 }
 
 /// Abstracts the game network protocol session.
 pub struct GameSession<'a> {
-    pub connection_id: EntityId,
+    pub connection_global_world_id: EntityId,
+    connection_local_world_id: Option<EntityId>,
     account_id: Option<i64>,
+    user_id: Option<i32>,
     stream: &'a mut TcpStream,
     cipher: CryptSession,
     opcode_table: Arc<Vec<Opcode>>,
     reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
-    // Sending channel TO the global world
-    global_request_channel: Sender<EcsEvent>,
-    // Receiving channel FROM the global world
-    global_response_channel: Receiver<EcsEvent>,
-    // Sending channel TO the instance world
-    _instance_request_channel: Option<Sender<EcsEvent>>,
-    // Receiving channel FROM the instance world
-    _instance_response_channel: Option<Receiver<EcsEvent>>,
+    // Receiving channel for the connection
+    response_channel: Receiver<EcsMessage>,
+    // Sending channel to the global world
+    global_request_channel: Sender<EcsMessage>,
+    // Sending channel to the instance world
+    local_request_channel: Option<Sender<EcsMessage>>,
     write_timeout_dur: Duration,
     read_timeout_dur: Duration,
     peek_timeout_dur: Duration,
@@ -54,41 +52,43 @@ impl<'a> GameSession<'a> {
     /// Initializes and returns a `GameSession` object.
     pub async fn new(
         stream: &'a mut TcpStream,
-        global_request_channel: Sender<EcsEvent>,
+        global_request_channel: Sender<EcsMessage>,
         opcode_table: Arc<Vec<Opcode>>,
         reverse_opcode_table: Arc<HashMap<Opcode, u16>>,
     ) -> Result<GameSession<'a>> {
         // Initialize the stream cipher with the client.
         let cipher = GameSession::init_crypto(stream).await?;
 
-        // Channel to receive response events from the global world ECS.
+        // Channel to receive response messages from the global world ECS.
         let (tx_response_channel, rx_response_channel) = channel(128);
         global_request_channel
-            .send(Box::new(Event::RequestRegisterConnection {
-                response_channel: tx_response_channel,
+            .send(Box::new(Message::RegisterConnection {
+                connection_channel: tx_response_channel,
             }))
             .await;
 
         // Wait for the global ECS to return an ID for the connection.
         let message = rx_response_channel.recv().await?;
-        let connection_id = GameSession::parse_connection(message).await?;
+        let connection_global_world_id =
+            GameSession::parse_connection_global_world_id(message).await?;
 
         info!(
             "Game session initialized under entity ID {:?}",
-            connection_id
+            connection_global_world_id
         );
 
         Ok(GameSession {
-            connection_id,
+            connection_global_world_id,
+            connection_local_world_id: None,
             account_id: None,
+            user_id: None,
             stream,
             cipher,
             opcode_table,
             reverse_opcode_table,
+            response_channel: rx_response_channel,
             global_request_channel,
-            global_response_channel: rx_response_channel,
-            _instance_request_channel: None,
-            _instance_response_channel: None,
+            local_request_channel: None,
             write_timeout_dur: Duration::from_secs(15),
             read_timeout_dur: Duration::from_secs(15),
             peek_timeout_dur: Duration::from_secs(120),
@@ -137,11 +137,13 @@ impl<'a> GameSession<'a> {
         ))
     }
 
-    /// Reads the message from the global world message and returns the connection.
-    async fn parse_connection(event: EcsEvent) -> Result<EntityId> {
-        match &*event {
-            Event::ResponseRegisterConnection { connection_id } => Ok(*connection_id),
-            _ => bail!("Wrong event received"),
+    /// Reads the message from the global world message and returns the global world ID.
+    async fn parse_connection_global_world_id(message: EcsMessage) -> Result<EntityId> {
+        match &*message {
+            Message::RegisterConnectionFinished {
+                connection_global_world_id,
+            } => Ok(*connection_global_world_id),
+            _ => bail!("Wrong message received"),
         }
     }
 
@@ -151,21 +153,20 @@ impl<'a> GameSession<'a> {
         let mut peek_buf = vec![0u8; 4];
 
         loop {
-            // TODO Query instance response channel
             let rx = async {
                 let read = timeout(self.peek_timeout_dur, self.stream.peek(&mut peek_buf))
                     .await
                     .context("Could not peek into TCP stream")?;
-                Ok::<_, anyhow::Error>(ConnectionHandleEvent::Rx(read))
+                Ok::<_, anyhow::Error>(ConnectionHandleMessage::Rx(read))
             };
 
-            let global_tx = async {
-                let event = self.global_response_channel.recv().await?;
-                Ok::<_, anyhow::Error>(ConnectionHandleEvent::GlobalTx(event))
+            let tx = async {
+                let message = self.response_channel.recv().await?;
+                Ok::<_, anyhow::Error>(ConnectionHandleMessage::Tx(message))
             };
 
-            match select!(rx, global_tx).await? {
-                ConnectionHandleEvent::Rx(read) => {
+            match select!(rx, tx).await? {
+                ConnectionHandleMessage::Rx(read) => {
                     if read == 0 {
                         // Connection was closed
                         return Ok(());
@@ -199,8 +200,8 @@ impl<'a> GameSession<'a> {
                         }
                     }
                 }
-                ConnectionHandleEvent::GlobalTx(event) | ConnectionHandleEvent::LocalTx(event) => {
-                    if let Err(e) = self.handle_event(event).await {
+                ConnectionHandleMessage::Tx(message) => {
+                    if let Err(e) = self.handle_message(message).await {
                         self.handle_error(e)?;
                     }
                 }
@@ -217,35 +218,52 @@ impl<'a> GameSession<'a> {
         }
     }
 
-    /// Handles the incoming events from the global or local ECS.
-    async fn handle_event(&mut self, event: EcsEvent) -> Result<()> {
-        // Handle special events
-        match &*event {
-            Event::ResponseDropConnection { .. } => {
-                debug!("Received drop connection event");
+    /// Handles the incoming messages from the global or local ECS.
+    async fn handle_message(&mut self, message: EcsMessage) -> Result<()> {
+        // Handle special messages
+        match &*message {
+            Message::DropConnection { .. } => {
+                debug!("Received drop connection message");
                 bail!(AlmeticaError::ConnectionClosed);
             }
-            Event::ResponseLoginArbiter { account_id, .. } => {
+            Message::ResponseLoginArbiter { account_id, .. } => {
                 debug!("Connection is authenticated with account ID {}", account_id);
                 self.account_id = Some(*account_id);
+            }
+            Message::ResponseLogin { user_id, .. } => {
+                debug!("Connection is authenticated with user ID {}", user_id);
+                self.user_id = Some(*user_id);
+            }
+            // TODO send the RegisterLocalWorld message somewhere
+            Message::RegisterLocalWorld {
+                connection_local_world_id,
+                local_world_channel,
+            } => {
+                debug!(
+                    "Connection has been assigned local world {:?}",
+                    connection_local_world_id
+                );
+                self.connection_local_world_id = Some(*connection_local_world_id);
+                self.local_request_channel = Some(local_world_channel.clone());
+                return Ok(());
             }
             _ => { /* Nothing special to do */ }
         }
 
-        // Send out packet events to the client.
-        match event.data()? {
-            Some(data) => match event.opcode() {
+        // Send out packet messages to the client.
+        match message.data()? {
+            Some(data) => match message.opcode() {
                 Some(opcode) => {
                     debug!("Sending packet {:?}", opcode);
                     trace!("Packet data: {:?}", data);
                     self.send_packet(opcode, data).await?;
                 }
                 None => {
-                    error!("Can't find opcode in event {:?}", event);
+                    error!("Can't find opcode in message {:?}", message);
                 }
             },
             None => {
-                error!("Can't find data in event {:?}", event);
+                error!("Can't find data in message {:?}", message);
             }
         }
 
@@ -289,40 +307,51 @@ impl<'a> GameSession<'a> {
             Opcode::UNKNOWN => {
                 warn!("Unmapped and unhandled packet with opcode value {}", opcode);
             }
-            // TODO handle the account_id
             _ => {
-                match Event::new_from_packet(
-                    self.connection_id,
+                match Message::new_from_packet(
+                    self.connection_global_world_id,
+                    self.connection_local_world_id,
                     self.account_id,
+                    self.user_id,
                     opcode_type,
                     packet_data,
                 ) {
-                    Ok(event) => {
+                    Ok(message) => {
                         debug!("Received valid packet {:?}", opcode_type);
-                        match event.target() {
-                            EventTarget::Global => {
-                                self.global_request_channel.send(Box::new(event)).await;
+                        match message.target() {
+                            MessageTarget::Global => {
+                                self.global_request_channel.send(Box::new(message)).await;
                             }
-                            EventTarget::Local => {
-                                // TODO send to the local world
+                            MessageTarget::Local => {
+                                if let Some(channel) = &self.local_request_channel {
+                                    channel.send(Box::new(message)).await;
+                                } else {
+                                    error!("Local world channel is not set. Dropping {}", message);
+                                }
                             }
-                            EventTarget::Connection => {
+                            MessageTarget::Connection => {
                                 error!(
-                                    "Can't send event {} with target Connection from a connection",
-                                    event
+                                    "Can't send {} with target Connection from a connection",
+                                    message
+                                );
+                            }
+                            MessageTarget::GlobalLocal => {
+                                error!(
+                                    "Can't send {} with target GlobalLocal from a connection",
+                                    message
                                 );
                             }
                         }
                     }
                     Err(e) => match e.downcast_ref::<AlmeticaError>() {
-                        Some(AlmeticaError::NoEventMappingForPacket) => {
+                        Some(AlmeticaError::NoMessageMappingForPacket) => {
                             warn!("No mapping found for packet {:?}", opcode_type);
                         }
                         Some(AlmeticaError::UnauthorizedPacket) => {
                             bail!("Unauthorized client did try to send a packet that needs authorization");
                         }
                         Some(..) | None => error!(
-                            "Can't create event from valid packet {:?}: {:?}",
+                            "Can't create message from valid packet {:?}: {:?}",
                             opcode_type, e
                         ),
                     },
@@ -338,7 +367,7 @@ mod tests {
     use super::*;
     use crate::dataloader::*;
     use crate::ecs::component::Connection;
-    use crate::ecs::event::Event::{RequestRegisterConnection, ResponseRegisterConnection};
+    use crate::ecs::message::Message::{RegisterConnection, RegisterConnectionFinished};
     use crate::protocol::opcode::Opcode;
     use crate::protocol::GameSession;
     use crate::Result;
@@ -412,17 +441,17 @@ mod tests {
 
         // World loop mock
         let world_join = task::spawn(async move {
-            let connection_id = get_new_entity_with_connection_component();
+            let connection_global_world_id = get_new_entity_with_connection_component();
             loop {
                 task::yield_now().await;
-                if let Ok(event) = rx_channel.recv().await {
-                    match &*event {
-                        RequestRegisterConnection {
-                            response_channel, ..
-                        } => {
-                            let tx = response_channel.clone();
-                            tx.send(Box::new(ResponseRegisterConnection { connection_id }))
-                                .await;
+                if let Ok(message) = rx_channel.recv().await {
+                    match &*message {
+                        RegisterConnection { connection_channel } => {
+                            let tx = connection_channel.clone();
+                            tx.send(Box::new(RegisterConnectionFinished {
+                                connection_global_world_id,
+                            }))
+                            .await;
                             break;
                         }
                         _ => break,

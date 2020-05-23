@@ -8,7 +8,7 @@ use sqlx::PgConnection;
 pub async fn create(conn: &mut PgConnection, user: &User) -> Result<User> {
     Ok(sqlx::query_as(
         r#"INSERT INTO "user"
-        VALUES (DEFAULT, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, DEFAULT, DEFAULT)
+        VALUES (DEFAULT, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, DEFAULT, DEFAULT)
         RETURNING *"#,
     )
     .bind(&user.account_id)
@@ -20,9 +20,6 @@ pub async fn create(conn: &mut PgConnection, user: &User) -> Result<User> {
     .bind(&user.details)
     .bind(&user.appearance)
     .bind(&user.appearance2)
-    .bind(&user.world_id)
-    .bind(&user.guard_id)
-    .bind(&user.section_id)
     .bind(&user.level)
     .bind(&user.awakening_level)
     .bind(&user.laurel)
@@ -52,24 +49,21 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
             "details" = $6,
             "appearance" = $7,
             "appearance2" = $8,
-            "world_id" = $9,
-            "guard_id" = $10,
-            "section_id" = $11,
-            "level" = $12,
-            "awakening_level" = $13,
-            "laurel" = $14,
-            "achievement_points" = $15,
-            "playtime" = $16,
-            "rest_bonus_xp" = $17,
-            "show_face" = $18,
-            "show_style" = $19,
-            "lobby_slot" = $20,
-            "is_new_character" = $21,
-            "tutorial_state" = $22,
-            "is_deleting" = $23,
-            "delete_at" = $24,
-            "last_logout_at" = $25
-            WHERE "id" = $26
+            "level" = $9,
+            "awakening_level" = $10,
+            "laurel" = $11,
+            "achievement_points" = $12,
+            "playtime" = $13,
+            "rest_bonus_xp" = $14,
+            "show_face" = $15,
+            "show_style" = $16,
+            "lobby_slot" = $17,
+            "is_new_character" = $18,
+            "tutorial_state" = $19,
+            "is_deleting" = $20,
+            "delete_at" = $21,
+            "last_logout_at" = $22
+            WHERE "id" = $23
             RETURNING *"#,
     )
     .bind(&user.name)
@@ -80,9 +74,6 @@ pub async fn update(conn: &mut PgConnection, user: &User) -> Result<User> {
     .bind(&user.details)
     .bind(&user.appearance)
     .bind(&user.appearance2)
-    .bind(&user.world_id)
-    .bind(&user.guard_id)
-    .bind(&user.section_id)
     .bind(&user.level)
     .bind(&user.awakening_level)
     .bind(&user.laurel)
@@ -196,9 +187,6 @@ pub mod tests {
             details: vec![0u8],
             appearance: Customization(vec![0u8]),
             appearance2: 0,
-            world_id: 0,
-            guard_id: 0,
-            section_id: 0,
             level: 1,
             awakening_level: 0,
             laurel: 0,
@@ -237,9 +225,6 @@ pub mod tests {
                 assert_eq!(org_user.details, db_user.details);
                 assert_eq!(org_user.appearance, db_user.appearance);
                 assert_eq!(org_user.appearance2, db_user.appearance2);
-                assert_eq!(org_user.world_id, db_user.world_id);
-                assert_eq!(org_user.guard_id, db_user.guard_id);
-                assert_eq!(org_user.section_id, db_user.section_id);
                 assert_eq!(org_user.level, db_user.level);
                 assert_eq!(org_user.awakening_level, db_user.awakening_level);
                 assert_eq!(org_user.laurel, db_user.laurel);
@@ -275,7 +260,6 @@ pub mod tests {
                 db_user.account_id = 12312;
                 db_user.name = "new_user_name".to_string();
                 db_user.class = Class::Archer;
-                db_user.world_id = 100;
                 db_user.created_at = Utc.ymd(2003, 7, 8).and_hms(11, 40, 20);
 
                 let updated_db_user = update(&mut conn, &db_user).await?;
@@ -286,8 +270,6 @@ pub mod tests {
                 assert_eq!(updated_db_user.name, "new_user_name");
                 assert_ne!(updated_db_user.class, org_user.class);
                 assert_eq!(updated_db_user.class, Class::Archer);
-                assert_ne!(updated_db_user.world_id, org_user.world_id);
-                assert_eq!(updated_db_user.world_id, 100);
                 assert_eq!(updated_db_user.created_at, org_user.created_at);
 
                 Ok(())

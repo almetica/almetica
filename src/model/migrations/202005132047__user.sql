@@ -5,7 +5,7 @@ CREATE TYPE "user_class" AS ENUM ('warrior', 'lancer', 'slayer', 'berserker', 's
 CREATE TABLE "user"
 (
     "id"                 SERIAL PRIMARY KEY,
-    "account_id"         BIGINT     NOT NULL REFERENCES account ON DELETE CASCADE,
+    "account_id"         BIGINT     NOT NULL REFERENCES "account" ON DELETE CASCADE,
     "name"               TEXT       NOT NULL UNIQUE,
 
     "gender"             gender     NOT NULL,
@@ -15,10 +15,6 @@ CREATE TABLE "user"
     "details"            BYTEA      NOT NULL,
     "appearance"         BYTEA      NOT NULL,
     "appearance2"        INT        NOT NULL      DEFAULT 0,
-
-    "world_id"           INT        NOT NULL      DEFAULT 0,
-    "guard_id"           INT        NOT NULL      DEFAULT 0,
-    "section_id"         INT        NOT NULL      DEFAULT 0,
 
     "level"              INT        NOT NULL      DEFAULT 1,
     "awakening_level"    INT        NOT NULL      DEFAULT 0,

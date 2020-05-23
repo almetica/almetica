@@ -2,8 +2,9 @@
 .idea/
 .vscode/
 /data
-/doc
+/book
 /target
+/logs
 Cargo.lock
 *.gz
 *.pcap

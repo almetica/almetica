@@ -1,6 +1,6 @@
 /// The module of the network server that handles the TCP connections to the clients.
 use crate::config::Configuration;
-use crate::ecs::event::EcsEvent;
+use crate::ecs::message::EcsMessage;
 use crate::protocol::opcode::Opcode;
 use crate::protocol::GameSession;
 use crate::{AlmeticaError, Result};
@@ -14,7 +14,7 @@ use tracing_futures::Instrument;
 
 /// Main loop for the network server
 pub async fn run(
-    global_channel: Sender<EcsEvent>,
+    global_channel: Sender<EcsMessage>,
     map: Vec<Opcode>,
     reverse_map: HashMap<Opcode, u16>,
     config: Configuration,
@@ -45,11 +45,11 @@ pub async fn run(
                         .await
                         {
                             Ok(mut session) => {
-                                let connection_id = session.connection_id;
+                                let connection_global_world_id = session.connection_global_world_id;
                                 match session
                                     .handle_connection()
                                     .instrument(
-                                        info_span!("connection", connection = ?connection_id),
+                                        info_span!("connection_global_world_id", connection_global_world_id = ?connection_global_world_id),
                                     )
                                     .await
                                 {

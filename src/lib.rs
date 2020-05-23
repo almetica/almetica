@@ -21,8 +21,8 @@ pub enum AlmeticaError {
     #[error("connection closed2")]
     ConnectionClosed,
 
-    #[error("no event mapping found for packet")]
-    NoEventMappingForPacket,
+    #[error("no message mapping found for packet")]
+    NoMessageMappingForPacket,
 
     #[error("client sent authenticated packet without being authenticated")]
     UnauthorizedPacket,

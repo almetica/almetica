@@ -1,6 +1,6 @@
 /// Module for server network packages.
 use crate::model::{
-    Class, Customization, Gender, Race, Region, ServantType, TemplateID, Vec3, Vec3a,
+    Angle, Class, Customization, Gender, Race, Region, ServantType, TemplateID, Vec3, Vec3a,
 };
 use serde::{Deserialize, Serialize};
 use shipyard::EntityId;
@@ -197,6 +197,18 @@ pub struct SLoadingScreenControlInfo {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoadHint {
+    pub unk1: u32, // TODO try to identify the usage of the field
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SLoadTopo {
+    pub zone: i32,
+    pub location: Vec3,
+    pub disable_loading_screen: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoginAccountInfo {
     pub server_name: String,
     pub account_id: i64,
@@ -266,7 +278,7 @@ pub struct SLogin {
     pub style_head_dye: i32,
     pub style_face_dye: i32,
     pub weapon_enchant: i32,
-    pub is_world_event_target: bool, // TODO investigate me
+    pub is_world_message_target: bool, // TODO investigate me
     pub infamy: i32,
     pub show_face: bool,
     pub style_head: i32,
@@ -311,7 +323,7 @@ pub struct SPing {}
 pub struct SRemainPlayTime {
     // 1 = P2P (active subscription)
     // 2 = P2P (no active subscription),
-    // 3 = F2P (free-play event)
+    // 3 = F2P (free-play message)
     // 4 = F2P (legacy restriction),
     // 5 = Premium, 6 = Basic
     pub account_type: u32,
@@ -320,9 +332,18 @@ pub struct SRemainPlayTime {
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SSelectUser {
-    unkn1: u8, // TODO try to identify the usage of the packets
-    unkn2: u16,
-    unkn3: u64,
+    unk1: u8, // TODO try to identify the usage of the fields
+    unk2: u16,
+    unk3: u64,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SSpawnMe {
+    pub user_id: EntityId,
+    pub location: Vec3,
+    pub rotation: Angle,
+    pub is_alive: bool,
+    pub is_lord: bool, // TODO try to identify the usage of the field
 }
 
 #[cfg(test)]
@@ -409,8 +430,9 @@ mod tests {
     packet_test!(
         name: test_item_custom_string2,
         data: vec![
-            0x1, 0x0, 0x10, 0x0, 0x11, 0x21, 0x11, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0, 0x1a, 0x0, 0x22, 0x11,
-            0x2, 0x0, 0x50, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0, 0x75, 0x0, 0x0, 0x0,
+            0x1, 0x0, 0x10, 0x0, 0x11, 0x21, 0x11, 0x0, 0x0, 0x80, 0x0, 0x3, 0x10, 0x0, 0x0, 0x0,
+            0x1a, 0x0, 0x22, 0x11, 0x2, 0x0, 0x50, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x74, 0x0, 0x73, 0x0,
+            0x75, 0x0, 0x0, 0x0,
         ],
         expected: SItemCustomString {
             custom_strings: vec![SItemCustomStringEntry {
@@ -625,6 +647,29 @@ mod tests {
     );
 
     packet_test!(
+        name: test_load_hint,
+        data: vec![
+            0x0, 0x0, 0x0, 0x0
+        ],
+        expected: SLoadHint {
+            unk1: 0,
+        }
+    );
+
+    packet_test!(
+        name: test_load_topo,
+        data: vec![
+            0x5, 0x0, 0x0, 0x0, 0x0, 0x10, 0x7e, 0x46, 0x0, 0xa0, 0x9c, 0x44, 0x0,
+            0xd0, 0x89, 0xc5, 0x0
+        ],
+        expected: SLoadTopo {
+            zone: 5,
+            location: Vec3{x: 16260.0, y: 1253.0, z: -4410.0},
+            disable_loading_screen: false,
+        }
+    );
+
+    packet_test!(
         name: test_login,
         data: vec![
             0x2, 0x0, 0x3d, 0x1, 0x75, 0x1, 0x85, 0x1, 0x20, 0x0, 0xa5, 0x1, 0x40, 0x0, 0xfa,
@@ -733,7 +778,7 @@ mod tests {
             style_head_dye: 0,
             style_face_dye: 0,
             weapon_enchant: 15,
-            is_world_event_target: false,
+            is_world_message_target: false,
             infamy: 0,
             show_face: true,
             style_head: 177018,
@@ -748,6 +793,20 @@ mod tests {
             appearance2: 100,
             scale: 1.0,
             guild_logo_id: 0,
+        }
+    );
+
+    packet_test!(
+        name: test_login_account_info,
+        data: vec![
+            0x12, 0x0, 0xfe, 0x5c, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe, 0xfe, 0xfe, 0xfe, 0x50, 0x0,
+            0x6c, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x65, 0x0, 0x74, 0x0, 0x44, 0x0, 0x42, 0x0, 0x5f, 0x0,
+            0x32, 0x0, 0x37, 0x0, 0x0, 0x0,
+        ],
+        expected: SLoginAccountInfo {
+            server_name: "PlanetDB_27".to_string(),
+            account_id: 482_558,
+            integrity_iv: 4278124286,
         }
     );
 
@@ -787,25 +846,28 @@ mod tests {
 
     packet_test!(
         name: test_select_user,
-        data: vec![0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1],
+        data: vec![
+            0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1
+        ],
         expected: SSelectUser {
-            unkn1: 1,
-            unkn2: 0,
-            unkn3: 72339069014638592,
+            unk1: 1,
+            unk2: 0,
+            unk3: 72339069014638592,
         }
     );
 
     packet_test!(
-        name: test_login_account_info,
+        name: test_spawn_me,
         data: vec![
-            0x12, 0x0, 0xfe, 0x5c, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe, 0xfe, 0xfe, 0xfe, 0x50, 0x0,
-            0x6c, 0x0, 0x61, 0x0, 0x6e, 0x0, 0x65, 0x0, 0x74, 0x0, 0x44, 0x0, 0x42, 0x0, 0x5f, 0x0,
-            0x32, 0x0, 0x37, 0x0, 0x0, 0x0,
+            0x11, 0x0, 0x1d, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x10, 0x7e, 0x46, 0x0, 0xa0, 0x9c,
+            0x44, 0x0, 0xd0, 0x89, 0xc5, 0x34, 0xf3, 0x1, 0x0,
         ],
-        expected: SLoginAccountInfo {
-            server_name: "PlanetDB_27".to_string(),
-            account_id: 482_558,
-            integrity_iv: 4278124286,
+        expected: SSpawnMe {
+            user_id: from_vec::<EntityId>(vec![0x11,0x00,0x1D,0x0,0x0,0x80,0,0])?,
+            location: Vec3{x: 16260.0, y: 1253.0, z: -4410.0},
+            rotation: Angle::from_deg(342.005),
+            is_alive: true,
+            is_lord: false,
         }
     );
 }
