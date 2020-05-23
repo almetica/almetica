@@ -52,7 +52,7 @@ fn handle_set_visible_range(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::component::Connection;
+    use crate::ecs::component::GlobalConnection;
     use crate::ecs::message::Message;
     use async_std::sync::{channel, Receiver};
     use std::time::Instant;
@@ -63,10 +63,10 @@ mod tests {
         let (tx_channel, rx_channel) = channel(1024);
 
         let connection_global_world_id = world.run(
-            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
                 entities.add_entity(
                     &mut connections,
-                    Connection {
+                    GlobalConnection {
                         channel: tx_channel,
                         is_version_checked: false,
                         is_authenticated: false,

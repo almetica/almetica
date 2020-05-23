@@ -1,12 +1,12 @@
 /// Handles the global spawn process.
-use crate::ecs::component::{Connection, GlobalUserSpawn, UserSpawnStatus};
+use crate::ecs::component::{GlobalConnection, GlobalUserSpawn, UserSpawnStatus};
 use crate::ecs::dto::UserInitializer;
 use crate::ecs::message::Message::{
     PrepareUserSpawn, RegisterLocalWorld, ResponseLoadHint, ResponseLoadTopo, ResponseLogin,
     UserReadyToConnect,
 };
 use crate::ecs::message::{EcsMessage, Message};
-use crate::ecs::system::global::send_packet_message;
+use crate::ecs::system::global::send_message_to_connection;
 use crate::ecs::system::send_message;
 use crate::model::repository::user;
 use crate::model::{entity, TemplateID, Vec3};
@@ -22,7 +22,7 @@ use tracing::{debug, error, info_span};
 // TODO write tests for the user_spawner_system
 pub fn user_spawner_system(
     incoming_messages: View<EcsMessage>,
-    connections: View<Connection>,
+    connections: View<GlobalConnection>,
     mut spawns: ViewMut<GlobalUserSpawn>,
     entities: EntitiesView,
     pool: UniqueView<PgPool>,
@@ -95,7 +95,7 @@ pub fn user_spawner_system(
 fn prepare_local_spawn(
     spawn: &GlobalUserSpawn,
     connection_global_world_id: EntityId,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     ensure!(
@@ -195,7 +195,7 @@ fn handle_user_spawn_prepared(
     connection_global_world_id: EntityId,
     connection_local_world_id: EntityId,
     spawns: &mut ViewMut<GlobalUserSpawn>,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Message::UserSpawnPrepared incoming");
@@ -238,7 +238,7 @@ fn handle_user_spawn_prepared(
             .await
             .context(format!("Can't query user {}", spawn.user_id))?;
 
-        send_packet_message(
+        send_message_to_connection(
             assemble_response_login(connection_global_world_id, user),
             connections,
         );
@@ -246,11 +246,11 @@ fn handle_user_spawn_prepared(
         // TODO Send all other persisted date
 
         // TODO use the user_location entity once implemented
-        send_packet_message(
+        send_message_to_connection(
             assemble_response_load_topo(connection_global_world_id),
             connections,
         );
-        send_packet_message(
+        send_message_to_connection(
             assemble_response_load_hint(connection_global_world_id),
             connections,
         );

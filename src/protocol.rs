@@ -366,7 +366,7 @@ impl<'a> GameSession<'a> {
 mod tests {
     use super::*;
     use crate::dataloader::*;
-    use crate::ecs::component::Connection;
+    use crate::ecs::component::GlobalConnection;
     use crate::ecs::message::Message::{RegisterConnection, RegisterConnectionFinished};
     use crate::protocol::opcode::Opcode;
     use crate::protocol::GameSession;
@@ -405,10 +405,10 @@ mod tests {
         let (tx_channel, _rx_channel) = channel(1024);
 
         world.run(
-            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
                 entities.add_entity(
                     &mut connections,
-                    Connection {
+                    GlobalConnection {
                         channel: tx_channel,
                         is_version_checked: false,
                         is_authenticated: false,

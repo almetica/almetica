@@ -1,6 +1,6 @@
-use crate::ecs::component::{Account, Connection, GlobalUserSpawn};
+use crate::ecs::component::{Account, GlobalConnection, GlobalUserSpawn};
 use crate::ecs::message::{EcsMessage, Message};
-use crate::ecs::system::global::send_packet_message;
+use crate::ecs::system::global::send_message_to_connection;
 use crate::ecs::system::send_message;
 use crate::model;
 use crate::model::repository::{account, loginticket};
@@ -23,7 +23,7 @@ pub fn connection_manager_system(
     incoming_messages: View<EcsMessage>,
     mut accounts: ViewMut<Account>,
     mut user_spawns: ViewMut<GlobalUserSpawn>,
-    mut connections: ViewMut<Connection>,
+    mut connections: ViewMut<GlobalConnection>,
     mut entities: EntitiesViewMut,
     pool: UniqueView<PgPool>,
 ) {
@@ -51,7 +51,7 @@ pub fn connection_manager_system(
                     &mut connections,
                 ) {
                     error!("Rejecting Message::RequestCheckVersion: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         reject_check_version(*connection_global_world_id),
                         &connections,
                     );
@@ -76,7 +76,7 @@ pub fn connection_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting Message::RequestLoginArbiter: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         reject_login_arbiter(*connection_global_world_id, -1, packet.region),
                         &connections,
                     );
@@ -138,7 +138,7 @@ pub fn connection_manager_system(
 
 fn handle_connection_registration(
     connection_channel: Sender<EcsMessage>,
-    connections: &mut ViewMut<Connection>,
+    connections: &mut ViewMut<GlobalConnection>,
     entities: &mut EntitiesViewMut,
 ) {
     debug!("Message::RegisterConnection incoming");
@@ -146,7 +146,7 @@ fn handle_connection_registration(
     // Create a new connection component to properly handle it's state
     let connection_global_world_id = entities.add_entity(
         &mut *connections,
-        Connection {
+        GlobalConnection {
             channel: connection_channel,
             is_authenticated: false,
             is_version_checked: false,
@@ -168,7 +168,7 @@ fn handle_connection_registration(
 fn handle_request_check_version(
     connection_global_world_id: EntityId,
     packet: &CCheckVersion,
-    mut connections: &mut ViewMut<Connection>,
+    mut connections: &mut ViewMut<GlobalConnection>,
 ) -> Result<()> {
     debug!("Message::RequestCheckVersion incoming");
 
@@ -197,7 +197,7 @@ fn handle_request_login_arbiter(
     connection_global_world_id: EntityId,
     packet: &CLoginArbiter,
     accounts: &mut ViewMut<Account>,
-    mut connections: &mut ViewMut<Connection>,
+    mut connections: &mut ViewMut<GlobalConnection>,
     entities: &mut EntitiesViewMut,
     pool: &PgPool,
 ) -> Result<()> {
@@ -261,7 +261,7 @@ fn handle_request_login_arbiter(
 fn handle_ping(
     now: &Instant,
     connection_global_world_id: EntityId,
-    mut connection: &mut Connection,
+    mut connection: &mut GlobalConnection,
 ) -> bool {
     let last_pong_duration = now.duration_since(connection.last_pong).as_secs();
     if last_pong_duration >= PONG_DEADLINE {
@@ -283,7 +283,10 @@ fn handle_ping(
     }
 }
 
-fn handle_pong(connection_global_world_id: EntityId, mut connections: &mut ViewMut<Connection>) {
+fn handle_pong(
+    connection_global_world_id: EntityId,
+    mut connections: &mut ViewMut<GlobalConnection>,
+) {
     debug!("Message::RequestPong incoming");
 
     let span = info_span!("id", connection_global_world_id = ?connection_global_world_id);
@@ -299,7 +302,7 @@ fn handle_pong(connection_global_world_id: EntityId, mut connections: &mut ViewM
 
 fn drop_connection(
     connection_global_world_id: EntityId,
-    connections: &mut ViewMut<Connection>,
+    connections: &mut ViewMut<GlobalConnection>,
     user_spawns: &mut ViewMut<GlobalUserSpawn>,
 ) {
     if let Ok(connection) = connections.try_get(connection_global_world_id) {
@@ -324,7 +327,7 @@ fn drop_connection(
 fn check_and_handle_post_initialization(
     connection_global_world_id: EntityId,
     account: Account,
-    connection: &Connection,
+    connection: &GlobalConnection,
 ) {
     // Now that the client is vetted, we need to send him some specific packets in order for him to progress.
     debug!("Sending connection post initialization commands");
@@ -505,10 +508,10 @@ mod tests {
         let (tx_channel, rx_channel) = channel(1024);
 
         let connection_global_world_id = world.run(
-            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
                 entities.add_entity(
                     &mut connections,
-                    Connection {
+                    GlobalConnection {
                         channel: tx_channel,
                         is_authenticated,
                         is_version_checked: is_authenticated,
@@ -614,7 +617,7 @@ mod tests {
                 world.run(connection_manager_system);
 
                 let valid_count = world
-                    .borrow::<View<Connection>>()
+                    .borrow::<View<GlobalConnection>>()
                     .iter()
                     .filter(|connection| connection.is_version_checked)
                     .count();
@@ -663,7 +666,7 @@ mod tests {
                 );
 
                 // The connection should be dropped.
-                let count = world.borrow::<View<Connection>>().iter().count();
+                let count = world.borrow::<View<GlobalConnection>>().iter().count();
                 assert_eq!(count, 0);
 
                 Ok(())
@@ -787,7 +790,7 @@ mod tests {
             assert_eq!(count, 2);
 
             // The connection should be dropped.
-            let count = world.borrow::<View<Connection>>().iter().count();
+            let count = world.borrow::<View<GlobalConnection>>().iter().count();
             assert_eq!(count, 0);
 
             Ok(())
@@ -858,7 +861,7 @@ mod tests {
             assert_eq!(count, 2);
 
             // The connection should be dropped.
-            let count = world.borrow::<View<Connection>>().iter().count();
+            let count = world.borrow::<View<GlobalConnection>>().iter().count();
             assert_eq!(count, 0);
 
             Ok(())
@@ -1026,7 +1029,7 @@ mod tests {
                     .checked_sub(Duration::from_secs(PING_INTERVAL + 1))
                     .unwrap();
 
-                world.run(|mut connections: ViewMut<Connection>| {
+                world.run(|mut connections: ViewMut<GlobalConnection>| {
                     if let Ok(mut connection) =
                         (&mut connections).try_get(connection_global_world_id)
                     {
@@ -1048,7 +1051,7 @@ mod tests {
                 }
 
                 // Check if waiting_for_pong is updated
-                world.run(|connections: View<Connection>| {
+                world.run(|connections: View<GlobalConnection>| {
                     if let Ok(connection) = (&connections).try_get(connection_global_world_id) {
                         if !connection.waiting_for_pong {
                             panic!("Waiting_for_pong was not set after ping");
@@ -1074,7 +1077,7 @@ mod tests {
                 world.run(connection_manager_system);
 
                 // Check if last_pong is updated
-                world.run(|connections: View<Connection>| {
+                world.run(|connections: View<GlobalConnection>| {
                     let component = &connections[connection_global_world_id];
                     assert_eq!(component.last_pong > old_pong, true);
                 });
@@ -1098,7 +1101,7 @@ mod tests {
                 let old_pong = now
                     .checked_sub(Duration::from_secs(PONG_DEADLINE + 1))
                     .unwrap();
-                world.run(|mut connections: ViewMut<Connection>| {
+                world.run(|mut connections: ViewMut<GlobalConnection>| {
                     connections[connection_global_world_id].last_pong = old_pong;
                 });
 
@@ -1118,7 +1121,7 @@ mod tests {
 
                 // Check if connection component was deleted
                 assert!(world
-                    .borrow::<View<Connection>>()
+                    .borrow::<View<GlobalConnection>>()
                     .try_get(connection_global_world_id)
                     .is_err());
 
@@ -1141,7 +1144,7 @@ mod tests {
                 let old_pong = now
                     .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME - 1))
                     .unwrap();
-                world.run(|mut connections: ViewMut<Connection>| {
+                world.run(|mut connections: ViewMut<GlobalConnection>| {
                     connections[connection_global_world_id].last_pong = old_pong;
                 });
 
@@ -1149,7 +1152,7 @@ mod tests {
 
                 // Connection should still be alive
                 assert!(world
-                    .borrow::<View<Connection>>()
+                    .borrow::<View<GlobalConnection>>()
                     .try_get(connection_global_world_id)
                     .is_ok());
 
@@ -1158,7 +1161,7 @@ mod tests {
                 let old_pong = now
                     .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME + 1))
                     .unwrap();
-                world.run(|mut connections: ViewMut<Connection>| {
+                world.run(|mut connections: ViewMut<GlobalConnection>| {
                     connections[connection_global_world_id].last_pong = old_pong;
                 });
 
@@ -1178,7 +1181,7 @@ mod tests {
 
                 // Connection should be deleted
                 assert!(world
-                    .borrow::<View<Connection>>()
+                    .borrow::<View<GlobalConnection>>()
                     .try_get(connection_global_world_id)
                     .is_err());
 
@@ -1201,7 +1204,7 @@ mod tests {
                 let old_pong = now
                     .checked_sub(Duration::from_secs(MAX_UNAUTHENTICATED_LIFETIME + 1))
                     .unwrap();
-                world.run(|mut connections: ViewMut<Connection>| {
+                world.run(|mut connections: ViewMut<GlobalConnection>| {
                     connections[connection_global_world_id].last_pong = old_pong;
                 });
 
@@ -1209,7 +1212,7 @@ mod tests {
 
                 // Connection should still be alive
                 assert!(world
-                    .borrow::<View<Connection>>()
+                    .borrow::<View<GlobalConnection>>()
                     .try_get(connection_global_world_id)
                     .is_ok());
 

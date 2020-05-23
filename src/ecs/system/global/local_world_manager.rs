@@ -1,7 +1,7 @@
 use crate::config::Configuration;
 /// The local world manager handles the lifecycle of a local world.
 use crate::ecs::component::{
-    Connection, GlobalUserSpawn, LocalWorld, LocalWorldType, UserSpawnStatus,
+    GlobalConnection, GlobalUserSpawn, LocalWorld, LocalWorldType, UserSpawnStatus,
 };
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::resource::{DeletionList, GlobalMessageChannel};
@@ -20,7 +20,7 @@ const LOCAL_WORLD_IDLE_LIFETIME_SEC: u64 = 15;
 // TODO write tests for the local_world_manager_system
 pub fn local_world_manager_system(
     incoming_messages: View<EcsMessage>,
-    _connections: View<Connection>,
+    _connections: View<GlobalConnection>,
     mut user_spawns: ViewMut<GlobalUserSpawn>,
     mut local_worlds: ViewMut<LocalWorld>,
     mut entities: EntitiesViewMut,

@@ -1,4 +1,4 @@
-use crate::ecs::component::{LocalUserSpawn, UserSpawnStatus};
+use crate::ecs::component::{LocalConnection, LocalUserSpawn, UserSpawnStatus};
 use crate::ecs::dto::UserInitializer;
 use crate::ecs::message::Message::{ResponseSpawnMe, UserSpawnPrepared, UserSpawned};
 use crate::ecs::message::{EcsMessage, Message};
@@ -17,6 +17,7 @@ use tracing::{debug, error, info_span};
 /// Acts as a gateway for users to pass when spawning / logging out.
 pub fn user_gateway_system(
     incoming_messages: View<EcsMessage>,
+    mut connections: ViewMut<LocalConnection>,
     mut user_spawns: ViewMut<LocalUserSpawn>,
     mut entities: EntitiesViewMut,
     global_world_channel: UniqueView<GlobalMessageChannel>,
@@ -30,6 +31,7 @@ pub fn user_gateway_system(
                 id_span!(connection_global_world_id);
                 handle_prepare_user_spawn(
                     &user_initializer,
+                    &mut connections,
                     &mut user_spawns,
                     &mut entities,
                     &global_world_channel,
@@ -55,6 +57,7 @@ pub fn user_gateway_system(
                 if let Err(e) = handle_load_topo_fin(
                     *connection_global_world_id,
                     *connection_local_world_id,
+                    &mut connections,
                     &mut user_spawns,
                     &global_world_channel,
                 ) {
@@ -81,6 +84,7 @@ pub fn user_gateway_system(
 
 fn handle_prepare_user_spawn(
     user_initializer: &UserInitializer,
+    connections: &mut ViewMut<LocalConnection>,
     user_spawns: &mut ViewMut<LocalUserSpawn>,
     entities: &mut EntitiesViewMut,
     global_world_channel: &UniqueView<GlobalMessageChannel>,
@@ -92,10 +96,17 @@ fn handle_prepare_user_spawn(
         LocalUserSpawn {
             user_id: user_initializer.user.id,
             account_id: user_initializer.user.account_id,
-            channel: user_initializer.connection_channel.clone(),
             status: UserSpawnStatus::Waiting,
             is_alive: true,
         },
+    );
+
+    entities.add_component(
+        connections,
+        LocalConnection {
+            channel: user_initializer.connection_channel.clone(),
+        },
+        connection_local_world_id,
     );
 
     send_message(
@@ -127,15 +138,23 @@ fn handle_user_ready_to_connect(
 fn handle_load_topo_fin(
     connection_global_world_id: EntityId,
     connection_local_world_id: EntityId,
+    connections: &mut ViewMut<LocalConnection>,
     user_spawns: &mut ViewMut<LocalUserSpawn>,
     global_world_channel: &UniqueView<GlobalMessageChannel>,
 ) -> Result<()> {
     debug!("Message::RequestLoadTopoFin incoming");
 
+    let connection = connections
+        .try_get(connection_local_world_id)
+        .context(format!(
+            "Can't find connection {:?}",
+            connection_local_world_id
+        ))?;
+
     let spawn = user_spawns
         .try_get(connection_local_world_id)
         .context(format!(
-            "Can't get local user spawn {:?}",
+            "Can't find local user spawn {:?}",
             connection_local_world_id
         ))?;
 
@@ -149,7 +168,7 @@ fn handle_load_topo_fin(
         // TODO use the coordinates in the LocalUserSpawn component
         send_message(
             assemble_response_spawn_me(connection_global_world_id, connection_local_world_id),
-            &spawn.channel,
+            &connection.channel,
         );
         send_message(
             assemble_user_spawned(connection_global_world_id),

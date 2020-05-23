@@ -1,7 +1,7 @@
-use crate::ecs::component::Connection;
+use crate::ecs::component::GlobalConnection;
 use crate::ecs::message::Message::ResponseGetUserList;
 use crate::ecs::message::{EcsMessage, Message};
-use crate::ecs::system::global::send_packet_message;
+use crate::ecs::system::global::send_message_to_connection;
 use crate::model::entity::User;
 use crate::model::repository::user;
 use crate::model::{Vec3, Vec3a};
@@ -23,7 +23,7 @@ const CHUNK_SIZE: usize = 5;
 /// Handles the users of an account. Users in TERA terminology are the player characters of an account.
 pub fn user_manager_system(
     incoming_messages: View<EcsMessage>,
-    connections: View<Connection>,
+    connections: View<GlobalConnection>,
     pool: UniqueView<PgPool>,
 ) {
     // TODO Look for users without a connection component. Set their "deletion time" and persist them ones reached.
@@ -43,7 +43,7 @@ pub fn user_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting create user request: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         assemble_can_create_user_response(*connection_global_world_id, false),
                         &connections,
                     );
@@ -72,7 +72,7 @@ pub fn user_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting get user list request: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         assemble_user_list_response(
                             *connection_global_world_id,
                             &Vec::new(),
@@ -96,7 +96,7 @@ pub fn user_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting check user name request: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         assemble_check_user_name_response(*connection_global_world_id, false),
                         &connections,
                     );
@@ -116,7 +116,7 @@ pub fn user_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting create user request: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         assemble_create_user_response(*connection_global_world_id, false),
                         &connections,
                     );
@@ -136,7 +136,7 @@ pub fn user_manager_system(
                     &pool,
                 ) {
                     error!("Rejecting delete user request: {:?}", e);
-                    send_packet_message(
+                    send_message_to_connection(
                         assemble_delete_user_response(*connection_global_world_id, false),
                         &connections,
                     );
@@ -149,7 +149,7 @@ pub fn user_manager_system(
 fn handle_user_list(
     connection_global_world_id: EntityId,
     account_id: i64,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Get user list message incoming");
@@ -166,7 +166,7 @@ fn handle_user_list(
         let users = user::list(&mut conn, account_id).await?;
 
         if users.len() == 0 {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_user_list_response(connection_global_world_id, &Vec::new(), true, true),
                 connections,
             );
@@ -181,7 +181,7 @@ fn handle_user_list(
                     false
                 };
 
-                send_packet_message(
+                send_message_to_connection(
                     assemble_user_list_response(
                         connection_global_world_id,
                         chunk,
@@ -203,7 +203,7 @@ fn handle_user_list(
 fn handle_can_create_user(
     connection_global_world_id: EntityId,
     account_id: i64,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Message::RequestCanCreateUser incoming");
@@ -215,12 +215,12 @@ fn handle_can_create_user(
             .context("Couldn't acquire connection from pool")?;
 
         if can_create_user(&mut conn, account_id).await? {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_can_create_user_response(connection_global_world_id, true),
                 connections,
             );
         } else {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_can_create_user_response(connection_global_world_id, false),
                 connections,
             );
@@ -277,7 +277,7 @@ fn handle_create_user(
     packet: &CCreateUser,
     connection_global_world_id: EntityId,
     account_id: i64,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Message::RequestCreateUser incoming");
@@ -296,12 +296,12 @@ fn handle_create_user(
             // Client starts the position at 1
             let next_position = 1 + user::get_user_count(&mut conn, account_id).await?;
             create_new_user(&mut conn, account_id, next_position as i32, packet).await?;
-            send_packet_message(
+            send_message_to_connection(
                 assemble_create_user_response(connection_global_world_id, true),
                 connections,
             );
         } else {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_create_user_response(connection_global_world_id, false),
                 connections,
             );
@@ -317,7 +317,7 @@ fn handle_delete_user(
     packet: &CDeleteUser,
     connection_global_world_id: EntityId,
     account_id: i64,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Message::RequestDeleteUser incoming");
@@ -362,7 +362,7 @@ fn handle_delete_user(
             }
         }
 
-        send_packet_message(
+        send_message_to_connection(
             assemble_delete_user_response(connection_global_world_id, true),
             connections,
         );
@@ -376,7 +376,7 @@ fn handle_delete_user(
 fn handle_check_user_name(
     packet: &CCheckUserName,
     connection_global_world_id: EntityId,
-    connections: &View<Connection>,
+    connections: &View<GlobalConnection>,
     pool: &UniqueView<PgPool>,
 ) -> Result<()> {
     debug!("Message::RequestCheckUserName incoming");
@@ -388,12 +388,12 @@ fn handle_check_user_name(
             .context("Couldn't acquire connection from pool")?;
 
         if check_username(&mut conn, &packet.name).await? {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_check_user_name_response(connection_global_world_id, true),
                 connections,
             );
         } else {
-            send_packet_message(
+            send_message_to_connection(
                 assemble_check_user_name_response(connection_global_world_id, false),
                 connections,
             );
@@ -646,7 +646,7 @@ fn assemble_user_list_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::component::Connection;
+    use crate::ecs::component::GlobalConnection;
     use crate::ecs::message::Message;
     use crate::model::entity::Account;
     use crate::model::repository::account;
@@ -682,10 +682,10 @@ mod tests {
         let (tx_channel, rx_channel) = channel(1024);
 
         let connection_global_world_id = world.run(
-            |mut entities: EntitiesViewMut, mut connections: ViewMut<Connection>| {
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
                 entities.add_entity(
                     &mut connections,
-                    Connection {
+                    GlobalConnection {
                         channel: tx_channel,
                         is_version_checked: false,
                         is_authenticated: false,

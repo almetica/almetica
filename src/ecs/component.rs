@@ -8,14 +8,20 @@ use shipyard::EntityId;
 use std::collections::HashSet;
 use std::time::Instant;
 
-/// Tracks the connection and login information of an user.
+/// Tracks the connection and login information of a player for the global world.
 #[derive(Clone, Debug)]
-pub struct Connection {
+pub struct GlobalConnection {
     pub channel: Sender<EcsMessage>,
     pub is_version_checked: bool,
     pub is_authenticated: bool,
     pub last_pong: Instant,
     pub waiting_for_pong: bool,
+}
+
+/// Tracks the connection of a player for a local world.
+#[derive(Clone, Debug)]
+pub struct LocalConnection {
+    pub channel: Sender<EcsMessage>,
 }
 
 /// Holds the account information attached to a connection entity once it's authenticated.
@@ -34,11 +40,11 @@ pub struct Settings {
 /// Holds the global spawn information of an user.
 #[derive(Clone, Debug)]
 pub struct GlobalUserSpawn {
-    pub connection_local_world_id: Option<EntityId>,
     pub user_id: i32,
     pub account_id: i64,
     pub status: UserSpawnStatus,
     pub zone_id: i32,
+    pub connection_local_world_id: Option<EntityId>,
     pub local_world_id: Option<EntityId>,
     pub local_world_channel: Option<Sender<EcsMessage>>,
     pub marked_for_deletion: bool,
@@ -50,7 +56,6 @@ pub struct GlobalUserSpawn {
 pub struct LocalUserSpawn {
     pub user_id: i32,
     pub account_id: i64,
-    pub channel: Sender<EcsMessage>,
     pub status: UserSpawnStatus,
     pub is_alive: bool,
 }
