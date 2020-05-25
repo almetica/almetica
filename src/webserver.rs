@@ -100,10 +100,10 @@ async fn login(pool: &PgPool, account_name: &str, password: String) -> Result<Ve
     let mut conn = pool.acquire().await?;
     let (account_id, password_hash, password_algorithm) =
         match account::get_by_name(&mut conn, account_name).await {
-            Ok(acc) => (acc.id, acc.password, acc.algorithm),
+            Ok(acc) => (Some(acc.id), acc.password, acc.algorithm),
             Err(..) => (
-                0,
-                "dummy_hash_for_constant_time_operation".to_string(),
+                None,
+                "$argon2id$v=19$m=131072,t=3,p=8$SFuUVFwwNhz0eLHkBCJmHA$ecyaOGtvgPVEb2ZkmA1z/72q7+kgkwOZeR3VO2V1LnU".to_string(),
                 PasswordHashAlgorithm::Argon2,
             ),
         };
@@ -112,9 +112,10 @@ async fn login(pool: &PgPool, account_name: &str, password: String) -> Result<Ve
         verify_hash(password.as_bytes(), &password_hash, password_algorithm)
     })
     .await?;
+    ensure!(account_id.is_some(), AlmeticaError::InvalidLogin);
     ensure!(is_valid, AlmeticaError::InvalidLogin);
 
-    let ticket = loginticket::upsert_ticket(&mut conn, account_id).await?;
+    let ticket = loginticket::upsert_ticket(&mut conn, account_id.unwrap()).await?;
     Ok(ticket.ticket)
 }
 
