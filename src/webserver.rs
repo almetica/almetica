@@ -95,6 +95,7 @@ async fn auth_endpoint(mut req: Request<WebServerState>) -> tide::Result<Respons
     Ok(valid_login_response(ticket))
 }
 
+// TODO write a test for the login() function
 /// Tries to login with the given credentials. Returns the login ticket if successful.
 async fn login(pool: &PgPool, account_name: &str, password: String) -> Result<Vec<u8>> {
     let mut conn = pool.acquire().await?;

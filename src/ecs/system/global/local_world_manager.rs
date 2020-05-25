@@ -1,5 +1,4 @@
 use crate::config::Configuration;
-/// The local world manager handles the lifecycle of a local world.
 use crate::ecs::component::{
     GlobalConnection, GlobalUserSpawn, LocalWorld, LocalWorldType, UserSpawnStatus,
 };
@@ -17,7 +16,7 @@ use tracing::{debug, error, info, info_span};
 
 const LOCAL_WORLD_IDLE_LIFETIME_SEC: u64 = 15;
 
-// TODO write tests for the local_world_manager_system
+/// The local world manager handles the lifecycle of a local world.
 pub fn local_world_manager_system(
     incoming_messages: View<EcsMessage>,
     _connections: View<GlobalConnection>,
@@ -244,3 +243,8 @@ fn assemble_user_despawn(connection_local_world_id: EntityId) -> EcsMessage {
         connection_local_world_id,
     })
 }
+
+// TODO TEST  PrepareUserSpawn
+// TODO TEST  UserSpawnStatus::Requesting
+// TODO TEST  spawn.marked_for_deletion == true
+// TODO TEST world.deadline.is_some() && world.deadline.unwrap() <= now

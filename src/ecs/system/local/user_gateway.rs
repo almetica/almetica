@@ -12,8 +12,6 @@ use async_std::task;
 use shipyard::*;
 use tracing::{debug, error, info_span};
 
-// TODO write tests for the user_spawner_system
-
 /// Acts as a gateway for users to pass when spawning / logging out.
 pub fn user_gateway_system(
     incoming_messages: View<EcsMessage>,
@@ -243,3 +241,8 @@ fn assemble_user_spawn_prepared(
         connection_local_world_id,
     })
 }
+
+// TODO TEST Message::PrepareUserSpawn
+// TODO TEST  Message::UserReadyToConnect
+// TODO TEST  Message::RequestLoadTopoFin
+// TODO TEST  Message::UserDespawn

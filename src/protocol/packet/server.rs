@@ -230,8 +230,8 @@ pub struct SLogin {
     pub action_mode: i32, // TODO investigate the exact function
     pub alive: bool,
     pub status: i32,
-    pub walk_speed: i32, // TODO investigate the exact function
-    pub run_speed: i32,
+    pub walk_speed: i32, // Standard value of 50
+    pub run_speed: i32,  // Standard value of 150
     pub appearance: Customization,
     pub visible: bool,
     pub is_second_character: bool,
@@ -254,7 +254,7 @@ pub struct SLogin {
     pub max_rest_bonus_exp: i64,
     pub exp_bonus_percent: f32,
     pub drop_bonus_percent: f32,
-    pub weapon: i32, // TODO is this an datacenter ID or a database ID?
+    pub weapon: i32, // TODO maybe create a type for the Datacenter ID
     pub body: i32,
     pub hand: i32,
     pub feet: i32,

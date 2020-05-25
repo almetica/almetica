@@ -26,7 +26,6 @@ pub fn user_manager_system(
     connections: View<GlobalConnection>,
     pool: UniqueView<PgPool>,
 ) {
-    // TODO Look for users without a connection component. Set their "deletion time" and persist them ones reached.
     (&incoming_messages)
         .iter()
         .for_each(|message| match &**message {

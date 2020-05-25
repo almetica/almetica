@@ -1,4 +1,3 @@
-/// Handles the global spawn process.
 use crate::ecs::component::{GlobalConnection, GlobalUserSpawn, UserSpawnStatus};
 use crate::ecs::dto::UserInitializer;
 use crate::ecs::message::Message::{
@@ -19,7 +18,7 @@ use shipyard::*;
 use sqlx::PgPool;
 use tracing::{debug, error, info_span};
 
-// TODO write tests for the user_spawner_system
+/// Handles the global spawn process.
 pub fn user_spawner_system(
     incoming_messages: View<EcsMessage>,
     connections: View<GlobalConnection>,
@@ -405,3 +404,9 @@ fn assemble_prepare_user_spawn(
         },
     })
 }
+
+// TODO TEST RequestSelectUser
+// TODO TEST UserSpawnPrepared
+// TODO TEST UserSpawned
+// TODO TEST UserSpawnStatus::CanSpawn
+// TODO TESTUserSpawnStatus::SpawnFailed
