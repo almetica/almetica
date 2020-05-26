@@ -346,6 +346,12 @@ pub struct SSpawnMe {
     pub is_lord: bool, // TODO try to identify the usage of the field
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SReturnToLobby {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct SExit {}
+
 #[cfg(test)]
 #[macro_use]
 mod tests {
@@ -869,5 +875,17 @@ mod tests {
             is_alive: true,
             is_lord: false,
         }
+    );
+
+    packet_test!(
+        name: test_return_to_lobby,
+        data: vec![],
+        expected: SReturnToLobby {}
+    );
+
+    packet_test!(
+        name: test_exit,
+        data: vec![],
+        expected: SExit {}
     );
 }

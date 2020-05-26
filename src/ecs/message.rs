@@ -184,7 +184,11 @@ assemble_message! {
     // Local packet messages (handled by the LOCAL_WORLD)
     Local Packet Messages {
         RequestLoadTopoFin{packet: CLoadTopoFin}, C_LOAD_TOPO_FIN, Local;
+        RequestReturnToLobby{packet: CReturnToLobby}, C_RETURN_TO_LOBBY, Local;
+        RequestExit{packet: CExit}, C_EXIT, Local;
         ResponseSpawnMe{packet: SSpawnMe}, S_SPAWN_ME, Connection;
+        ResponseReturnToLobby{packet: SReturnToLobby}, S_RETURN_TO_LOBBY, Connection;
+        ResponseExit{packet: SExit}, S_EXIT, Connection;
     }
     // Global packets that need an account ID and the user ID attached.
     Global User Packet Messages {

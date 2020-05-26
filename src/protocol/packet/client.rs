@@ -89,6 +89,12 @@ pub struct CSetVisibleRange {
     pub range: u32,
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CReturnToLobby {}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct CExit {}
+
 #[cfg(test)]
 #[macro_use]
 mod tests {
@@ -259,5 +265,17 @@ mod tests {
         expected: CSetVisibleRange {
             range: 2000,
         }
+    );
+
+    packet_test!(
+        name: test_return_to_lobby,
+        data: vec![],
+        expected: CReturnToLobby {}
+    );
+
+    packet_test!(
+        name: test_exit,
+        data: vec![],
+        expected: CExit {}
     );
 }

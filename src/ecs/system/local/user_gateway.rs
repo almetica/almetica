@@ -1,6 +1,8 @@
 use crate::ecs::component::{LocalConnection, LocalUserSpawn, UserSpawnStatus};
 use crate::ecs::dto::UserInitializer;
-use crate::ecs::message::Message::{ResponseSpawnMe, UserSpawnPrepared, UserSpawned};
+use crate::ecs::message::Message::{
+    ResponseExit, ResponseReturnToLobby, ResponseSpawnMe, UserSpawnPrepared, UserSpawned,
+};
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::resource::{DeletionList, GlobalMessageChannel};
 use crate::ecs::system::send_message;
@@ -74,6 +76,36 @@ pub fn user_gateway_system(
                 ) {
                     // TODO decide what to do in an error case
                     error!("Ignoring Message::UserDespawn: {:?}", e);
+                }
+            }
+            Message::RequestReturnToLobby {
+                connection_global_world_id,
+                connection_local_world_id,
+                ..
+            } => {
+                id_span!(connection_global_world_id);
+                if let Err(e) = handle_return_to_lobby(
+                    *connection_global_world_id,
+                    *connection_local_world_id,
+                    &mut connections,
+                ) {
+                    // TODO decide what to do in an error case
+                    error!("Ignoring Message::ReturnToLobby: {:?}", e);
+                }
+            }
+            Message::RequestExit {
+                connection_global_world_id,
+                connection_local_world_id,
+                ..
+            } => {
+                id_span!(connection_global_world_id);
+                if let Err(e) = handle_exit(
+                    *connection_global_world_id,
+                    *connection_local_world_id,
+                    &mut connections,
+                ) {
+                    // TODO decide what to do in an error case
+                    error!("Ignoring Message::RequestExit: {:?}", e);
                 }
             }
             _ => { /* Ignore all other messages */ }
@@ -205,6 +237,50 @@ fn handle_user_despawn(
     Ok(())
 }
 
+fn handle_return_to_lobby(
+    connection_global_world_id: EntityId,
+    connection_local_world_id: EntityId,
+    connections: &mut ViewMut<LocalConnection>,
+) -> Result<()> {
+    debug!("Message::RequestReturnToLobby incoming");
+
+    let connection = connections
+        .try_get(connection_local_world_id)
+        .context(format!(
+            "Can't find connection {:?}",
+            connection_local_world_id
+        ))?;
+    Ok(task::block_on(async {
+        send_message(
+            assemble_return_to_lobby(connection_global_world_id, connection_local_world_id),
+            &connection.channel,
+        );
+        Ok::<(), anyhow::Error>(())
+    })?)
+}
+
+fn handle_exit(
+    connection_global_world_id: EntityId,
+    connection_local_world_id: EntityId,
+    connections: &mut ViewMut<LocalConnection>,
+) -> Result<()> {
+    debug!("Message::RequestExit incoming");
+
+    let connection = connections
+        .try_get(connection_local_world_id)
+        .context(format!(
+            "Can't find connection {:?}",
+            connection_local_world_id
+        ))?;
+    Ok(task::block_on(async {
+        send_message(
+            assemble_exit(connection_global_world_id, connection_local_world_id),
+            &connection.channel,
+        );
+        Ok::<(), anyhow::Error>(())
+    })?)
+}
+
 fn assemble_response_spawn_me(
     connection_global_world_id: EntityId,
     connection_local_world_id: EntityId,
@@ -242,7 +318,31 @@ fn assemble_user_spawn_prepared(
     })
 }
 
+fn assemble_return_to_lobby(
+    connection_global_world_id: EntityId,
+    connection_local_world_id: EntityId,
+) -> EcsMessage {
+    Box::new(ResponseReturnToLobby {
+        connection_global_world_id,
+        connection_local_world_id,
+        packet: SReturnToLobby {},
+    })
+}
+
+fn assemble_exit(
+    connection_global_world_id: EntityId,
+    connection_local_world_id: EntityId,
+) -> EcsMessage {
+    Box::new(ResponseExit {
+        connection_global_world_id,
+        connection_local_world_id,
+        packet: SExit {},
+    })
+}
+
 // TODO TEST Message::PrepareUserSpawn
-// TODO TEST  Message::UserReadyToConnect
-// TODO TEST  Message::RequestLoadTopoFin
-// TODO TEST  Message::UserDespawn
+// TODO TEST Message::UserReadyToConnect
+// TODO TEST Message::RequestLoadTopoFin
+// TODO TEST Message::UserDespawn
+// TODO TEST Message::RequestReturnToLobby
+// TODO TEST Message::RequestExit
