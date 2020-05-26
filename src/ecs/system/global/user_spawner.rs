@@ -405,7 +405,132 @@ fn assemble_prepare_user_spawn(
     })
 }
 
-// TODO TEST RequestSelectUser
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::component::GlobalConnection;
+    use crate::ecs::message::Message;
+    use crate::model::entity::{Account, User};
+    use crate::model::repository::{account, user};
+    use crate::model::tests::db_test;
+    use crate::model::{Class, Gender, PasswordHashAlgorithm, Race};
+    use crate::Result;
+    use async_std::sync::{channel, Receiver};
+    use chrono::{TimeZone, Utc};
+    use sqlx::PgPool;
+    use std::time::Instant;
+
+    async fn setup(pool: PgPool) -> Result<(World, EntityId, Receiver<EcsMessage>, Account, User)> {
+        let mut conn = pool.acquire().await?;
+
+        let world = World::new();
+        world.add_unique(pool);
+
+        let account = account::create(
+            &mut conn,
+            &Account {
+                id: -1,
+                name: "testaccount".to_string(),
+                password: "not-a-real-password-hash".to_string(),
+                algorithm: PasswordHashAlgorithm::Argon2,
+                created_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+                updated_at: Utc.ymd(1995, 7, 8).and_hms(9, 10, 11),
+            },
+        )
+        .await?;
+
+        let user = user::create(
+            &mut conn,
+            &User {
+                id: -1,
+                account_id: account.id,
+                name: "name-1".to_string(),
+                gender: Gender::Male,
+                race: Race::Human,
+                class: Class::Warrior,
+                shape: vec![],
+                details: vec![],
+                appearance: Default::default(),
+                appearance2: 0,
+                level: 0,
+                awakening_level: 0,
+                laurel: 0,
+                achievement_points: 0,
+                playtime: 0,
+                rest_bonus_xp: 0,
+                show_face: false,
+                show_style: false,
+                lobby_slot: 1,
+                is_new_character: false,
+                tutorial_state: 0,
+                is_deleting: false,
+                delete_at: None,
+                last_logout_at: Utc.ymd(2007, 7, 8).and_hms(9, 10, 11),
+                created_at: Utc.ymd(2009, 7, 8).and_hms(9, 10, 11),
+            },
+        )
+        .await?;
+
+        let (tx_channel, rx_channel) = channel(1024);
+
+        let connection_global_world_id = world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
+                entities.add_entity(
+                    &mut connections,
+                    GlobalConnection {
+                        channel: tx_channel,
+                        is_version_checked: false,
+                        is_authenticated: false,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
+            },
+        );
+
+        Ok((world, connection_global_world_id, rx_channel, account, user))
+    }
+
+    #[test]
+    fn test_request_select_user() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel, account, user) =
+                task::block_on(async { setup(pool).await })?;
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
+                    entities.add_entity(
+                        &mut messages,
+                        Box::new(Message::RequestSelectUser {
+                            connection_global_world_id,
+                            account_id: account.id,
+                            packet: CSelectUser {
+                                database_id: user.id,
+                                unk1: 0,
+                            },
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            let spawns = world.borrow::<View<GlobalUserSpawn>>();
+            let spawn = spawns.get(connection_global_world_id);
+            assert_eq!(spawn.account_id, account.id);
+            assert_eq!(spawn.user_id, user.id);
+            assert_eq!(spawn.status, UserSpawnStatus::Requesting);
+            assert_eq!(spawn.marked_for_deletion, false);
+            assert_eq!(spawn.is_alive, true);
+            assert_eq!(spawn.local_world_id, None);
+            assert_eq!(spawn.connection_local_world_id, None);
+
+            Ok(())
+        })
+    }
+}
+
 // TODO TEST UserSpawnPrepared
 // TODO TEST UserSpawned
 // TODO TEST UserSpawnStatus::CanSpawn
