@@ -1041,13 +1041,9 @@ mod tests {
 
                 world.run(connection_manager_system);
 
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::ResponsePing { .. } => { /* Ok */ }
-                        _ => panic!("Didn't found the expected ping message."),
-                    }
-                } else {
-                    panic!("Couldn't find ping message");
+                match &*rx_channel.try_recv()? {
+                    Message::ResponsePing { .. } => { /* Ok */ }
+                    _ => panic!("Didn't found the expected ping message."),
                 }
 
                 // Check if waiting_for_pong is updated
@@ -1108,15 +1104,11 @@ mod tests {
                 world.run(connection_manager_system);
 
                 // Check if drop connection message is present
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::DropConnection { .. } => { /* Ok */ }
-                        _ => panic!(
-                            "Couldn't find drop connection message. Found another packet instead."
-                        ),
-                    }
-                } else {
-                    panic!("Couldn't find drop connection message");
+                match &*rx_channel.try_recv()? {
+                    Message::DropConnection { .. } => { /* Ok */ }
+                    _ => panic!(
+                        "Couldn't find drop connection message. Found another packet instead."
+                    ),
                 }
 
                 // Check if connection component was deleted
@@ -1168,15 +1160,11 @@ mod tests {
                 world.run(connection_manager_system);
 
                 // Check if drop connection message is present
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::DropConnection { .. } => { /* Ok */ }
-                        _ => panic!(
-                            "Couldn't find drop connection message. Found another packet instead."
-                        ),
-                    }
-                } else {
-                    panic!("Couldn't find drop connection message");
+                match &*rx_channel.try_recv()? {
+                    Message::DropConnection { .. } => { /* Ok */ }
+                    _ => panic!(
+                        "Couldn't find drop connection message. Found another packet instead."
+                    ),
                 }
 
                 // Connection should be deleted
