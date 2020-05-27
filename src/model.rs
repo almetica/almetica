@@ -391,7 +391,10 @@ pub mod tests {
 
         task::block_on(async { teardown_db(db_url, &db_name).await })?;
 
-        assert!(result.is_ok());
+        if let Err(err) = result {
+            panic::resume_unwind(err);
+        }
+
         Ok(())
     }
 
