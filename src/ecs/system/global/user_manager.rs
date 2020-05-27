@@ -775,15 +775,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCanCreateUser { packet, .. } => {
-                        assert!(packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCanCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCanCreateUser { packet, .. } => {
+                    assert!(packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCanCreateUser message"),
             }
 
             Ok(())
@@ -817,15 +813,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCanCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCanCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCanCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCanCreateUser message"),
             }
 
             Ok(())
@@ -884,7 +876,7 @@ mod tests {
             let mut count = 0;
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
-                    match *message {
+                    match &*message {
                         Message::ResponseCheckUserName { packet, .. } => {
                             if packet.ok {
                                 count += 1
@@ -926,15 +918,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCheckUserName { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCheckUserName message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCheckUserName { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCheckUserName message"),
             }
 
             Ok(())
@@ -979,7 +967,7 @@ mod tests {
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
                     packet_count += 1;
-                    match *message {
+                    match &*message {
                         Message::ResponseGetUserList { packet, .. } => {
                             char_count += packet.characters.len();
 
@@ -1038,7 +1026,7 @@ mod tests {
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
                     packet_count += 1;
-                    match *message {
+                    match &*message {
                         Message::ResponseGetUserList { packet, .. } => {
                             char_count = packet.characters.len()
                         }
@@ -1081,15 +1069,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let mut users: Vec<User> =
@@ -1143,7 +1127,7 @@ mod tests {
 
             // First user could be created
             if let Ok(message) = rx_channel.try_recv() {
-                match *message {
+                match &*message {
                     Message::ResponseCreateUser { packet, .. } => {
                         assert!(packet.ok);
                     }
@@ -1154,15 +1138,11 @@ mod tests {
             }
 
             // Second user failed because the name was already taken
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let count =
@@ -1204,15 +1184,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let count =
@@ -1257,7 +1233,7 @@ mod tests {
             world.run(user_manager_system);
 
             if let Ok(message) = rx_channel.try_recv() {
-                match *message {
+                match &*message {
                     Message::ResponseDeleteUser { packet, .. } => {
                         assert!(packet.ok);
                     }

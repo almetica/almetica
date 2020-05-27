@@ -414,6 +414,7 @@ mod tests {
     use crate::model::repository::{account, user};
     use crate::model::tests::db_test;
     use crate::model::{Class, Gender, PasswordHashAlgorithm, Race};
+    use crate::protocol::serde::from_vec;
     use crate::Result;
     use async_std::sync::{channel, Receiver};
     use chrono::{TimeZone, Utc};
@@ -491,6 +492,32 @@ mod tests {
         Ok((world, connection_global_world_id, rx_channel, account, user))
     }
 
+    async fn setup_with_connection(
+        pool: PgPool,
+    ) -> Result<(World, EntityId, Receiver<EcsMessage>)> {
+        let world = World::new();
+        world.add_unique(pool);
+
+        let (tx_channel, rx_channel) = channel(1024);
+
+        let connection_global_world_id = world.run(
+            |mut entities: EntitiesViewMut, mut connections: ViewMut<GlobalConnection>| {
+                entities.add_entity(
+                    &mut connections,
+                    GlobalConnection {
+                        channel: tx_channel,
+                        is_version_checked: false,
+                        is_authenticated: false,
+                        last_pong: Instant::now(),
+                        waiting_for_pong: false,
+                    },
+                )
+            },
+        );
+
+        Ok((world, connection_global_world_id, rx_channel))
+    }
+
     #[test]
     fn test_request_select_user() -> Result<()> {
         db_test(|db_string| {
@@ -529,9 +556,257 @@ mod tests {
             Ok(())
         })
     }
-}
 
-// TODO TEST UserSpawnPrepared
-// TODO TEST UserSpawned
-// TODO TEST UserSpawnStatus::CanSpawn
-// TODO TESTUserSpawnStatus::SpawnFailed
+    #[test]
+    fn test_request_user_spawn_prepared() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, rx_channel, account, user) =
+                task::block_on(async { setup(pool).await })?;
+
+            // FIXME Ask upstream project to create a better way to create EntityIds
+            let local_world_id =
+                from_vec::<EntityId>(vec![0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?;
+            let (local_world_tx, local_world_rx) = channel(100);
+
+            world.run(
+                |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
+                    entities.add_component(
+                        &mut spawns,
+                        GlobalUserSpawn {
+                            connection_local_world_id: None,
+                            user_id: user.id,
+                            account_id: account.id,
+                            status: UserSpawnStatus::Requesting,
+                            zone_id: 0,
+                            local_world_id: Some(local_world_id),
+                            local_world_channel: Some(local_world_tx),
+                            marked_for_deletion: false,
+                            is_alive: true,
+                        },
+                        connection_global_world_id,
+                    );
+                },
+            );
+
+            let connection_local_world_id =
+                from_vec::<EntityId>(vec![0x11, 0x00, 0x1D, 0x0, 0x0, 0x80, 0, 0])?;
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
+                    entities.add_entity(
+                        &mut messages,
+                        Box::new(Message::UserSpawnPrepared {
+                            connection_global_world_id,
+                            connection_local_world_id,
+                        }),
+                    )
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            let spawns = world.borrow::<View<GlobalUserSpawn>>();
+            let spawn = spawns.get(connection_global_world_id);
+            assert_eq!(spawn.status, UserSpawnStatus::Waiting);
+            assert_eq!(
+                spawn.connection_local_world_id,
+                Some(connection_local_world_id)
+            );
+
+            match &*rx_channel.try_recv()? {
+                Message::RegisterLocalWorld {
+                    connection_local_world_id: id,
+                    local_world_channel,
+                } => {
+                    assert_eq!(*id, connection_local_world_id);
+                    assert!(!local_world_channel.is_full());
+                }
+                _ => panic!("Message is not a RegisterLocalWorld message"),
+            }
+
+            match &*rx_channel.try_recv()? {
+                Message::ResponseLogin {
+                    connection_global_world_id: id,
+                    account_id,
+                    user_id,
+                    packet,
+                } => {
+                    assert_eq!(*id, connection_global_world_id);
+                    assert_eq!(*user_id, user.id);
+                    assert_eq!(*account_id, account.id);
+                    assert_eq!(packet.id, connection_global_world_id);
+                    assert!(packet.alive);
+                }
+                _ => panic!("Message is not a ResponseLogin message"),
+            }
+
+            match &*rx_channel.try_recv()? {
+                Message::ResponseLoadTopo {
+                    connection_global_world_id: id,
+                    packet,
+                } => {
+                    assert_eq!(*id, connection_global_world_id);
+                    assert_eq!(packet.disable_loading_screen, false);
+                }
+                _ => panic!("Message is not a ResponseLoadTopo message"),
+            }
+
+            match &*rx_channel.try_recv()? {
+                Message::ResponseLoadHint {
+                    connection_global_world_id: id,
+                    packet,
+                } => {
+                    assert_eq!(*id, connection_global_world_id);
+                    assert_eq!(packet.unk1, 0x0);
+                }
+                _ => panic!("Message is not a ResponseLoadHint message"),
+            }
+
+            match &*local_world_rx.try_recv()? {
+                Message::UserReadyToConnect {
+                    connection_local_world_id: id,
+                } => {
+                    assert_eq!(*id, connection_local_world_id);
+                }
+                _ => panic!("Message is not a UserReadyToConnect message"),
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_user_spawned() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel, account, user) =
+                task::block_on(async { setup(pool).await })?;
+
+            world.run(
+                |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
+                    entities.add_component(
+                        &mut spawns,
+                        GlobalUserSpawn {
+                            connection_local_world_id: None,
+                            user_id: user.id,
+                            account_id: account.id,
+                            status: UserSpawnStatus::Spawning,
+                            zone_id: 0,
+                            local_world_id: None,
+                            local_world_channel: None,
+                            marked_for_deletion: false,
+                            is_alive: true,
+                        },
+                        connection_global_world_id,
+                    );
+                },
+            );
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
+                    entities.add_entity(
+                        &mut messages,
+                        Box::new(Message::UserSpawned {
+                            connection_global_world_id,
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            let spawns = world.borrow::<View<GlobalUserSpawn>>();
+            let spawn = spawns.get(connection_global_world_id);
+            assert_eq!(spawn.account_id, account.id);
+            assert_eq!(spawn.user_id, user.id);
+            assert_eq!(spawn.status, UserSpawnStatus::Spawned);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_prepare_local_spawn() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel, account, user) =
+                task::block_on(async { setup(pool).await })?;
+
+            // FIXME Ask upstream project to create a better way to create EntityIds
+            let local_world_id =
+                from_vec::<EntityId>(vec![0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])?;
+            let (local_world_tx, local_world_rx) = channel(100);
+
+            world.run(
+                |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
+                    entities.add_component(
+                        &mut spawns,
+                        GlobalUserSpawn {
+                            connection_local_world_id: None,
+                            user_id: user.id,
+                            account_id: account.id,
+                            status: UserSpawnStatus::CanSpawn,
+                            zone_id: 0,
+                            local_world_id: Some(local_world_id),
+                            local_world_channel: Some(local_world_tx),
+                            marked_for_deletion: false,
+                            is_alive: true,
+                        },
+                        connection_global_world_id,
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            match &*local_world_rx.try_recv()? {
+                Message::PrepareUserSpawn { user_initializer } => {
+                    assert_eq!(
+                        user_initializer.connection_global_world_id,
+                        connection_global_world_id
+                    );
+                    assert_eq!(user_initializer.user, user);
+                }
+                _ => panic!("Message is not a PrepareUserSpawn message"),
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[should_panic(expected = "SPAWN FAILED")]
+    fn test_user_spawn_failed() {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel) =
+                task::block_on(async { setup_with_connection(pool).await })?;
+
+            world.run(
+                |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
+                    entities.add_component(
+                        &mut spawns,
+                        GlobalUserSpawn {
+                            connection_local_world_id: None,
+                            user_id: 0,
+                            account_id: 0,
+                            status: UserSpawnStatus::SpawnFailed,
+                            zone_id: 0,
+                            local_world_id: None,
+                            local_world_channel: None,
+                            marked_for_deletion: false,
+                            is_alive: true,
+                        },
+                        connection_global_world_id,
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            Ok(())
+        })
+        .unwrap();
+    }
+}
