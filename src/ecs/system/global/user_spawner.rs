@@ -649,8 +649,57 @@ mod tests {
             Ok(())
         })
     }
+
+    #[test]
+    fn test_user_spawned() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel, account, user) =
+                task::block_on(async { setup(pool).await })?;
+
+            world.run(
+                |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
+                    entities.add_component(
+                        &mut spawns,
+                        GlobalUserSpawn {
+                            connection_local_world_id: None,
+                            user_id: user.id,
+                            account_id: account.id,
+                            status: UserSpawnStatus::Spawning,
+                            zone_id: 0,
+                            local_world_id: None,
+                            local_world_channel: None,
+                            marked_for_deletion: false,
+                            is_alive: true,
+                        },
+                        connection_global_world_id,
+                    );
+                },
+            );
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
+                    entities.add_entity(
+                        &mut messages,
+                        Box::new(Message::UserSpawned {
+                            connection_global_world_id,
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            let spawns = world.borrow::<View<GlobalUserSpawn>>();
+            let spawn = spawns.get(connection_global_world_id);
+            assert_eq!(spawn.account_id, account.id);
+            assert_eq!(spawn.user_id, user.id);
+            assert_eq!(spawn.status, UserSpawnStatus::Spawned);
+
+            Ok(())
+        })
+    }
 }
 
-// TODO TEST UserSpawned
 // TODO TEST UserSpawnStatus::CanSpawn
 // TODO TEST UserSpawnStatus::SpawnFailed
