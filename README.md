@@ -120,11 +120,17 @@ https://docs.rs/postgres/0.17.2/postgres/config/struct.Config.html
  
 ## Contributing
 
-Please contacts us in advance if you want to help with the server development so
-that we don't work on the same stuff at the same time.
+Please have a look in the project backlog in Github to see what is currently
+being worked on. If you plan make big changes to the codebase, it's wise to
+contact the project in advance, so that possible issues with the implementation
+can be discusses in advance. 
 
-Always write tests for the stuff you program. Code without tests will not be
+Always write tests for the code you write. Code without tests will not be
 included.
+
+## Code of Conduct
+
+The almetica project adheres to the [Contributor Covenant](https://www.contributor-covenant.org/).
 
 ## FAQ
 
@@ -155,11 +161,9 @@ None of he evaluated existing server projects did fulfilled these requirements.
 
 Licensed under AGPL version 3.
 
-The GNU Affero General Public License is based on the GNU GPL, but has an
-additional term to allow users who interact with the licensed software over a
-network to receive the source for that program. We recommend that people
-consider using the GNU AGPL for any software which will commonly be run over a
-network.
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you, as defined in the AGPL version 3 license,
+shall be licensed as above, without any additional terms or conditions. 
 
 ## Legal
 
