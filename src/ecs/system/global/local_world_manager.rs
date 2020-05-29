@@ -449,9 +449,11 @@ mod tests {
                 world.run(local_world_manager_system);
 
                 world.run(|spawns: View<GlobalUserSpawn>| {
-                    let spawn = spawns.try_get(connection_global_world_id).unwrap();
+                    let spawn = spawns.try_get(connection_global_world_id)?;
                     assert_eq!(spawn.status, UserSpawnStatus::CanSpawn);
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 Ok(())
             })
@@ -496,9 +498,11 @@ mod tests {
                 world.run(local_world_manager_system);
 
                 world.run(|spawns: View<GlobalUserSpawn>| {
-                    let spawn = spawns.try_get(connection_global_world_id).unwrap();
+                    let spawn = spawns.try_get(connection_global_world_id)?;
                     assert_eq!(spawn.status, UserSpawnStatus::SpawnFailed);
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 Ok(())
             })
@@ -514,9 +518,11 @@ mod tests {
                     setup(pool).await?;
 
                 world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
-                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id)?;
                     spawn.status = UserSpawnStatus::Requesting;
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 world.run(local_world_manager_system);
 
@@ -526,11 +532,13 @@ mod tests {
                     assert_eq!(world.users.len(), 1);
                     assert!(world.deadline.is_none());
 
-                    let spawn = (&spawns).try_get(connection_global_world_id).unwrap();
+                    let spawn = (&spawns).try_get(connection_global_world_id)?;
                     assert!(spawn.local_world_id.is_some());
                     assert!(spawn.local_world_channel.is_some());
                     assert_eq!(spawn.status, UserSpawnStatus::Waiting);
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 Ok(())
             })
@@ -570,10 +578,12 @@ mod tests {
 
                 world.run(|worlds: View<LocalWorld>| {
                     assert_eq!(worlds.iter().count(), 1);
-                    let world = worlds.try_get(local_world_id).unwrap();
+                    let world = worlds.try_get(local_world_id)?;
                     assert_eq!(world.users.len(), 1);
                     assert_eq!(world.deadline, None);
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 Ok(())
             })
@@ -598,9 +608,11 @@ mod tests {
                 )?;
 
                 world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
-                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id)?;
                     spawn.status = UserSpawnStatus::Requesting;
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
                 world.run(local_world_manager_system);
 
                 // We need to flush the global channel
@@ -630,25 +642,72 @@ mod tests {
                 };
 
                 world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
-                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id)?;
                     spawn.connection_local_world_id = Some(connection_local_world_id);
                     spawn.status = UserSpawnStatus::Spawned;
                     spawn.marked_for_deletion = true;
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
                 world.run(local_world_manager_system);
 
                 world.run(|worlds: View<LocalWorld>| {
                     assert_eq!(worlds.iter().count(), 1);
-                    let world = worlds.try_get(local_world_id).unwrap();
+                    let world = worlds.try_get(local_world_id)?;
 
                     assert_eq!(world.users.len(), 0);
                     assert!(world.deadline.is_some());
-                });
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 Ok(())
             })
         })
     }
 
-    // TODO TEST world.deadline.is_some() && world.deadline.unwrap() <= now
+    #[test]
+    fn test_delete_unused_local_worlds() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (
+                    mut world,
+                    connection_global_world_id,
+                    tx_channel,
+                    _rx_channel,
+                    _account,
+                    _user,
+                ) = setup(pool.clone()).await?;
+
+                let (local_world_id, _local_world_channel) = create_local_world(
+                    &mut world,
+                    &tx_channel,
+                    &Configuration::default(),
+                    &pool,
+                    connection_global_world_id,
+                    Some(Instant::now()),
+                )?;
+
+                world.run(|mut worlds: ViewMut<LocalWorld>| {
+                    let mut world = (&mut worlds).try_get(local_world_id)?;
+                    world.deadline = Some(Instant::now());
+                    world.users.clear();
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
+
+                world.run(local_world_manager_system);
+
+                world.run(|mut deletion_list: UniqueViewMut<DeletionList>| {
+                    assert_eq!(deletion_list.0.len(), 1);
+                    assert_eq!(deletion_list.0.pop(), Some(local_world_id));
+
+                    Ok::<(), anyhow::Error>(())
+                })?;
+
+                Ok(())
+            })
+        })
+    }
 }
