@@ -779,7 +779,7 @@ mod tests {
                 Message::ResponseCanCreateUser { packet, .. } => {
                     assert!(packet.ok);
                 }
-                _ => panic!("Message is not a ResponseCanCreateUser message"),
+                _ => panic!("Couldn't find Message::ResponseCanCreateUser"),
             }
 
             Ok(())

@@ -187,9 +187,7 @@ fn handle_user_despawn(
     let mut local_world = local_worlds
         .try_get(spawn.local_world_id.unwrap())
         .context("Can't find the local world")?;
-    local_world
-        .users
-        .remove(&spawn.connection_local_world_id.unwrap());
+    local_world.users.remove(&connection_global_world_id);
 
     if local_world.users.is_empty() {
         let deadline = Instant::now()
@@ -249,6 +247,7 @@ fn assemble_user_despawn(connection_local_world_id: EntityId) -> EcsMessage {
 mod tests {
     use super::*;
     use crate::ecs::component::GlobalConnection;
+    use crate::ecs::dto::UserInitializer;
     use crate::ecs::message::Message;
     use crate::model::entity::{Account, User};
     use crate::model::repository::{account, user};
@@ -377,7 +376,7 @@ mod tests {
         pool: &PgPool,
         connection_global_world_id: EntityId,
         deadline: Option<Instant>,
-    ) -> Result<EntityId> {
+    ) -> Result<(EntityId, Sender<EcsMessage>)> {
         world.run(
             |mut entities: EntitiesViewMut, mut local_worlds: ViewMut<LocalWorld>| {
                 let local_world_id = entities.add_entity((), ());
@@ -407,7 +406,7 @@ mod tests {
                     },
                     local_world_id,
                 );
-                Ok(local_world_id)
+                Ok((local_world_id, local_world_channel.clone()))
             },
         )
     }
@@ -426,7 +425,7 @@ mod tests {
                     _user,
                 ) = setup(pool.clone()).await?;
 
-                let local_world_id = create_local_world(
+                let (local_world_id, _local_world_channel) = create_local_world(
                     &mut world,
                     &tx_channel,
                     &Configuration::default(),
@@ -473,7 +472,7 @@ mod tests {
                     _user,
                 ) = setup(pool.clone()).await?;
 
-                let local_world_id = create_local_world(
+                let (local_world_id, _local_world_channel) = create_local_world(
                     &mut world,
                     &tx_channel,
                     &Configuration::default(),
@@ -515,18 +514,22 @@ mod tests {
                     setup(pool).await?;
 
                 world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
-                    let mut spawn = (&mut spawns).try_get(connection_global_world_id)?;
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
                     spawn.status = UserSpawnStatus::Requesting;
-                    Ok::<(), anyhow::Error>(())
-                })?;
+                });
 
                 world.run(local_world_manager_system);
 
-                world.run(|worlds: View<LocalWorld>| {
+                world.run(|worlds: View<LocalWorld>, spawns: View<GlobalUserSpawn>| {
                     assert_eq!(worlds.iter().count(), 1);
                     let world = worlds.iter().next().unwrap();
                     assert_eq!(world.users.len(), 1);
-                    assert_eq!(world.deadline, None);
+                    assert!(world.deadline.is_none());
+
+                    let spawn = (&spawns).try_get(connection_global_world_id).unwrap();
+                    assert!(spawn.local_world_id.is_some());
+                    assert!(spawn.local_world_channel.is_some());
+                    assert_eq!(spawn.status, UserSpawnStatus::Waiting);
                 });
 
                 Ok(())
@@ -548,7 +551,7 @@ mod tests {
                     _user,
                 ) = setup(pool.clone()).await?;
 
-                let local_world_id = create_local_world(
+                let (local_world_id, _local_world_channel) = create_local_world(
                     &mut world,
                     &tx_channel,
                     &Configuration::default(),
@@ -576,7 +579,76 @@ mod tests {
             })
         })
     }
-}
 
-// TODO TEST  spawn.marked_for_deletion == true
-// TODO TEST world.deadline.is_some() && world.deadline.unwrap() <= now
+    #[test]
+    fn test_user_despawn() -> Result<()> {
+        db_test(|db_string| {
+            task::block_on(async {
+                let pool = PgPool::new(db_string).await?;
+                let (mut world, connection_global_world_id, tx_channel, rx_channel, _account, user) =
+                    setup(pool.clone()).await?;
+
+                let (local_world_id, local_world_channel) = create_local_world(
+                    &mut world,
+                    &tx_channel,
+                    &Configuration::default(),
+                    &pool,
+                    connection_global_world_id,
+                    Some(Instant::now()),
+                )?;
+
+                world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
+                    spawn.status = UserSpawnStatus::Requesting;
+                });
+                world.run(local_world_manager_system);
+
+                // We need to flush the global channel
+                rx_channel.recv().await?;
+                assert!(rx_channel.is_empty());
+
+                world.run(|connections: View<GlobalConnection>| {
+                    let connection = (&connections).try_get(connection_global_world_id).unwrap();
+                    send_message(
+                        Box::new(Message::PrepareUserSpawn {
+                            user_initializer: UserInitializer {
+                                connection_global_world_id,
+                                connection_channel: connection.channel.clone(),
+                                user,
+                            },
+                        }),
+                        &local_world_channel,
+                    );
+                });
+
+                let connection_local_world_id = match &*rx_channel.recv().await? {
+                    Message::UserSpawnPrepared {
+                        connection_local_world_id,
+                        ..
+                    } => connection_local_world_id.clone(),
+                    _ => panic!("Couldn't find Message::UserSpawnPrepared"),
+                };
+
+                world.run(|mut spawns: ViewMut<GlobalUserSpawn>| {
+                    let mut spawn = (&mut spawns).try_get(connection_global_world_id).unwrap();
+                    spawn.connection_local_world_id = Some(connection_local_world_id);
+                    spawn.status = UserSpawnStatus::Spawned;
+                    spawn.marked_for_deletion = true;
+                });
+                world.run(local_world_manager_system);
+
+                world.run(|worlds: View<LocalWorld>| {
+                    assert_eq!(worlds.iter().count(), 1);
+                    let world = worlds.try_get(local_world_id).unwrap();
+
+                    assert_eq!(world.users.len(), 0);
+                    assert!(world.deadline.is_some());
+                });
+
+                Ok(())
+            })
+        })
+    }
+
+    // TODO TEST world.deadline.is_some() && world.deadline.unwrap() <= now
+}
