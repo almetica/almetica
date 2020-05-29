@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, info_span};
 
-const LOCAL_WORLD_IDLE_LIFETIME_SEC: u64 = 15;
+const LOCAL_WORLD_IDLE_LIFETIME_SEC: u64 = 300;
 
 /// The local world manager handles the lifecycle of a local world.
 pub fn local_world_manager_system(
@@ -66,13 +66,18 @@ pub fn local_world_manager_system(
             }
         }
         if spawn.marked_for_deletion {
+            deletion_list.0.push(connection_global_world_id);
+            info!(
+                "Marked global user {:?} for deletion",
+                connection_global_world_id
+            );
             if let Err(e) =
                 handle_user_despawn(&spawn, connection_global_world_id, &mut local_worlds)
             {
                 // TODO decide how to handle an error while de-spawning an user
                 id_span!(connection_global_world_id);
                 error!("Can't de-spawn user: {:?}", e)
-            }
+            };
         }
     }
 
@@ -81,7 +86,7 @@ pub fn local_world_manager_system(
     local_worlds
         .iter()
         .with_id()
-        .filter(|(_id, world)| world.deadline.is_some() && world.deadline.unwrap() <= now)
+        .filter(|(_id, world)| world.deadline.is_some() && world.deadline.unwrap() < now)
         .for_each(|(id, world)| {
             send_message(assemble_shutdown_message(), &world.channel);
             deletion_list.0.push(id);
@@ -191,7 +196,7 @@ fn handle_user_despawn(
 
     if local_world.users.is_empty() {
         let deadline = Instant::now()
-            .checked_sub(Duration::from_secs(LOCAL_WORLD_IDLE_LIFETIME_SEC))
+            .checked_add(Duration::from_secs(LOCAL_WORLD_IDLE_LIFETIME_SEC))
             .unwrap();
         local_world.deadline = Some(deadline);
     }
@@ -257,6 +262,7 @@ mod tests {
     use async_std::sync::{channel, Receiver, Sender};
     use chrono::{TimeZone, Utc};
     use sqlx::PgPool;
+    use std::ops::Sub;
     use std::time::Instant;
 
     async fn setup(
@@ -651,15 +657,19 @@ mod tests {
                 })?;
                 world.run(local_world_manager_system);
 
-                world.run(|worlds: View<LocalWorld>| {
-                    assert_eq!(worlds.iter().count(), 1);
-                    let world = worlds.try_get(local_world_id)?;
+                world.run(
+                    |worlds: View<LocalWorld>, mut deletion_list: UniqueViewMut<DeletionList>| {
+                        assert_eq!(worlds.iter().count(), 1);
+                        let world = worlds.try_get(local_world_id)?;
 
-                    assert_eq!(world.users.len(), 0);
-                    assert!(world.deadline.is_some());
+                        assert_eq!(world.users.len(), 0);
+                        assert!(world.deadline.is_some());
 
-                    Ok::<(), anyhow::Error>(())
-                })?;
+                        assert_eq!(deletion_list.0.pop(), Some(connection_global_world_id));
+
+                        Ok::<(), anyhow::Error>(())
+                    },
+                )?;
 
                 Ok(())
             })
@@ -691,7 +701,7 @@ mod tests {
 
                 world.run(|mut worlds: ViewMut<LocalWorld>| {
                     let mut world = (&mut worlds).try_get(local_world_id)?;
-                    world.deadline = Some(Instant::now());
+                    world.deadline = Some(Instant::now().sub(Duration::from_secs(1)));
                     world.users.clear();
 
                     Ok::<(), anyhow::Error>(())

@@ -201,7 +201,10 @@ fn handle_user_despawn(
     // TODO we need to send the global world the data that we hold and need persistence (like exp, playtime etc.)
 
     deletion_list.0.push(connection_local_world_id);
-    debug!("Marked local user entity for deletion");
+    debug!(
+        "Marked local user {:?} for deletion",
+        connection_local_world_id
+    );
     Ok(())
 }
 
