@@ -4,7 +4,7 @@ use crate::ecs::message::Message::{ResponseSpawnMe, UserSpawnPrepared, UserSpawn
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::resource::{DeletionList, GlobalMessageChannel};
 use crate::ecs::system::send_message;
-use crate::model::{Angle, Vec3};
+use crate::model::{Angle, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
 use anyhow::{ensure, Context};
@@ -188,7 +188,7 @@ fn assemble_response_spawn_me(
         connection_local_world_id,
         packet: SSpawnMe {
             user_id: connection_local_world_id,
-            location: Vec3 {
+            location: Vec3f {
                 x: 16260.0,
                 y: 1253.0,
                 z: -4410.0,

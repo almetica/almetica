@@ -8,7 +8,7 @@ use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
 use crate::ecs::system::send_message;
 use crate::model::repository::user;
-use crate::model::{entity, TemplateID, Vec3};
+use crate::model::{entity, TemplateID, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
 use anyhow::{bail, ensure, Context};
@@ -367,7 +367,7 @@ fn assemble_response_load_topo(connection_global_world_id: EntityId) -> EcsMessa
         connection_global_world_id,
         packet: SLoadTopo {
             zone: 5,
-            location: Vec3 {
+            location: Vec3f {
                 x: 16260.0,
                 y: 1253.0,
                 z: -4410.0,

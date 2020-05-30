@@ -82,7 +82,7 @@ pub mod tests {
     use chrono::prelude::*;
     use sqlx::PgConnection;
 
-    fn get_default_account(num: i32) -> Account {
+    pub fn get_default_account(num: i32) -> Account {
         Account {
             id: -1,
             name: format!("testaccount-{}", num),

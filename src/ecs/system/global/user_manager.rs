@@ -4,7 +4,7 @@ use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
 use crate::model::entity::User;
 use crate::model::repository::user;
-use crate::model::{Vec3, Vec3a};
+use crate::model::{Vec3a, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
 use anyhow::{ensure, Context};
@@ -600,16 +600,16 @@ fn assemble_user_list_response(
                 show_face: user.show_face,
                 style_head_scale: 1.0,
                 style_head_rotation: Vec3a::default(),
-                style_head_translation: Vec3::default(),
-                style_head_translation_debug: Vec3::default(),
+                style_head_translation: Vec3f::default(),
+                style_head_translation_debug: Vec3f::default(),
                 style_faces_scale: 1.0,
                 style_face_rotation: Vec3a::default(),
-                style_face_translation: Vec3::default(),
-                style_face_translation_debug: Vec3::default(),
+                style_face_translation: Vec3f::default(),
+                style_face_translation_debug: Vec3f::default(),
                 style_back_scale: 1.0,
                 style_back_rotation: Vec3a::default(),
-                style_back_translation: Vec3::default(),
-                style_back_translation_debug: Vec3::default(),
+                style_back_translation: Vec3f::default(),
+                style_back_translation_debug: Vec3f::default(),
                 used_style_head_transform: false,
                 is_new_character: user.is_new_character,
                 tutorial_state: user.tutorial_state,

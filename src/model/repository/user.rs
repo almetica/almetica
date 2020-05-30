@@ -175,7 +175,7 @@ pub mod tests {
         Ok(account::create(pool, &account).await?)
     }
 
-    fn get_default_user(account: &Account, num: i32) -> User {
+    pub fn get_default_user(account: &Account, num: i32) -> User {
         User {
             id: -1,
             account_id: account.id,

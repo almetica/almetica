@@ -1,7 +1,7 @@
 /// Holds all database entities.
 ///
 /// Supported data types:
-///    * ```i8```, ```i16```, ```i32```, ```i64```
+///    * ```i8```, ```i16```, ```i32```, ```i64```, ```f32```, ```f64```
 ///    * ```String```
 ///    * ```Vec```
 ///    * ```Bool```
@@ -35,7 +35,7 @@ pub struct LoginTicket {
     pub created_at: DateTime<Utc>,
 }
 
-// An account user. TERA calls a character an user.
+/// An account user. TERA calls a character an user.
 #[derive(Clone, Debug, sqlx::FromRow, PartialEq)]
 pub struct User {
     pub id: i32,
@@ -63,4 +63,17 @@ pub struct User {
     pub delete_at: Option<DateTime<Utc>>,
     pub last_logout_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+}
+
+/// The location of an users.
+#[derive(Clone, Debug, sqlx::FromRow, PartialEq)]
+pub struct UserLocation {
+    pub user_id: i32,
+    pub zone: i32,
+    pub location_x: f32,
+    pub location_y: f32,
+    pub location_z: f32,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
 }

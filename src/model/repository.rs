@@ -3,3 +3,4 @@
 pub mod account;
 pub mod loginticket;
 pub mod user;
+pub mod user_location;
