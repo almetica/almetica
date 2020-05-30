@@ -1234,6 +1234,8 @@ mod tests {
                 }
             });
 
+            let deleted_user_id = users[0].id;
+
             world.run(
                 |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
                     entities.add_entity(
@@ -1242,7 +1244,7 @@ mod tests {
                             connection_global_world_id,
                             account_id: account.id,
                             packet: CDeleteUser {
-                                database_id: users[0].id,
+                                database_id: deleted_user_id,
                             },
                         }),
                     );
@@ -1273,7 +1275,12 @@ mod tests {
                 }
             }
 
-            // TODO Test for user_location
+            // Also make sure that the UserLocation was deleted
+            assert!(task::block_on(async {
+                user_location::get_by_user_id(&mut conn, deleted_user_id)
+                    .await
+                    .is_err()
+            }));
 
             Ok(())
         })
