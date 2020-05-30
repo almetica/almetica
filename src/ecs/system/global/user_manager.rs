@@ -2,8 +2,8 @@ use crate::ecs::component::GlobalConnection;
 use crate::ecs::message::Message::ResponseGetUserList;
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
-use crate::model::entity::User;
-use crate::model::repository::user;
+use crate::model::entity::{User, UserLocation};
+use crate::model::repository::{user, user_location};
 use crate::model::{Vec3a, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
@@ -11,6 +11,7 @@ use anyhow::{ensure, Context};
 use async_std::task;
 use chrono::Utc;
 use lazy_static::lazy_static;
+use nalgebra::{Point3, Rotation3, Vector3};
 use regex::Regex;
 use shipyard::*;
 use sqlx::{PgConnection, PgPool};
@@ -432,8 +433,7 @@ async fn create_new_user(
     lobby_slot: i32,
     packet: &CCreateUser,
 ) -> Result<()> {
-    // TODO also create the default user_location
-    user::create(
+    let user = user::create(
         &mut conn,
         &User {
             id: -1,
@@ -465,6 +465,19 @@ async fn create_new_user(
     )
     .await
     .context("Can't create user")?;
+
+    user_location::create(
+        &mut conn,
+        &UserLocation {
+            user_id: user.id,
+            zone: 0,
+            point: Point3::new(16260.0, 1253.0, -4410.0),
+            rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 5.96903), // 342°
+        },
+    )
+    .await
+    .context("Can't create user location")?;
+
     Ok(())
 }
 
@@ -1079,20 +1092,26 @@ mod tests {
             let mut users: Vec<User> =
                 task::block_on(async { user::list(&mut conn, account.id).await })?;
 
-            if let Some(u) = users.pop() {
-                assert_eq!(u.name, org_packet.name);
-                assert_eq!(u.details, org_packet.details);
-                assert_eq!(u.shape, org_packet.shape);
-                assert_eq!(u.gender, org_packet.gender);
-                assert_eq!(u.race, org_packet.race);
-                assert_eq!(u.class, org_packet.class);
-                assert_eq!(u.appearance, org_packet.appearance);
-                assert_eq!(u.appearance2, org_packet.appearance2);
+            let user_id = if let Some(user) = users.pop() {
+                assert_eq!(user.name, org_packet.name);
+                assert_eq!(user.details, org_packet.details);
+                assert_eq!(user.shape, org_packet.shape);
+                assert_eq!(user.gender, org_packet.gender);
+                assert_eq!(user.race, org_packet.race);
+                assert_eq!(user.class, org_packet.class);
+                assert_eq!(user.appearance, org_packet.appearance);
+                assert_eq!(user.appearance2, org_packet.appearance2);
+
+                user.id
             } else {
                 panic!("Can't find the created user");
-            }
+            };
 
-            // TODO test for user_location
+            let user_location =
+                task::block_on(async { user_location::get_by_user_id(&mut conn, user_id).await })?;
+
+            assert_eq!(user_location.user_id, user_id);
+            assert_eq!(user_location.zone, 0);
 
             Ok(())
         })
