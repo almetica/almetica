@@ -10,6 +10,7 @@
 ///    * DateTime<Utc>
 use crate::model::*;
 use chrono::{DateTime, Utc};
+use nalgebra::{Point3, Rotation3};
 
 /// Account that holds the login information of a player.
 #[derive(Clone, Debug, sqlx::FromRow, PartialEq)]
@@ -70,10 +71,6 @@ pub struct User {
 pub struct UserLocation {
     pub user_id: i32,
     pub zone: i32,
-    pub location_x: f32,
-    pub location_y: f32,
-    pub location_z: f32,
-    pub rotation_x: f32,
-    pub rotation_y: f32,
-    pub rotation_z: f32,
+    pub point: Point3<f32>,
+    pub rotation: Rotation3<f32>,
 }
