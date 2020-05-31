@@ -470,7 +470,7 @@ async fn create_new_user(
         &mut conn,
         &UserLocation {
             user_id: user.id,
-            zone_id: 0,
+            zone_id: 5, // Stepstone Isle (tutorial map)
             point: Point3::new(16260.0, 1253.0, -4410.0),
             rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 5.96903), // 342°
         },
