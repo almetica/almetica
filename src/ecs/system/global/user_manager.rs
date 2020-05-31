@@ -1111,7 +1111,7 @@ mod tests {
                 task::block_on(async { user_location::get_by_user_id(&mut conn, user_id).await })?;
 
             assert_eq!(user_location.user_id, user_id);
-            assert_eq!(user_location.zone_id, 0);
+            assert_eq!(user_location.zone_id, 5);
 
             Ok(())
         })
