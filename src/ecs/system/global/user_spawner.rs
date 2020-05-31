@@ -1,5 +1,5 @@
 use crate::ecs::component::{GlobalConnection, GlobalUserSpawn, UserSpawnStatus};
-use crate::ecs::dto::UserInitializer;
+use crate::ecs::dto::{UserFinalizer, UserInitializer};
 use crate::ecs::message::Message::{
     PrepareUserSpawn, RegisterLocalWorld, ResponseLoadHint, ResponseLoadTopo, ResponseLogin,
     UserReadyToConnect,
@@ -67,6 +67,13 @@ pub fn user_spawner_system(
                 id_span!(connection_global_world_id);
                 if let Err(e) = handle_user_spawned(*connection_global_world_id, &mut spawns) {
                     error!("Ignoring user spawned message: {:?}", e);
+                }
+            }
+            Message::UserDespawned { user_finalizer } => {
+                let connection_global_world_id = user_finalizer.connection_global_world_id;
+                id_span!(connection_global_world_id);
+                if let Err(e) = handle_user_despawned(&user_finalizer, &pool) {
+                    error!("Ignoring user de-spawned message: {:?}", e);
                 }
             }
             _ => { /* Ignore all other messages */ }
@@ -140,6 +147,23 @@ fn handle_user_spawned(
     ))?;
     spawn.status = UserSpawnStatus::Spawned;
     Ok(())
+}
+
+fn handle_user_despawned(user_finalizer: &UserFinalizer, pool: &UniqueView<PgPool>) -> Result<()> {
+    debug!("Message::UserDespawned incoming");
+
+    Ok(task::block_on(async {
+        let mut conn = pool
+            .acquire()
+            .await
+            .context("Couldn't acquire connection from pool")?;
+
+        user_location::update(&mut conn, &user_finalizer.location)
+            .await
+            .context("Can't update UserLocation")?;
+
+        Ok::<(), anyhow::Error>(())
+    })?)
 }
 
 fn handle_select_user(
@@ -427,11 +451,13 @@ mod tests {
     use sqlx::PgPool;
     use std::time::Instant;
 
-    async fn setup(pool: PgPool) -> Result<(World, EntityId, Receiver<EcsMessage>, Account, User)> {
+    async fn setup(
+        pool: &PgPool,
+    ) -> Result<(World, EntityId, Receiver<EcsMessage>, Account, User)> {
         let mut conn = pool.acquire().await?;
 
         let world = World::new();
-        world.add_unique(pool);
+        world.add_unique(pool.clone());
 
         let account = account::create(
             &mut conn,
@@ -540,7 +566,7 @@ mod tests {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
             let (world, connection_global_world_id, _rx_channel, account, user) =
-                task::block_on(async { setup(pool).await })?;
+                task::block_on(async { setup(&pool).await })?;
 
             world.run(
                 |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
@@ -579,7 +605,7 @@ mod tests {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
             let (world, connection_global_world_id, rx_channel, account, user) =
-                task::block_on(async { setup(pool).await })?;
+                task::block_on(async { setup(&pool).await })?;
 
             // FIXME Ask upstream project to create a better way to create EntityIds
             let local_world_id =
@@ -698,7 +724,7 @@ mod tests {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
             let (world, connection_global_world_id, _rx_channel, account, user) =
-                task::block_on(async { setup(pool).await })?;
+                task::block_on(async { setup(&pool).await })?;
 
             world.run(
                 |entities: EntitiesViewMut, mut spawns: ViewMut<GlobalUserSpawn>| {
@@ -744,11 +770,57 @@ mod tests {
     }
 
     #[test]
+    fn test_user_despawned() -> Result<()> {
+        db_test(|db_string| {
+            let pool = task::block_on(async { PgPool::new(db_string).await })?;
+            let (world, connection_global_world_id, _rx_channel, _account, user) =
+                task::block_on(async { setup(&pool).await })?;
+
+            let point = Point3::new(15.0f32, 20.0f32, 25.0f32);
+            let rotation = Rotation3::from_axis_angle(&Vector3::z_axis(), 0.5);
+
+            world.run(
+                |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
+                    entities.add_entity(
+                        &mut messages,
+                        Box::new(Message::UserDespawned {
+                            user_finalizer: UserFinalizer {
+                                connection_global_world_id,
+                                user_id: user.id,
+                                location: UserLocation {
+                                    user_id: user.id,
+                                    zone: 0,
+                                    point: point.clone(),
+                                    rotation: rotation.clone(),
+                                },
+                                is_alive: false,
+                            },
+                        }),
+                    );
+                },
+            );
+
+            world.run(user_spawner_system);
+
+            task::block_on(async {
+                let mut conn = pool.acquire().await?;
+                let user_location = user_location::get_by_user_id(&mut conn, user.id).await?;
+                assert_eq!(user_location.point, point);
+                assert_eq!(user_location.rotation, rotation);
+
+                Ok::<(), anyhow::Error>(())
+            })?;
+
+            Ok(())
+        })
+    }
+
+    #[test]
     fn test_prepare_local_spawn() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
             let (world, connection_global_world_id, _rx_channel, account, user) =
-                task::block_on(async { setup(pool).await })?;
+                task::block_on(async { setup(&pool).await })?;
 
             // FIXME Ask upstream project to create a better way to create EntityIds
             let local_world_id =
