@@ -7,6 +7,7 @@ use crate::ecs::message::Message::{
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
 use crate::ecs::system::send_message;
+use crate::model::entity::UserLocation;
 use crate::model::repository::{user, user_location};
 use crate::model::{entity, TemplateID, Vec3f};
 use crate::protocol::packet::*;
@@ -146,6 +147,7 @@ fn handle_user_spawned(
         connection_global_world_id
     ))?;
     spawn.status = UserSpawnStatus::Spawned;
+
     Ok(())
 }
 
@@ -161,6 +163,8 @@ fn handle_user_despawned(user_finalizer: &UserFinalizer, pool: &UniqueView<PgPoo
         user_location::update(&mut conn, &user_finalizer.location)
             .await
             .context("Can't update UserLocation")?;
+
+        debug!("UserLocation persisted.");
 
         Ok::<(), anyhow::Error>(())
     })?)
@@ -194,7 +198,7 @@ fn handle_select_user(
             bail!("Account is already logged in with user {}", spawn.user_id);
         }
 
-        // TODO implement the user_location model and use it here
+        let location = user_location::get_by_user_id(&mut conn, user.id).await?;
 
         entities.add_component(
             spawns,
@@ -203,7 +207,7 @@ fn handle_select_user(
                 user_id: user.id,
                 account_id,
                 status: UserSpawnStatus::Requesting,
-                zone_id: 0,
+                zone_id: location.zone_id,
                 local_world_id: None,
                 local_world_channel: None,
                 marked_for_deletion: false,
@@ -225,10 +229,12 @@ fn handle_user_spawn_prepared(
 ) -> Result<()> {
     debug!("Message::UserSpawnPrepared incoming");
 
-    let mut spawn = spawns.try_get(connection_global_world_id).context(format!(
-        "Can't get user spawn component {:?}",
-        connection_global_world_id
-    ))?;
+    let (connection, mut spawn) = (connections, spawns)
+        .try_get(connection_global_world_id)
+        .context(format!(
+            "Can't get connection with user spawn component {:?}",
+            connection_global_world_id
+        ))?;
     spawn.connection_local_world_id = Some(connection_local_world_id);
     spawn.status = UserSpawnStatus::Waiting;
 
@@ -236,13 +242,6 @@ fn handle_user_spawn_prepared(
         spawn.local_world_channel.is_some(),
         "Local world channel is not set"
     );
-
-    let connection = connections
-        .try_get(connection_global_world_id)
-        .context(format!(
-            "Can't get user connection component {:?}",
-            connection_global_world_id
-        ))?;
 
     // Register the local world with the connection and send the ResponseLogin
     send_message(
@@ -263,6 +262,13 @@ fn handle_user_spawn_prepared(
             .await
             .context(format!("Can't query user {}", spawn.user_id))?;
 
+        let location = user_location::get_by_user_id(&mut conn, spawn.user_id)
+            .await
+            .context(format!(
+                "Can't query user location for user {}",
+                spawn.user_id
+            ))?;
+
         send_message_to_connection(
             assemble_response_login(connection_global_world_id, user),
             connections,
@@ -270,9 +276,8 @@ fn handle_user_spawn_prepared(
 
         // TODO Send all other persisted date
 
-        // TODO use the user_location entity once implemented
         send_message_to_connection(
-            assemble_response_load_topo(connection_global_world_id),
+            assemble_response_load_topo(connection_global_world_id, &location),
             connections,
         );
         send_message_to_connection(
@@ -388,15 +393,18 @@ fn assemble_response_login(connection_global_world_id: EntityId, user: entity::U
     })
 }
 
-fn assemble_response_load_topo(connection_global_world_id: EntityId) -> EcsMessage {
+fn assemble_response_load_topo(
+    connection_global_world_id: EntityId,
+    user_location: &UserLocation,
+) -> EcsMessage {
     Box::new(ResponseLoadTopo {
         connection_global_world_id,
         packet: SLoadTopo {
-            zone: 5,
+            zone: user_location.zone_id,
             location: Vec3f {
-                x: 16260.0,
-                y: 1253.0,
-                z: -4410.0,
+                x: user_location.point.x,
+                y: user_location.point.y,
+                z: user_location.point.z,
             },
             disable_loading_screen: false,
         },
@@ -453,7 +461,14 @@ mod tests {
 
     async fn setup(
         pool: &PgPool,
-    ) -> Result<(World, EntityId, Receiver<EcsMessage>, Account, User)> {
+    ) -> Result<(
+        World,
+        EntityId,
+        Receiver<EcsMessage>,
+        Account,
+        User,
+        UserLocation,
+    )> {
         let mut conn = pool.acquire().await?;
 
         let world = World::new();
@@ -504,11 +519,11 @@ mod tests {
         )
         .await?;
 
-        user_location::create(
+        let location = user_location::create(
             &mut conn,
             &UserLocation {
                 user_id: user.id,
-                zone: 0,
+                zone_id: 0,
                 point: Point3::new(1.0f32, 2.0f32, 3.0f32),
                 rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 3.0),
             },
@@ -532,7 +547,14 @@ mod tests {
             },
         );
 
-        Ok((world, connection_global_world_id, rx_channel, account, user))
+        Ok((
+            world,
+            connection_global_world_id,
+            rx_channel,
+            account,
+            user,
+            location,
+        ))
     }
 
     async fn setup_with_connection(
@@ -565,7 +587,7 @@ mod tests {
     fn test_request_select_user() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_global_world_id, _rx_channel, account, user) =
+            let (world, connection_global_world_id, _rx_channel, account, user, _location) =
                 task::block_on(async { setup(&pool).await })?;
 
             world.run(
@@ -586,15 +608,19 @@ mod tests {
 
             world.run(user_spawner_system);
 
-            let spawns = world.borrow::<View<GlobalUserSpawn>>();
-            let spawn = spawns.get(connection_global_world_id);
-            assert_eq!(spawn.account_id, account.id);
-            assert_eq!(spawn.user_id, user.id);
-            assert_eq!(spawn.status, UserSpawnStatus::Requesting);
-            assert_eq!(spawn.marked_for_deletion, false);
-            assert_eq!(spawn.is_alive, true);
-            assert_eq!(spawn.local_world_id, None);
-            assert_eq!(spawn.connection_local_world_id, None);
+            world.run(|spawns: View<GlobalUserSpawn>| {
+                let spawn = spawns.try_get(connection_global_world_id)?;
+                assert_eq!(spawn.account_id, account.id);
+                assert_eq!(spawn.user_id, user.id);
+                assert_eq!(spawn.zone_id, 0);
+                assert_eq!(spawn.status, UserSpawnStatus::Requesting);
+                assert_eq!(spawn.marked_for_deletion, false);
+                assert_eq!(spawn.is_alive, true);
+                assert_eq!(spawn.local_world_id, None);
+                assert_eq!(spawn.connection_local_world_id, None);
+
+                Ok::<(), anyhow::Error>(())
+            })?;
 
             Ok(())
         })
@@ -604,7 +630,7 @@ mod tests {
     fn test_request_user_spawn_prepared() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_global_world_id, rx_channel, account, user) =
+            let (world, connection_global_world_id, rx_channel, account, user, location) =
                 task::block_on(async { setup(&pool).await })?;
 
             // FIXME Ask upstream project to create a better way to create EntityIds
@@ -649,13 +675,16 @@ mod tests {
 
             world.run(user_spawner_system);
 
-            let spawns = world.borrow::<View<GlobalUserSpawn>>();
-            let spawn = spawns.get(connection_global_world_id);
-            assert_eq!(spawn.status, UserSpawnStatus::Waiting);
-            assert_eq!(
-                spawn.connection_local_world_id,
-                Some(connection_local_world_id)
-            );
+            world.run(|spawns: View<GlobalUserSpawn>| {
+                let spawn = spawns.try_get(connection_global_world_id)?;
+                assert_eq!(spawn.status, UserSpawnStatus::Waiting);
+                assert_eq!(
+                    spawn.connection_local_world_id,
+                    Some(connection_local_world_id)
+                );
+
+                Ok::<(), anyhow::Error>(())
+            })?;
 
             match &*rx_channel.try_recv()? {
                 Message::RegisterLocalWorld {
@@ -690,6 +719,10 @@ mod tests {
                     packet,
                 } => {
                     assert_eq!(*id, connection_global_world_id);
+                    assert_eq!(packet.zone, location.zone_id);
+                    assert_eq!(packet.location.x, location.point.x);
+                    assert_eq!(packet.location.y, location.point.y);
+                    assert_eq!(packet.location.z, location.point.z);
                     assert_eq!(packet.disable_loading_screen, false);
                 }
                 _ => panic!("Message is not a ResponseLoadTopo message"),
@@ -723,7 +756,7 @@ mod tests {
     fn test_user_spawned() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_global_world_id, _rx_channel, account, user) =
+            let (world, connection_global_world_id, _rx_channel, account, user, _location) =
                 task::block_on(async { setup(&pool).await })?;
 
             world.run(
@@ -759,11 +792,14 @@ mod tests {
 
             world.run(user_spawner_system);
 
-            let spawns = world.borrow::<View<GlobalUserSpawn>>();
-            let spawn = spawns.get(connection_global_world_id);
-            assert_eq!(spawn.account_id, account.id);
-            assert_eq!(spawn.user_id, user.id);
-            assert_eq!(spawn.status, UserSpawnStatus::Spawned);
+            world.run(|spawns: View<GlobalUserSpawn>| {
+                let spawn = spawns.try_get(connection_global_world_id)?;
+                assert_eq!(spawn.account_id, account.id);
+                assert_eq!(spawn.user_id, user.id);
+                assert_eq!(spawn.status, UserSpawnStatus::Spawned);
+
+                Ok::<(), anyhow::Error>(())
+            })?;
 
             Ok(())
         })
@@ -773,7 +809,7 @@ mod tests {
     fn test_user_despawned() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_global_world_id, _rx_channel, _account, user) =
+            let (world, connection_global_world_id, _rx_channel, _account, user, _location) =
                 task::block_on(async { setup(&pool).await })?;
 
             let point = Point3::new(15.0f32, 20.0f32, 25.0f32);
@@ -789,7 +825,7 @@ mod tests {
                                 user_id: user.id,
                                 location: UserLocation {
                                     user_id: user.id,
-                                    zone: 0,
+                                    zone_id: 0,
                                     point: point.clone(),
                                     rotation: rotation.clone(),
                                 },
@@ -819,7 +855,7 @@ mod tests {
     fn test_prepare_local_spawn() -> Result<()> {
         db_test(|db_string| {
             let pool = task::block_on(async { PgPool::new(db_string).await })?;
-            let (world, connection_global_world_id, _rx_channel, account, user) =
+            let (world, connection_global_world_id, _rx_channel, account, user, _location) =
                 task::block_on(async { setup(&pool).await })?;
 
             // FIXME Ask upstream project to create a better way to create EntityIds

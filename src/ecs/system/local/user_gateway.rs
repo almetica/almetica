@@ -107,7 +107,7 @@ fn handle_prepare_user_spawn(
                 user_id: user_initializer.user.id,
                 account_id: user_initializer.user.account_id,
                 status: UserSpawnStatus::Waiting,
-                zone_id: user_initializer.location.zone,
+                zone_id: user_initializer.location.zone_id,
                 is_alive: user_initializer.is_alive,
             },
             Location {
@@ -251,7 +251,7 @@ fn assemble_user_despawned(spawn: &LocalUserSpawn, location: &Location) -> EcsMe
             user_id: spawn.user_id,
             location: UserLocation {
                 user_id: spawn.user_id,
-                zone: spawn.zone_id,
+                zone_id: spawn.zone_id,
                 point: location.point.clone(),
                 rotation: location.rotation.clone(),
             },
@@ -376,7 +376,7 @@ mod tests {
 
         let user_location = UserLocation {
             user_id: 1,
-            zone: 0,
+            zone_id: 0,
             point: Point3::new(1.0, 1.0, 1.0),
             rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 0.0),
         };
@@ -497,34 +497,36 @@ mod tests {
 
         world.run(|spawns: View<LocalUserSpawn>, locations: View<Location>| {
             // User entity needs to have both a LocalUserSpawn and a Location component attached
-            let (spawn, _location) = (&spawns, &locations).try_get(connection_local_world_id)?;
+            let (spawn, location) = (&spawns, &locations).try_get(connection_local_world_id)?;
             assert_eq!(spawn.status, UserSpawnStatus::Spawned);
+
+            match &*connection_rx_channel.try_recv()? {
+                Message::ResponseSpawnMe {
+                    connection_global_world_id: gid,
+                    connection_local_world_id: lid,
+                    packet,
+                } => {
+                    assert_eq!(*gid, connection_global_world_id);
+                    assert_eq!(*lid, connection_local_world_id);
+                    assert_eq!(packet.user_id, connection_local_world_id);
+                    assert_eq!(packet.location.x, location.point.x);
+                    assert_eq!(packet.location.y, location.point.y);
+                    assert_eq!(packet.location.z, location.point.z);
+                }
+                _ => panic!("Can't find Message::ResponseSpawnMe"),
+            }
+
+            match &*global_rx_channel.try_recv()? {
+                Message::UserSpawned {
+                    connection_global_world_id: gid,
+                } => {
+                    assert_eq!(*gid, connection_global_world_id);
+                }
+                _ => panic!("Can't find Message::UserSpawned"),
+            }
 
             Ok::<(), anyhow::Error>(())
         })?;
-
-        match &*connection_rx_channel.try_recv()? {
-            Message::ResponseSpawnMe {
-                connection_global_world_id: gid,
-                connection_local_world_id: lid,
-                packet,
-            } => {
-                assert_eq!(*gid, connection_global_world_id);
-                assert_eq!(*lid, connection_local_world_id);
-                assert_eq!(packet.user_id, connection_local_world_id);
-                // TODO test the location!
-            }
-            _ => panic!("Can't find Message::ResponseSpawnMe"),
-        }
-
-        match &*global_rx_channel.try_recv()? {
-            Message::UserSpawned {
-                connection_global_world_id: gid,
-            } => {
-                assert_eq!(*gid, connection_global_world_id);
-            }
-            _ => panic!("Can't find Message::UserSpawned"),
-        }
 
         Ok(())
     }
