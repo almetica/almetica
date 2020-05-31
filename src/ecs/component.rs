@@ -58,6 +58,7 @@ pub struct LocalUserSpawn {
     pub user_id: i32,
     pub account_id: i64,
     pub status: UserSpawnStatus,
+    pub connection_global_world_id: EntityId,
     pub is_alive: bool,
 }
 

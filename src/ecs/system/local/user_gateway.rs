@@ -1,6 +1,8 @@
 use crate::ecs::component::{LocalConnection, LocalUserSpawn, Location, UserSpawnStatus};
-use crate::ecs::dto::UserInitializer;
-use crate::ecs::message::Message::{ResponseSpawnMe, UserSpawnPrepared, UserSpawned};
+use crate::ecs::dto::{UserFinalizer, UserFinalizerLocation, UserInitializer};
+use crate::ecs::message::Message::{
+    ResponseSpawnMe, UserDespawned, UserSpawnPrepared, UserSpawned,
+};
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::resource::{DeletionList, GlobalMessageChannel};
 use crate::ecs::system::send_message;
@@ -69,8 +71,13 @@ pub fn user_gateway_system(
                 connection_local_world_id,
             } => {
                 id_span!(connection_local_world_id);
-                if let Err(e) = handle_user_despawn(*connection_local_world_id, &mut deletion_list)
-                {
+                if let Err(e) = handle_user_despawn(
+                    *connection_local_world_id,
+                    &mut user_spawns,
+                    &mut locations,
+                    &mut deletion_list,
+                    &global_world_channel,
+                ) {
                     error!("Ignoring Message::UserDespawn: {:?}", e);
                 }
             }
@@ -95,6 +102,7 @@ fn handle_prepare_user_spawn(
                 channel: user_initializer.connection_channel.clone(),
             },
             LocalUserSpawn {
+                connection_global_world_id: user_initializer.connection_global_world_id,
                 user_id: user_initializer.user.id,
                 account_id: user_initializer.user.account_id,
                 status: UserSpawnStatus::Waiting,
@@ -177,11 +185,25 @@ fn handle_load_topo_fin(
 
 fn handle_user_despawn(
     connection_local_world_id: EntityId,
+    user_spawns: &mut ViewMut<LocalUserSpawn>,
+    locations: &mut ViewMut<Location>,
     deletion_list: &mut UniqueViewMut<DeletionList>,
+    global_world_channel: &UniqueView<GlobalMessageChannel>,
 ) -> Result<()> {
     debug!("Message::UserDespawn incoming");
 
-    // TODO we need to send the global world the data that we hold and need persistence (like exp, playtime etc.)
+    let (spawn, location) = (user_spawns, locations)
+        .try_get(connection_local_world_id)
+        .context(format!(
+            "Can't find local spawn for {:?}",
+            connection_local_world_id
+        ))?;
+
+    // Send all user data that needs to be persisted to the global world.
+    send_message(
+        assemble_user_despawned(spawn, location),
+        &global_world_channel.channel,
+    );
 
     deletion_list.0.push(connection_local_world_id);
     debug!(
@@ -217,6 +239,20 @@ fn assemble_response_spawn_me(
 fn assemble_user_spawned(connection_global_world_id: EntityId) -> EcsMessage {
     Box::new(UserSpawned {
         connection_global_world_id,
+    })
+}
+
+fn assemble_user_despawned(spawn: &LocalUserSpawn, location: &Location) -> EcsMessage {
+    Box::new(UserDespawned {
+        user_finalizer: UserFinalizer {
+            connection_global_world_id: spawn.connection_global_world_id,
+            user_id: spawn.user_id,
+            location: UserFinalizerLocation {
+                point: location.point.clone(),
+                rotation: location.rotation.clone(),
+            },
+            is_alive: spawn.is_alive,
+        },
     })
 }
 
@@ -274,6 +310,10 @@ mod tests {
                             user_id: 1,
                             account_id: 1,
                             status: UserSpawnStatus::Waiting,
+                            connection_global_world_id: from_vec::<EntityId>(vec![
+                                0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            ])
+                            .unwrap(),
                             is_alive: true,
                         },
                         Location {
@@ -364,6 +404,7 @@ mod tests {
                     .with_id()
                     .next()
                     .unwrap();
+                assert_eq!(spawn.connection_global_world_id, connection_global_world_id);
                 assert_eq!(spawn.user_id, user.id);
                 assert_eq!(spawn.account_id, user.account_id);
                 assert_eq!(spawn.status, UserSpawnStatus::Waiting);
@@ -524,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_user_despawn() -> Result<()> {
-        let (world, connection_local_world_id, _global_rx_channel, _connection_rx_channel) =
+        let (world, connection_local_world_id, global_rx_channel, _connection_rx_channel) =
             setup_with_spawn()?;
 
         world.run(
@@ -543,6 +584,26 @@ mod tests {
         world.run(|mut deletion_list: UniqueViewMut<DeletionList>| {
             assert_eq!(deletion_list.0.len(), 1);
             assert_eq!(deletion_list.0.pop(), Some(connection_local_world_id));
+
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        world.run(|spawns: View<LocalUserSpawn>, locations: View<Location>| {
+            let (spawn, location) = (&spawns, &locations).try_get(connection_local_world_id)?;
+
+            match &*global_rx_channel.try_recv()? {
+                Message::UserDespawned { user_finalizer } => {
+                    assert_eq!(
+                        user_finalizer.connection_global_world_id,
+                        spawn.connection_global_world_id
+                    );
+                    assert_eq!(user_finalizer.user_id, spawn.user_id);
+                    assert_eq!(user_finalizer.location.point, location.point);
+                    assert_eq!(user_finalizer.location.rotation, location.rotation);
+                    assert_eq!(user_finalizer.is_alive, spawn.is_alive);
+                }
+                _ => panic!("Can't find Message::UserDespawned"),
+            }
 
             Ok::<(), anyhow::Error>(())
         })?;
