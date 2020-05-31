@@ -113,6 +113,9 @@ fn handle_user_requesting_spawn(
         world.users.insert(connection_global_world_id);
         world.deadline = None;
 
+        // Users can spawn right away, since the local world is already up and running.
+        spawn.status = UserSpawnStatus::CanSpawn;
+
         (world_id, world.channel.clone())
     } else {
         // TODO once we have implemented the datacenter parser, we need to extend this part
@@ -146,6 +149,9 @@ fn handle_user_requesting_spawn(
             world_id,
         );
 
+        // Users need to wait until the new world is loaded
+        spawn.status = UserSpawnStatus::Waiting;
+
         (world_id, local_world_channel)
     };
 
@@ -156,7 +162,6 @@ fn handle_user_requesting_spawn(
 
     spawn.local_world_id = Some(world_id);
     spawn.local_world_channel = Some(channel);
-    spawn.status = UserSpawnStatus::Waiting;
     Ok(())
 }
 
@@ -583,11 +588,16 @@ mod tests {
 
                 world.run(local_world_manager_system);
 
-                world.run(|worlds: View<LocalWorld>| {
+                world.run(|worlds: View<LocalWorld>, spawns: View<GlobalUserSpawn>| {
                     assert_eq!(worlds.iter().count(), 1);
                     let world = worlds.try_get(local_world_id)?;
                     assert_eq!(world.users.len(), 1);
                     assert_eq!(world.deadline, None);
+
+                    let spawn = (&spawns).try_get(connection_global_world_id)?;
+                    assert_eq!(spawn.local_world_id, Some(local_world_id));
+                    assert!(spawn.local_world_channel.is_some());
+                    assert_eq!(spawn.status, UserSpawnStatus::CanSpawn);
 
                     Ok::<(), anyhow::Error>(())
                 })?;
