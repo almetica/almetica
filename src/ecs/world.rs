@@ -6,7 +6,8 @@ use crate::ecs::system::{common, global, local};
 use async_std::sync::{channel, Sender};
 use shipyard::*;
 use sqlx::PgPool;
-use std::time::Duration;
+use std::ops::Sub;
+use std::time::{Duration, Instant};
 use std::{thread, time};
 use tracing::{error, info, info_span};
 
@@ -42,6 +43,12 @@ impl GlobalWorld {
 
         let vec: Vec<EntityId> = Vec::with_capacity(4096);
         world.add_unique(DeletionList(vec));
+
+        world.add_unique(Tick {
+            count: 0,
+            delta: Duration::from_nanos(1000),
+            time: Instant::now(),
+        });
 
         Self {
             channel: tx_channel,
@@ -124,6 +131,12 @@ impl LocalWorld {
         let vec: Vec<EntityId> = Vec::with_capacity(4096);
         world.add_unique(DeletionList(vec));
 
+        world.add_unique(Tick {
+            count: 0,
+            delta: Duration::from_nanos(1000),
+            time: Instant::now(),
+        });
+
         Self {
             id: world_id,
             channel: tx_channel,
@@ -136,6 +149,7 @@ impl LocalWorld {
         let span = info_span!("world", world_id = ?self.id);
         let _enter = span.enter();
 
+        let id = self.id;
         let world = &mut self.world;
 
         // Build the workload
@@ -153,32 +167,39 @@ impl LocalWorld {
         info!("Finished loading data for local world {:?}", self.id);
 
         // Inform the global world that we finished loading and can accept messages
-        let global_message_channel = world.borrow::<UniqueView<GlobalMessageChannel>>();
-        match global_message_channel
-            .channel
-            .try_send(Box::new(Message::LocalWorldLoaded {
-                successful: true,
-                global_world_id: self.id,
-            })) {
-            Ok(..) => {}
-            Err(e) => {
-                error!(
-                    "Can't send Message::LocalWorldLoaded to global world: {:?}",
-                    e
-                );
-                return;
+        if !world.run(|global_message_channel: UniqueView<GlobalMessageChannel>| {
+            match global_message_channel
+                .channel
+                .try_send(Box::new(Message::LocalWorldLoaded {
+                    successful: true,
+                    global_world_id: id,
+                })) {
+                Ok(..) => true,
+                Err(e) => {
+                    error!(
+                        "Can't send Message::LocalWorldLoaded to global world: {:?}",
+                        e
+                    );
+                    false
+                }
             }
+        }) {
+            return;
         }
-        drop(global_message_channel);
 
         let min_tick_duration = time::Duration::from_millis(1000 / LOCAL_WORLD_TICK_RATE);
         loop {
-            let shutdown_signal = world.borrow::<UniqueView<ShutdownSignal>>();
-            if shutdown_signal.status == ShutdownSignalStatus::Shutdown {
-                info!("Shutting down local world {:?}", self.id);
+            // Check if we have to shutdown the local world
+            if !world.run(|shutdown_signal: UniqueView<ShutdownSignal>| {
+                if shutdown_signal.status == ShutdownSignalStatus::Shutdown {
+                    info!("Shutting down local world {:?}", id);
+                    false
+                } else {
+                    true
+                }
+            }) {
                 break;
             }
-            drop(shutdown_signal);
 
             run_workload_tick(&world, LOCAL_WORLD_TICK, min_tick_duration);
         }
@@ -187,12 +208,18 @@ impl LocalWorld {
 
 #[inline]
 fn run_workload_tick(world: &World, workload_name: &str, min_tick_duration: Duration) {
-    let start = time::Instant::now();
+    let delta = world.run(|mut tick: UniqueViewMut<Tick>| {
+        let now = time::Instant::now();
+
+        tick.count += 1;
+        tick.delta = now.sub(tick.time);
+        tick.time = now;
+        tick.delta
+    });
 
     world.run_workload(workload_name);
 
-    let elapsed = start.elapsed();
-    if elapsed < min_tick_duration {
-        thread::sleep(min_tick_duration - elapsed);
+    if delta < min_tick_duration {
+        thread::sleep(min_tick_duration - delta);
     }
 }
