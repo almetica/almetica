@@ -254,13 +254,14 @@ mod tests {
     use crate::ecs::component::GlobalConnection;
     use crate::ecs::dto::UserInitializer;
     use crate::ecs::message::Message;
-    use crate::model::entity::{Account, User};
+    use crate::model::entity::{Account, User, UserLocation};
     use crate::model::repository::{account, user};
     use crate::model::tests::db_test;
     use crate::model::{Class, Gender, PasswordHashAlgorithm, Race};
     use crate::Result;
     use async_std::sync::{channel, Receiver, Sender};
     use chrono::{TimeZone, Utc};
+    use nalgebra::{Point3, Rotation3, Vector3};
     use sqlx::PgPool;
     use std::ops::Sub;
     use std::time::Instant;
@@ -633,6 +634,13 @@ mod tests {
                                 connection_global_world_id,
                                 connection_channel: connection.channel.clone(),
                                 user,
+                                location: UserLocation {
+                                    user_id: 0,
+                                    zone: 0,
+                                    point: Point3::new(1.0, 1.0, 1.0),
+                                    rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 0.0),
+                                },
+                                is_alive: true,
                             },
                         }),
                         &local_world_channel,

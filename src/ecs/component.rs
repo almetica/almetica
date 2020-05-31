@@ -4,6 +4,7 @@ use crate::model::Region;
 use crate::Result;
 use async_std::sync::Sender;
 use async_std::task::JoinHandle;
+use nalgebra::{Point3, Rotation3};
 use shipyard::EntityId;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -87,4 +88,11 @@ pub enum LocalWorldType {
     Arena,   // PVP Arena
     Dungeon, // Instanced Dungeons / Raids
     Field,   // Fields / Cities
+}
+
+/// The location of an entity in a local world.
+#[derive(Debug)]
+pub struct Location {
+    pub point: Point3<f32>,
+    pub rotation: Rotation3<f32>,
 }
