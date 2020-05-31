@@ -1,4 +1,4 @@
-use crate::ecs::component::{LocalConnection, LocalUserSpawn, UserSpawnStatus};
+use crate::ecs::component::{LocalConnection, LocalUserSpawn, Location, UserSpawnStatus};
 use crate::ecs::dto::UserInitializer;
 use crate::ecs::message::Message::{ResponseSpawnMe, UserSpawnPrepared, UserSpawned};
 use crate::ecs::message::{EcsMessage, Message};
@@ -16,6 +16,7 @@ pub fn user_gateway_system(
     incoming_messages: View<EcsMessage>,
     mut connections: ViewMut<LocalConnection>,
     mut user_spawns: ViewMut<LocalUserSpawn>,
+    mut locations: ViewMut<Location>,
     mut entities: EntitiesViewMut,
     global_world_channel: UniqueView<GlobalMessageChannel>,
     mut deletion_list: UniqueViewMut<DeletionList>,
@@ -30,6 +31,7 @@ pub fn user_gateway_system(
                     &user_initializer,
                     &mut connections,
                     &mut user_spawns,
+                    &mut locations,
                     &mut entities,
                     &global_world_channel,
                 )
@@ -56,6 +58,7 @@ pub fn user_gateway_system(
                     *connection_local_world_id,
                     &mut connections,
                     &mut user_spawns,
+                    &mut locations,
                     &global_world_channel,
                 ) {
                     // TODO Somehow cleanup LocalConnections that didn't connect in time
@@ -79,14 +82,14 @@ fn handle_prepare_user_spawn(
     user_initializer: &UserInitializer,
     connections: &mut ViewMut<LocalConnection>,
     user_spawns: &mut ViewMut<LocalUserSpawn>,
+    locations: &mut ViewMut<Location>,
     entities: &mut EntitiesViewMut,
     global_world_channel: &UniqueView<GlobalMessageChannel>,
 ) {
     debug!("Message::PrepareUserSpawn incoming");
 
-    // FIXME: Use the "is_alive" field from the position information in the UserInitializer
     let connection_local_world_id = entities.add_entity(
-        (connections, user_spawns),
+        (connections, user_spawns, locations),
         (
             LocalConnection {
                 channel: user_initializer.connection_channel.clone(),
@@ -95,7 +98,11 @@ fn handle_prepare_user_spawn(
                 user_id: user_initializer.user.id,
                 account_id: user_initializer.user.account_id,
                 status: UserSpawnStatus::Waiting,
-                is_alive: true,
+                is_alive: user_initializer.is_alive,
+            },
+            Location {
+                point: user_initializer.location.point.clone(),
+                rotation: user_initializer.location.rotation.clone(),
             },
         ),
     );
@@ -131,11 +138,12 @@ fn handle_load_topo_fin(
     connection_local_world_id: EntityId,
     connections: &mut ViewMut<LocalConnection>,
     user_spawns: &mut ViewMut<LocalUserSpawn>,
+    locations: &mut ViewMut<Location>,
     global_world_channel: &UniqueView<GlobalMessageChannel>,
 ) -> Result<()> {
     debug!("Message::RequestLoadTopoFin incoming");
 
-    let (connection, spawn) = (connections, user_spawns)
+    let (connection, spawn, location) = (connections, user_spawns, locations)
         .try_get(connection_local_world_id)
         .context(format!(
             "Can't find connection with local spawn for {:?}",
@@ -148,9 +156,13 @@ fn handle_load_topo_fin(
     );
 
     // Spawn the user and tell the global world that the user is spawned
-    // TODO use the coordinates in the LocalUserSpawn component
     send_message(
-        assemble_response_spawn_me(connection_global_world_id, connection_local_world_id),
+        assemble_response_spawn_me(
+            connection_global_world_id,
+            connection_local_world_id,
+            location,
+            spawn.is_alive,
+        ),
         &connection.channel,
     );
     send_message(
@@ -182,6 +194,8 @@ fn handle_user_despawn(
 fn assemble_response_spawn_me(
     connection_global_world_id: EntityId,
     connection_local_world_id: EntityId,
+    location: &Location,
+    is_alive: bool,
 ) -> EcsMessage {
     Box::new(ResponseSpawnMe {
         connection_global_world_id,
@@ -189,12 +203,12 @@ fn assemble_response_spawn_me(
         packet: SSpawnMe {
             user_id: connection_local_world_id,
             location: Vec3f {
-                x: 16260.0,
-                y: 1253.0,
-                z: -4410.0,
+                x: location.point.x,
+                y: location.point.y,
+                z: location.point.z,
             },
-            rotation: Angle::from_deg(342.0),
-            is_alive: true,
+            rotation: Angle::from(location.rotation.clone()),
+            is_alive,
             is_lord: false,
         },
     })
@@ -219,12 +233,13 @@ fn assemble_user_spawn_prepared(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::entity::User;
+    use crate::model::entity::{User, UserLocation};
     use crate::model::{Class, Gender, Race};
     use crate::protocol::serde::from_vec;
     use crate::Result;
     use async_std::sync::{channel, Receiver};
     use chrono::{TimeZone, Utc};
+    use nalgebra::{Point3, Rotation3, Vector3};
 
     fn setup() -> Result<(World, Receiver<EcsMessage>)> {
         let (global_tx_channel, global_rx_channel) = channel(1024);
@@ -247,9 +262,10 @@ mod tests {
         let connection_local_world_id = world.run(
             |mut entities: EntitiesViewMut,
              mut connections: ViewMut<LocalConnection>,
-             mut user_spawns: ViewMut<LocalUserSpawn>| {
+             mut user_spawns: ViewMut<LocalUserSpawn>,
+             mut locations: ViewMut<Location>| {
                 entities.add_entity(
-                    (&mut connections, &mut user_spawns),
+                    (&mut connections, &mut user_spawns, &mut locations),
                     (
                         LocalConnection {
                             channel: connection_tx_channel,
@@ -259,6 +275,10 @@ mod tests {
                             account_id: 1,
                             status: UserSpawnStatus::Waiting,
                             is_alive: true,
+                        },
+                        Location {
+                            point: Point3::new(2.0f32, 3.0f32, 3.0f32),
+                            rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 1.0),
                         },
                     ),
                 )
@@ -309,6 +329,13 @@ mod tests {
             created_at: Utc.ymd(2020, 7, 8).and_hms(9, 10, 11),
         };
 
+        let user_location = UserLocation {
+            user_id: 1,
+            zone: 0,
+            point: Point3::new(1.0, 1.0, 1.0),
+            rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 0.0),
+        };
+
         world.run(
             |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
                 entities.add_entity(
@@ -318,6 +345,8 @@ mod tests {
                             connection_global_world_id,
                             connection_channel: connection_tx,
                             user: user.clone(),
+                            location: user_location.clone(),
+                            is_alive: true,
                         },
                     }),
                 );
@@ -327,13 +356,20 @@ mod tests {
         world.run(user_gateway_system);
 
         let connection_local_world_id = world.run(
-            |connections: View<LocalConnection>, spawns: View<LocalUserSpawn>| {
-                let (id, (_connection, spawn)) =
-                    (&connections, &spawns).iter().with_id().next().unwrap();
+            |connections: View<LocalConnection>,
+             spawns: View<LocalUserSpawn>,
+             locations: View<Location>| {
+                let (id, (_connection, spawn, location)) = (&connections, &spawns, &locations)
+                    .iter()
+                    .with_id()
+                    .next()
+                    .unwrap();
                 assert_eq!(spawn.user_id, user.id);
                 assert_eq!(spawn.account_id, user.account_id);
                 assert_eq!(spawn.status, UserSpawnStatus::Waiting);
                 assert_eq!(spawn.is_alive, true);
+                assert_eq!(location.point, user_location.point);
+                assert_eq!(location.rotation, user_location.rotation);
 
                 Ok::<EntityId, anyhow::Error>(id)
             },
@@ -381,6 +417,7 @@ mod tests {
         Ok(())
     }
 
+    // Fix the test
     #[test]
     fn test_load_topo_fin() -> Result<()> {
         let (world, connection_local_world_id, global_rx_channel, connection_rx_channel) =
@@ -411,8 +448,9 @@ mod tests {
 
         world.run(user_gateway_system);
 
-        world.run(|spawns: View<LocalUserSpawn>| {
-            let spawn = spawns.try_get(connection_local_world_id)?;
+        world.run(|spawns: View<LocalUserSpawn>, locations: View<Location>| {
+            // User entity needs to have both a LocalUserSpawn and a Location component attached
+            let (spawn, _location) = (&spawns, &locations).try_get(connection_local_world_id)?;
             assert_eq!(spawn.status, UserSpawnStatus::Spawned);
 
             Ok::<(), anyhow::Error>(())
@@ -427,6 +465,7 @@ mod tests {
                 assert_eq!(*gid, connection_global_world_id);
                 assert_eq!(*lid, connection_local_world_id);
                 assert_eq!(packet.user_id, connection_local_world_id);
+                // TODO test the location!
             }
             _ => panic!("Can't find Message::ResponseSpawnMe"),
         }

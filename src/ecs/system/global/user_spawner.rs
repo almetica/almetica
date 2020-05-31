@@ -7,7 +7,7 @@ use crate::ecs::message::Message::{
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
 use crate::ecs::system::send_message;
-use crate::model::repository::user;
+use crate::model::repository::{user, user_location};
 use crate::model::{entity, TemplateID, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
@@ -113,11 +113,13 @@ fn prepare_local_spawn(
             .context("Couldn't acquire connection from pool")?;
 
         let user = user::get_by_id(&mut conn, spawn.user_id).await?;
+        let location = user_location::get_by_user_id(&mut conn, spawn.user_id).await?;
         send_message(
             assemble_prepare_user_spawn(
                 connection_global_world_id,
                 connection.channel.clone(),
                 user,
+                location,
             ),
             &spawn.local_world_channel.clone().unwrap(),
         );
@@ -390,17 +392,20 @@ fn assemble_user_ready_to_connect(connection_local_world_id: EntityId) -> EcsMes
     })
 }
 
-// TODO use the user_location entity in here
+// TODO we somehow need to track the "is_alive" status between spawns
 fn assemble_prepare_user_spawn(
     connection_global_world_id: EntityId,
     connection_channel: Sender<EcsMessage>,
     user: entity::User,
+    location: entity::UserLocation,
 ) -> EcsMessage {
     Box::new(PrepareUserSpawn {
         user_initializer: UserInitializer {
             connection_global_world_id,
             connection_channel,
             user,
+            location,
+            is_alive: true,
         },
     })
 }
@@ -410,7 +415,7 @@ mod tests {
     use super::*;
     use crate::ecs::component::GlobalConnection;
     use crate::ecs::message::Message;
-    use crate::model::entity::{Account, User};
+    use crate::model::entity::{Account, User, UserLocation};
     use crate::model::repository::{account, user};
     use crate::model::tests::db_test;
     use crate::model::{Class, Gender, PasswordHashAlgorithm, Race};
@@ -418,6 +423,7 @@ mod tests {
     use crate::Result;
     use async_std::sync::{channel, Receiver};
     use chrono::{TimeZone, Utc};
+    use nalgebra::{Point3, Rotation3, Vector3};
     use sqlx::PgPool;
     use std::time::Instant;
 
@@ -468,6 +474,17 @@ mod tests {
                 delete_at: None,
                 last_logout_at: Utc.ymd(2007, 7, 8).and_hms(9, 10, 11),
                 created_at: Utc.ymd(2009, 7, 8).and_hms(9, 10, 11),
+            },
+        )
+        .await?;
+
+        user_location::create(
+            &mut conn,
+            &UserLocation {
+                user_id: user.id,
+                zone: 0,
+                point: Point3::new(1.0f32, 2.0f32, 3.0f32),
+                rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 3.0),
             },
         )
         .await?;
