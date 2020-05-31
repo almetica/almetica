@@ -1,11 +1,12 @@
 use crate::ecs::component::{LocalConnection, LocalUserSpawn, Location, UserSpawnStatus};
-use crate::ecs::dto::{UserFinalizer, UserFinalizerLocation, UserInitializer};
+use crate::ecs::dto::{UserFinalizer, UserInitializer};
 use crate::ecs::message::Message::{
     ResponseSpawnMe, UserDespawned, UserSpawnPrepared, UserSpawned,
 };
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::resource::{DeletionList, GlobalMessageChannel};
 use crate::ecs::system::send_message;
+use crate::model::entity::UserLocation;
 use crate::model::{Angle, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
@@ -106,6 +107,7 @@ fn handle_prepare_user_spawn(
                 user_id: user_initializer.user.id,
                 account_id: user_initializer.user.account_id,
                 status: UserSpawnStatus::Waiting,
+                zone_id: user_initializer.location.zone,
                 is_alive: user_initializer.is_alive,
             },
             Location {
@@ -247,7 +249,9 @@ fn assemble_user_despawned(spawn: &LocalUserSpawn, location: &Location) -> EcsMe
         user_finalizer: UserFinalizer {
             connection_global_world_id: spawn.connection_global_world_id,
             user_id: spawn.user_id,
-            location: UserFinalizerLocation {
+            location: UserLocation {
+                user_id: spawn.user_id,
+                zone: spawn.zone_id,
                 point: location.point.clone(),
                 rotation: location.rotation.clone(),
             },
@@ -310,6 +314,7 @@ mod tests {
                             user_id: 1,
                             account_id: 1,
                             status: UserSpawnStatus::Waiting,
+                            zone_id: 0,
                             connection_global_world_id: from_vec::<EntityId>(vec![
                                 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                             ])
@@ -408,6 +413,7 @@ mod tests {
                 assert_eq!(spawn.user_id, user.id);
                 assert_eq!(spawn.account_id, user.account_id);
                 assert_eq!(spawn.status, UserSpawnStatus::Waiting);
+                assert_eq!(spawn.zone_id, 0);
                 assert_eq!(spawn.is_alive, true);
                 assert_eq!(location.point, user_location.point);
                 assert_eq!(location.rotation, user_location.rotation);
