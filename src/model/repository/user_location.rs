@@ -13,7 +13,7 @@ pub async fn create(conn: &mut PgConnection, location: &UserLocation) -> Result<
         r#"INSERT INTO "user_location" VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *"#,
     )
     .bind(&location.user_id)
-    .bind(&location.zone)
+    .bind(&location.zone_id)
     .bind(&location.point.x)
     .bind(&location.point.y)
     .bind(&location.point.z)
@@ -46,11 +46,11 @@ pub async fn get_by_user_id(conn: &mut PgConnection, user_id: i32) -> Result<Use
 pub async fn update(conn: &mut PgConnection, location: &UserLocation) -> Result<UserLocation> {
     let mut location = sqlx::query(
         r#"UPDATE "user_location"
-        SET "zone" = $1, "location_x" = $2, "location_y" = $3, "location_z" = $4, "rotation_x" = $5, "rotation_y" = $6, "rotation_z" = $7
+        SET "zone_id" = $1, "location_x" = $2, "location_y" = $3, "location_z" = $4, "rotation_x" = $5, "rotation_y" = $6, "rotation_z" = $7
         WHERE "user_id" = $8
         RETURNING *"#,
         )
-        .bind(&location.zone)
+        .bind(&location.zone_id)
         .bind(&location.point.x)
         .bind(&location.point.y)
         .bind(&location.point.z)
@@ -70,7 +70,7 @@ pub async fn update(conn: &mut PgConnection, location: &UserLocation) -> Result<
 fn map_user(row: PgRow) -> UserLocation {
     UserLocation {
         user_id: row.get(0),
-        zone: row.get(1),
+        zone_id: row.get(1),
         point: Point3::new(row.get(2), row.get(3), row.get(4)),
         rotation: Rotation3::from_scaled_axis(Vector3::new(row.get(5), row.get(6), row.get(7))),
     }
@@ -104,7 +104,7 @@ pub mod tests {
 
                 let location = UserLocation {
                     user_id: user.id,
-                    zone: 14,
+                    zone_id: 14,
                     point: Point3::new(1.0f32, 2.0f32, 3.0f32),
                     rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 3.0),
                 };
@@ -112,7 +112,7 @@ pub mod tests {
                 let db_location = create(&mut conn, &location).await?;
 
                 assert_eq!(db_location.user_id, location.user_id);
-                assert_eq!(db_location.zone, location.zone);
+                assert_eq!(db_location.zone_id, location.zone_id);
                 assert_eq!(db_location.point, location.point);
                 assert_relative_eq!(db_location.rotation, location.rotation);
 
@@ -130,7 +130,7 @@ pub mod tests {
 
                 let location = UserLocation {
                     user_id: user.id,
-                    zone: 14,
+                    zone_id: 14,
                     point: Point3::new(1.0f32, 2.0f32, 3.0f32),
                     rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 3.0),
                 };
@@ -139,7 +139,7 @@ pub mod tests {
                 let db_location = get_by_user_id(&mut conn, user.id).await?;
 
                 assert_eq!(db_location.user_id, location.user_id);
-                assert_eq!(db_location.zone, location.zone);
+                assert_eq!(db_location.zone_id, location.zone_id);
                 assert_eq!(db_location.point, location.point);
                 assert_relative_eq!(db_location.rotation, location.rotation);
 
@@ -157,19 +157,19 @@ pub mod tests {
 
                 let mut location = UserLocation {
                     user_id: user.id,
-                    zone: 14,
+                    zone_id: 14,
                     point: Point3::new(1.0f32, 2.0f32, 3.0f32),
                     rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 3.0),
                 };
                 create(&mut conn, &location).await?;
 
-                location.zone = 22;
+                location.zone_id = 22;
                 location.point = Point3::new(3.0f32, 4.0f32, 5.0f32);
                 location.rotation = Rotation3::from_axis_angle(&Vector3::z_axis(), 4.0);
                 let db_location = update(&mut conn, &location).await?;
 
                 assert_eq!(db_location.user_id, location.user_id);
-                assert_eq!(db_location.zone, location.zone);
+                assert_eq!(db_location.zone_id, location.zone_id);
                 assert_eq!(db_location.point, location.point);
                 assert_relative_eq!(db_location.rotation, location.rotation);
 

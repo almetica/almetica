@@ -1,7 +1,7 @@
 CREATE TABLE "user_location"
 (
     "user_id" INT NOT NULL UNIQUE REFERENCES "user" ON DELETE CASCADE,
-    "zone"    INT NOT NULL,
+    "zone_id"    INT NOT NULL,
     "location_x" REAL NOT NULL,
     "location_y" REAL NOT NULL,
     "location_z" REAL NOT NULL,

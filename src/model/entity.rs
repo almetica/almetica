@@ -70,7 +70,7 @@ pub struct User {
 #[derive(Clone, Debug, sqlx::FromRow, PartialEq)]
 pub struct UserLocation {
     pub user_id: i32,
-    pub zone: i32,
+    pub zone_id: i32,
     pub point: Point3<f32>,
     pub rotation: Rotation3<f32>,
 }

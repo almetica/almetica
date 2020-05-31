@@ -636,7 +636,7 @@ mod tests {
                                 user,
                                 location: UserLocation {
                                     user_id: 0,
-                                    zone: 0,
+                                    zone_id: 0,
                                     point: Point3::new(1.0, 1.0, 1.0),
                                     rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 0.0),
                                 },
