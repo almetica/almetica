@@ -1,11 +1,14 @@
 ![Almetica Logo](assets/logo_wide.svg)
 
-[![Gitter](https://badges.gitter.im/almetica-server/community.svg)](https://gitter.im/almetica-server/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![LOC](https://tokei.rs/b1/github/almetica/almetica?category=lines)](https://github.com/almetica/almetica)
 
 This is a server for the MMORPG TERA written in rust. Currently targeting TERA EU 93.04.
 
 To connect to the server you need to use the [custom client launcher](https://github.com/almetica/almetica-launcher). It's a direct replacement for the publisher launcher and Tl.exe.
+
+## Status
+
+The development of Almetica is currently on hiatus. The codebase is pretty well designed and could be extended easily if you wish. It's testsuite is extensive and commented pretty well.
 
 ## Requirements
 
