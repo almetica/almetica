@@ -2,15 +2,16 @@ use crate::ecs::component::GlobalConnection;
 use crate::ecs::message::Message::ResponseGetUserList;
 use crate::ecs::message::{EcsMessage, Message};
 use crate::ecs::system::global::send_message_to_connection;
-use crate::model::entity::User;
-use crate::model::repository::user;
-use crate::model::{Vec3, Vec3a};
+use crate::model::entity::{User, UserLocation};
+use crate::model::repository::{user, user_location};
+use crate::model::{Vec3a, Vec3f};
 use crate::protocol::packet::*;
 use crate::Result;
 use anyhow::{ensure, Context};
 use async_std::task;
 use chrono::Utc;
 use lazy_static::lazy_static;
+use nalgebra::{Point3, Rotation3, Vector3};
 use regex::Regex;
 use shipyard::*;
 use sqlx::{PgConnection, PgPool};
@@ -26,7 +27,6 @@ pub fn user_manager_system(
     connections: View<GlobalConnection>,
     pool: UniqueView<PgPool>,
 ) {
-    // TODO Look for users without a connection component. Set their "deletion time" and persist them ones reached.
     (&incoming_messages)
         .iter()
         .for_each(|message| match &**message {
@@ -433,8 +433,7 @@ async fn create_new_user(
     lobby_slot: i32,
     packet: &CCreateUser,
 ) -> Result<()> {
-    // TODO also create the default user_location
-    user::create(
+    let user = user::create(
         &mut conn,
         &User {
             id: -1,
@@ -466,6 +465,19 @@ async fn create_new_user(
     )
     .await
     .context("Can't create user")?;
+
+    user_location::create(
+        &mut conn,
+        &UserLocation {
+            user_id: user.id,
+            zone_id: 5, // Stepstone Isle (tutorial map)
+            point: Point3::new(16260.0, 1253.0, -4410.0),
+            rotation: Rotation3::from_axis_angle(&Vector3::z_axis(), 5.96903), // 342°
+        },
+    )
+    .await
+    .context("Can't create user location")?;
+
     Ok(())
 }
 
@@ -601,16 +613,16 @@ fn assemble_user_list_response(
                 show_face: user.show_face,
                 style_head_scale: 1.0,
                 style_head_rotation: Vec3a::default(),
-                style_head_translation: Vec3::default(),
-                style_head_translation_debug: Vec3::default(),
+                style_head_translation: Vec3f::default(),
+                style_head_translation_debug: Vec3f::default(),
                 style_faces_scale: 1.0,
                 style_face_rotation: Vec3a::default(),
-                style_face_translation: Vec3::default(),
-                style_face_translation_debug: Vec3::default(),
+                style_face_translation: Vec3f::default(),
+                style_face_translation_debug: Vec3f::default(),
                 style_back_scale: 1.0,
                 style_back_rotation: Vec3a::default(),
-                style_back_translation: Vec3::default(),
-                style_back_translation_debug: Vec3::default(),
+                style_back_translation: Vec3f::default(),
+                style_back_translation_debug: Vec3f::default(),
                 used_style_head_transform: false,
                 is_new_character: user.is_new_character,
                 tutorial_state: user.tutorial_state,
@@ -776,15 +788,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCanCreateUser { packet, .. } => {
-                        assert!(packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCanCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCanCreateUser { packet, .. } => {
+                    assert!(packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Couldn't find Message::ResponseCanCreateUser"),
             }
 
             Ok(())
@@ -818,15 +826,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCanCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCanCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCanCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCanCreateUser message"),
             }
 
             Ok(())
@@ -885,7 +889,7 @@ mod tests {
             let mut count = 0;
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
-                    match *message {
+                    match &*message {
                         Message::ResponseCheckUserName { packet, .. } => {
                             if packet.ok {
                                 count += 1
@@ -927,15 +931,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCheckUserName { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCheckUserName message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCheckUserName { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCheckUserName message"),
             }
 
             Ok(())
@@ -980,7 +980,7 @@ mod tests {
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
                     packet_count += 1;
-                    match *message {
+                    match &*message {
                         Message::ResponseGetUserList { packet, .. } => {
                             char_count += packet.characters.len();
 
@@ -1039,7 +1039,7 @@ mod tests {
             loop {
                 if let Ok(message) = rx_channel.try_recv() {
                     packet_count += 1;
-                    match *message {
+                    match &*message {
                         Message::ResponseGetUserList { packet, .. } => {
                             char_count = packet.characters.len()
                         }
@@ -1082,34 +1082,36 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let mut users: Vec<User> =
                 task::block_on(async { user::list(&mut conn, account.id).await })?;
 
-            if let Some(u) = users.pop() {
-                assert_eq!(u.name, org_packet.name);
-                assert_eq!(u.details, org_packet.details);
-                assert_eq!(u.shape, org_packet.shape);
-                assert_eq!(u.gender, org_packet.gender);
-                assert_eq!(u.race, org_packet.race);
-                assert_eq!(u.class, org_packet.class);
-                assert_eq!(u.appearance, org_packet.appearance);
-                assert_eq!(u.appearance2, org_packet.appearance2);
+            let user_id = if let Some(user) = users.pop() {
+                assert_eq!(user.name, org_packet.name);
+                assert_eq!(user.details, org_packet.details);
+                assert_eq!(user.shape, org_packet.shape);
+                assert_eq!(user.gender, org_packet.gender);
+                assert_eq!(user.race, org_packet.race);
+                assert_eq!(user.class, org_packet.class);
+                assert_eq!(user.appearance, org_packet.appearance);
+                assert_eq!(user.appearance2, org_packet.appearance2);
+
+                user.id
             } else {
                 panic!("Can't find the created user");
-            }
+            };
 
-            // TODO test for user_location
+            let user_location =
+                task::block_on(async { user_location::get_by_user_id(&mut conn, user_id).await })?;
+
+            assert_eq!(user_location.user_id, user_id);
+            assert_eq!(user_location.zone_id, 5);
 
             Ok(())
         })
@@ -1144,7 +1146,7 @@ mod tests {
 
             // First user could be created
             if let Ok(message) = rx_channel.try_recv() {
-                match *message {
+                match &*message {
                     Message::ResponseCreateUser { packet, .. } => {
                         assert!(packet.ok);
                     }
@@ -1155,15 +1157,11 @@ mod tests {
             }
 
             // Second user failed because the name was already taken
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let count =
@@ -1205,15 +1203,11 @@ mod tests {
 
             world.run(user_manager_system);
 
-            if let Ok(message) = rx_channel.try_recv() {
-                match *message {
-                    Message::ResponseCreateUser { packet, .. } => {
-                        assert!(!packet.ok);
-                    }
-                    _ => panic!("Message is not a ResponseCreateUser message"),
+            match &*rx_channel.try_recv()? {
+                Message::ResponseCreateUser { packet, .. } => {
+                    assert!(!packet.ok);
                 }
-            } else {
-                panic!("Can't find any message");
+                _ => panic!("Message is not a ResponseCreateUser message"),
             }
 
             let count =
@@ -1240,6 +1234,8 @@ mod tests {
                 }
             });
 
+            let deleted_user_id = users[0].id;
+
             world.run(
                 |mut entities: EntitiesViewMut, mut messages: ViewMut<EcsMessage>| {
                     entities.add_entity(
@@ -1248,7 +1244,7 @@ mod tests {
                             connection_global_world_id,
                             account_id: account.id,
                             packet: CDeleteUser {
-                                database_id: users[0].id,
+                                database_id: deleted_user_id,
                             },
                         }),
                     );
@@ -1258,7 +1254,7 @@ mod tests {
             world.run(user_manager_system);
 
             if let Ok(message) = rx_channel.try_recv() {
-                match *message {
+                match &*message {
                     Message::ResponseDeleteUser { packet, .. } => {
                         assert!(packet.ok);
                     }
@@ -1279,7 +1275,12 @@ mod tests {
                 }
             }
 
-            // TODO Test for user_location
+            // Also make sure that the UserLocation was deleted
+            assert!(task::block_on(async {
+                user_location::get_by_user_id(&mut conn, deleted_user_id)
+                    .await
+                    .is_err()
+            }));
 
             Ok(())
         })

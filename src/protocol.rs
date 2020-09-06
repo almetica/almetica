@@ -234,7 +234,6 @@ impl<'a> GameSession<'a> {
                 debug!("Connection is authenticated with user ID {}", user_id);
                 self.user_id = Some(*user_id);
             }
-            // TODO send the RegisterLocalWorld message somewhere
             Message::RegisterLocalWorld {
                 connection_local_world_id,
                 local_world_channel,

@@ -1,6 +1,6 @@
 /// Module for server network packages.
 use crate::model::{
-    Angle, Class, Customization, Gender, Race, Region, ServantType, TemplateID, Vec3, Vec3a,
+    Angle, Class, Customization, Gender, Race, Region, ServantType, TemplateID, Vec3a, Vec3f,
 };
 use serde::{Deserialize, Serialize};
 use shipyard::EntityId;
@@ -133,16 +133,16 @@ pub struct SGetUserListCharacter {
     pub show_face: bool,
     pub style_head_scale: f32,
     pub style_head_rotation: Vec3a,
-    pub style_head_translation: Vec3,
-    pub style_head_translation_debug: Vec3,
+    pub style_head_translation: Vec3f,
+    pub style_head_translation_debug: Vec3f,
     pub style_faces_scale: f32,
     pub style_face_rotation: Vec3a,
-    pub style_face_translation: Vec3,
-    pub style_face_translation_debug: Vec3,
+    pub style_face_translation: Vec3f,
+    pub style_face_translation_debug: Vec3f,
     pub style_back_scale: f32,
     pub style_back_rotation: Vec3a,
-    pub style_back_translation: Vec3,
-    pub style_back_translation_debug: Vec3,
+    pub style_back_translation: Vec3f,
+    pub style_back_translation_debug: Vec3f,
     pub used_style_head_transform: bool,
     pub is_new_character: bool,
     pub tutorial_state: i32, // TODO research what it does
@@ -204,7 +204,7 @@ pub struct SLoadHint {
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SLoadTopo {
     pub zone: i32,
-    pub location: Vec3,
+    pub location: Vec3f,
     pub disable_loading_screen: bool,
 }
 
@@ -230,8 +230,8 @@ pub struct SLogin {
     pub action_mode: i32, // TODO investigate the exact function
     pub alive: bool,
     pub status: i32,
-    pub walk_speed: i32, // TODO investigate the exact function
-    pub run_speed: i32,
+    pub walk_speed: i32, // Standard value of 50
+    pub run_speed: i32,  // Standard value of 150
     pub appearance: Customization,
     pub visible: bool,
     pub is_second_character: bool,
@@ -254,7 +254,7 @@ pub struct SLogin {
     pub max_rest_bonus_exp: i64,
     pub exp_bonus_percent: f32,
     pub drop_bonus_percent: f32,
-    pub weapon: i32, // TODO is this an datacenter ID or a database ID?
+    pub weapon: i32, // TODO maybe create a type for the Datacenter ID
     pub body: i32,
     pub hand: i32,
     pub feet: i32,
@@ -340,7 +340,7 @@ pub struct SSelectUser {
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct SSpawnMe {
     pub user_id: EntityId,
-    pub location: Vec3,
+    pub location: Vec3f,
     pub rotation: Angle,
     pub is_alive: bool,
     pub is_lord: bool, // TODO try to identify the usage of the field
@@ -565,16 +565,16 @@ mod tests {
                 show_face: true,
                 style_head_scale: 1.0,
                 style_head_rotation: Vec3a { x: 0, y: 0, z: 0 },
-                style_head_translation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                style_head_translation_debug: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                style_head_translation: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
+                style_head_translation_debug: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
                 style_faces_scale: 1.0,
                 style_face_rotation: Vec3a { x: 0, y: 0, z: 0 },
-                style_face_translation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                style_face_translation_debug: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                style_face_translation: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
+                style_face_translation_debug: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
                 style_back_scale: 1.0,
                 style_back_rotation: Vec3a { x: 0, y: 0, z: 0 },
-                style_back_translation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                style_back_translation_debug: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                style_back_translation: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
+                style_back_translation_debug: Vec3f { x: 0.0, y: 0.0, z: 0.0 },
                 used_style_head_transform: false,
                 is_new_character: false,
                 tutorial_state: 0,
@@ -664,7 +664,7 @@ mod tests {
         ],
         expected: SLoadTopo {
             zone: 5,
-            location: Vec3{x: 16260.0, y: 1253.0, z: -4410.0},
+            location: Vec3f{x: 16260.0, y: 1253.0, z: -4410.0},
             disable_loading_screen: false,
         }
     );
@@ -864,7 +864,7 @@ mod tests {
         ],
         expected: SSpawnMe {
             user_id: from_vec::<EntityId>(vec![0x11,0x00,0x1D,0x0,0x0,0x80,0,0])?,
-            location: Vec3{x: 16260.0, y: 1253.0, z: -4410.0},
+            location: Vec3f{x: 16260.0, y: 1253.0, z: -4410.0},
             rotation: Angle::from_deg(342.005),
             is_alive: true,
             is_lord: false,

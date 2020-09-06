@@ -15,7 +15,7 @@
 ///
 /// Network connections and ECS have async ```mpmc``` channels to write messages into.
 ///
-use crate::ecs::dto::UserInitializer;
+use crate::ecs::dto::{UserFinalizer, UserInitializer};
 use crate::protocol::opcode::Opcode;
 use crate::protocol::packet::*;
 use crate::protocol::serde::{from_vec, to_vec};
@@ -246,6 +246,7 @@ assemble_message! {
 
         // Messages used in the de-spawn process between the global and local world.
         UserDespawn{connection_local_world_id: EntityId}, Local;
+        UserDespawned{user_finalizer: UserFinalizer}, Local;
     }
 }
 

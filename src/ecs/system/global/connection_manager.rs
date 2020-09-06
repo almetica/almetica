@@ -312,7 +312,6 @@ fn drop_connection(
         );
         connections.delete(connection_global_world_id);
 
-        // TODO test the "marked_for_deletion" on spawned users
         if let Ok(spawn) = user_spawns.try_get(connection_global_world_id) {
             spawn.marked_for_deletion = true
         }
@@ -474,6 +473,7 @@ fn reject_login_arbiter(
 mod tests {
     use super::*;
     use crate::ecs::component;
+    use crate::ecs::component::UserSpawnStatus;
     use crate::ecs::message::Message;
     use crate::ecs::resource::DeletionList;
     use crate::ecs::system::common::cleaner_system;
@@ -1041,13 +1041,9 @@ mod tests {
 
                 world.run(connection_manager_system);
 
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::ResponsePing { .. } => { /* Ok */ }
-                        _ => panic!("Didn't found the expected ping message."),
-                    }
-                } else {
-                    panic!("Couldn't find ping message");
+                match &*rx_channel.try_recv()? {
+                    Message::ResponsePing { .. } => { /* Ok */ }
+                    _ => panic!("Didn't found the expected ping message."),
                 }
 
                 // Check if waiting_for_pong is updated
@@ -1096,6 +1092,27 @@ mod tests {
                 let (world, connection_global_world_id, rx_channel) =
                     setup_with_connection(pool, true);
 
+                // Create a user spawn for the connection
+                world.run(
+                    |entities: EntitiesView, mut connections: ViewMut<GlobalUserSpawn>| {
+                        entities.add_component(
+                            &mut connections,
+                            GlobalUserSpawn {
+                                user_id: 0,
+                                account_id: 0,
+                                status: UserSpawnStatus::Spawned,
+                                zone_id: 0,
+                                connection_local_world_id: None,
+                                local_world_id: None,
+                                local_world_channel: None,
+                                marked_for_deletion: false,
+                                is_alive: false,
+                            },
+                            connection_global_world_id,
+                        )
+                    },
+                );
+
                 // Set last_pong in "getting dropped" range
                 let now = Instant::now();
                 let old_pong = now
@@ -1108,15 +1125,11 @@ mod tests {
                 world.run(connection_manager_system);
 
                 // Check if drop connection message is present
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::DropConnection { .. } => { /* Ok */ }
-                        _ => panic!(
-                            "Couldn't find drop connection message. Found another packet instead."
-                        ),
-                    }
-                } else {
-                    panic!("Couldn't find drop connection message");
+                match &*rx_channel.try_recv()? {
+                    Message::DropConnection { .. } => { /* Ok */ }
+                    _ => panic!(
+                        "Couldn't find drop connection message. Found another packet instead."
+                    ),
                 }
 
                 // Check if connection component was deleted
@@ -1124,6 +1137,10 @@ mod tests {
                     .borrow::<View<GlobalConnection>>()
                     .try_get(connection_global_world_id)
                     .is_err());
+
+                world.run(|user_spawns: View<GlobalUserSpawn>| {
+                    assert!(user_spawns[connection_global_world_id].marked_for_deletion);
+                });
 
                 Ok(())
             })
@@ -1168,15 +1185,11 @@ mod tests {
                 world.run(connection_manager_system);
 
                 // Check if drop connection message is present
-                if let Ok(message) = rx_channel.try_recv() {
-                    match &*message {
-                        Message::DropConnection { .. } => { /* Ok */ }
-                        _ => panic!(
-                            "Couldn't find drop connection message. Found another packet instead."
-                        ),
-                    }
-                } else {
-                    panic!("Couldn't find drop connection message");
+                match &*rx_channel.try_recv()? {
+                    Message::DropConnection { .. } => { /* Ok */ }
+                    _ => panic!(
+                        "Couldn't find drop connection message. Found another packet instead."
+                    ),
                 }
 
                 // Connection should be deleted

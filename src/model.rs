@@ -4,6 +4,7 @@ pub mod migrations;
 pub mod repository;
 
 use byteorder::{ByteOrder, LittleEndian};
+use nalgebra::{Point3, Rotation3, Unit, Vector3};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -87,25 +88,32 @@ pub enum ServantType {
     Partner = 1,
 }
 
-/// TERA transmits the rotation of objects as a u16 value. It's a fraction value of a full rotation.
-/// 0x0 = 0°, 0xFFFF = 360°
+/// Rotion saved as a u16 value. It's a fraction value of a full rotation. (0x0 = 0°, 0xFFFF = 360°).
+/// Used in the network protocol.
 #[derive(Clone, Copy, Debug, sqlx::Type, PartialEq)]
 #[sqlx(transparent)]
 pub struct Angle(u16);
 
 impl Angle {
+    /// Create an Angle from degree between [0.0;360.0]
     pub fn from_deg(deg: f32) -> Self {
         Angle((deg as f32 * 0x10000 as f32 / 360 as f32) as u16)
+    }
+
+    /// Create an Angle from a radiant between [0;2*PI]
+    pub fn from_rad(rad: f32) -> Self {
+        // FIXME: Use TAU once in stable
+        Angle((rad * 0x10000 as f32 / (2.0 * std::f32::consts::PI)) as u16)
     }
 
     pub fn raw(&self) -> u16 {
         self.0
     }
 
+    // FIXME: Use TAU once in stable
     pub fn rad(&self) -> f32 {
         self.0 as f32 * (2.0 * std::f32::consts::PI) / 0x10000 as f32
     }
-
     pub fn deg(&self) -> f32 {
         self.0 as f32 * 360.0 / 0x10000 as f32
     }
@@ -146,16 +154,48 @@ impl<'de> Deserialize<'de> for Angle {
     }
 }
 
+impl From<Rotation3<f32>> for Angle {
+    /// Converts from a z_axis() based Rotation3 to Angle. Panics if not z_axis() based.
+    fn from(rotation: Rotation3<f32>) -> Self {
+        // Rotation3::angle() is a radiant with a range of [0; PI] and not [0; 2PI].
+        let z_axis = Vector3::z_axis();
+        let neg_z_axis = Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0));
+
+        let axis = rotation.axis();
+        if axis == Some(z_axis) || axis == None {
+            Angle::from_rad(rotation.angle())
+        } else if rotation.axis() == Some(neg_z_axis) {
+            // FIXME: Use TAU once in stable
+            Angle::from_rad((2.0 * std::f32::consts::PI) - rotation.angle())
+        } else {
+            panic!("Rotation wasn't a z_axis rotation!");
+        }
+    }
+}
+
+impl From<Angle> for Rotation3<f32> {
+    fn from(a: Angle) -> Self {
+        Rotation3::from_axis_angle(&Vector3::z_axis(), a.rad())
+    }
+}
+
+/// 3D vector using 32 bit floats. Used in the network protocol.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
-pub struct Vec3 {
+pub struct Vec3f {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-impl Default for Vec3 {
+impl Vec3f {
+    fn new(x: f32, y: f32, z: f32) -> Self {
+        Vec3f { x, y, z }
+    }
+}
+
+impl Default for Vec3f {
     fn default() -> Self {
-        Vec3 {
+        Vec3f {
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -163,6 +203,31 @@ impl Default for Vec3 {
     }
 }
 
+impl From<Vector3<f32>> for Vec3f {
+    fn from(v: Vector3<f32>) -> Self {
+        Vec3f::new(v.x, v.y, v.z)
+    }
+}
+
+impl From<Point3<f32>> for Vec3f {
+    fn from(v: Point3<f32>) -> Self {
+        Vec3f::new(v.x, v.y, v.z)
+    }
+}
+
+impl From<Vec3f> for Vector3<f32> {
+    fn from(v: Vec3f) -> Self {
+        Vector3::new(v.x, v.y, v.z)
+    }
+}
+
+impl From<Vec3f> for Point3<f32> {
+    fn from(v: Vec3f) -> Self {
+        Point3::new(v.x, v.y, v.z)
+    }
+}
+
+/// 3D vector using 32 bit integers. Used in the network protocol.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, sqlx::Type, PartialEq)]
 pub struct Vec3a {
     pub x: i32,
@@ -170,9 +235,39 @@ pub struct Vec3a {
     pub z: i32,
 }
 
+impl Vec3a {
+    fn new(x: i32, y: i32, z: i32) -> Self {
+        Vec3a { x, y, z }
+    }
+}
+
 impl Default for Vec3a {
     fn default() -> Self {
         Vec3a { x: 0, y: 0, z: 0 }
+    }
+}
+
+impl From<Vector3<f32>> for Vec3a {
+    fn from(v: Vector3<f32>) -> Self {
+        Vec3a::new(v.x as i32, v.y as i32, v.z as i32)
+    }
+}
+
+impl From<Point3<f32>> for Vec3a {
+    fn from(v: Point3<f32>) -> Self {
+        Vec3a::new(v.x as i32, v.y as i32, v.z as i32)
+    }
+}
+
+impl From<Vec3a> for Vector3<f32> {
+    fn from(v: Vec3a) -> Self {
+        Vector3::new(v.x as f32, v.y as f32, v.z as f32)
+    }
+}
+
+impl From<Vec3a> for Point3<f32> {
+    fn from(v: Vec3a) -> Self {
+        Point3::new(v.x as f32, v.y as f32, v.z as f32)
     }
 }
 
@@ -363,8 +458,10 @@ pub mod tests {
     use crate::protocol::serde::{from_vec, to_vec};
     use crate::Result;
     use anyhow::Context;
+    use approx::assert_relative_eq;
     use async_std::task;
     use hex::encode;
+    use nalgebra::Unit;
     use rand::{thread_rng, RngCore};
     use sqlx::{Connect, PgConnection};
     use std::panic;
@@ -391,7 +488,10 @@ pub mod tests {
 
         task::block_on(async { teardown_db(db_url, &db_name).await })?;
 
-        assert!(result.is_ok());
+        if let Err(err) = result {
+            panic::resume_unwind(err);
+        }
+
         Ok(())
     }
 
@@ -503,11 +603,52 @@ pub mod tests {
     }
 
     #[test]
-    fn test_angle_basic() {
-        for i in 0..360 {
-            assert_eq!(Angle::from_deg(i as f32).deg().round(), (i as f32).round());
+    fn test_angle_basic_deg() {
+        for i in 0..3600 {
+            let angle = i as f32 / 10.0;
+            assert_relative_eq!(
+                Angle::from_deg(angle).deg(),
+                angle,
+                max_relative = 0.02 // allow 2% deviation
+            );
         }
-        assert_eq!(Angle::from_deg(360.0).deg(), 0.0);
+        assert_relative_eq!(Angle::from_deg(360.0).deg(), 0.0);
+    }
+
+    #[test]
+    fn test_angle_basic_rad() {
+        // FIXME: Use TAU once in stable
+        for i in 0..(2.0 * std::f32::consts::PI * 10.0) as i32 {
+            let angle = i as f32 / 10.0;
+            assert_relative_eq!(
+                Angle::from_deg(angle).deg(),
+                angle,
+                max_relative = 0.02 // allow 2% deviation
+            );
+        }
+        assert_relative_eq!(Angle::from_rad(2.0 * std::f32::consts::PI).rad(), 0.0);
+    }
+
+    #[test]
+    fn test_angle_rotation3() {
+        let neg_z_axis = Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0));
+
+        // FIXME: Use TAU once in stable
+        for i in 0..=(2.0 * std::f32::consts::PI * 10.0) as i32 {
+            let angle = i as f32 / 10.0;
+            let rotation = Rotation3::from_axis_angle(&Vector3::z_axis(), angle);
+            let a_angle = Angle::from(rotation);
+
+            if rotation.axis() == Some(neg_z_axis) {
+                assert_relative_eq!(
+                    a_angle.rad(),
+                    (2.0 * std::f32::consts::PI - rotation.angle()),
+                    max_relative = 0.02 // allow 2% deviation,
+                );
+            } else {
+                assert_relative_eq!(a_angle.rad(), angle, max_relative = 0.02); // allow 2% deviation
+            }
+        }
     }
 
     #[test]
